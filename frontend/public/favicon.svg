@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="conveeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4F46E5" />
+      <stop offset="50%" stop-color="#7C3AED" />
+      <stop offset="100%" stop-color="#06B6D4" />
+    </linearGradient>
+    <linearGradient id="sparkGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38BDF8" />
+      <stop offset="100%" stop-color="#818CF8" />
+    </linearGradient>
+  </defs>
+  <!-- Background rounded square -->
+  <rect width="64" height="64" rx="16" fill="url(#conveeGrad)" />
+
+  <!-- Stylized 'C' curve for Convee -->
+  <path d="M 43 23 C 37 16, 23 16, 18 25 C 13 34, 15 44, 24 48 C 33 52, 43 46, 44 39"
+        fill="none" 
+        stroke="#FFFFFF" 
+        stroke-width="6" 
+        stroke-linecap="round" />
+
+  <!-- AI/Collaboration connection node -->
+  <circle cx="43" cy="23" r="4" fill="url(#sparkGrad)" />
+  <circle cx="20" cy="40" r="3" fill="#38BDF8" />
+</svg>

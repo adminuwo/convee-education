@@ -1,0 +1,18 @@
+/* Minimal app css - most styling via Tailwind */
+#root { min-height: 100vh; }
+
+.spin-slow { animation: spin 2s linear infinite; }
+
+.gradient-brand { background: linear-gradient(135deg, hsl(213 94% 45%) 0%, hsl(186 85% 35%) 100%); }
+.gradient-brand-soft { background: linear-gradient(135deg, hsl(213 94% 45% / 0.10) 0%, hsl(186 85% 35% / 0.10) 100%); }
+
+@keyframes fade-in-up { from { opacity: 0; transform: translateY(6px);} to { opacity: 1; transform: translateY(0);} }
+.fade-in-up { animation: fade-in-up 220ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+
+.chat-bubble { transition: background-color 150ms ease; }
+
+/* Typing indicator dots */
+.typing-dot { display: inline-block; width: 6px; height: 6px; margin-right: 3px; border-radius: 50%; background: hsl(var(--muted-foreground) / 0.7); animation: typing 1s infinite; }
+.typing-dot:nth-child(2) { animation-delay: 0.15s; }
+.typing-dot:nth-child(3) { animation-delay: 0.3s; }
+@keyframes typing { 0%, 60%, 100% { opacity: 0.3; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-3px); } }

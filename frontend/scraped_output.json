@@ -1,0 +1,65 @@
+{
+  "url": "http://localhost:3000/register",
+  "timestamp": "2026-08-01T11:06:59.777Z",
+  "statusCode": 200,
+  "pageTitle": "Convee",
+  "stats": {
+    "totalHeadings": 1,
+    "totalLinks": 1,
+    "totalButtons": 1,
+    "totalInputs": 4
+  },
+  "headings": [
+    {
+      "tag": "h1",
+      "text": "Start collaborating in minutes."
+    }
+  ],
+  "links": [
+    {
+      "text": "Sign in",
+      "href": "http://localhost:3000/login"
+    }
+  ],
+  "buttons": [
+    {
+      "type": "button",
+      "text": "Create account"
+    }
+  ],
+  "inputs": [
+    {
+      "type": "text",
+      "name": "fullName",
+      "placeholder": "Jane Doe"
+    },
+    {
+      "type": "text",
+      "name": "orgName",
+      "placeholder": "Acme Inc."
+    },
+    {
+      "type": "email",
+      "name": "email",
+      "placeholder": "you@company.com"
+    },
+    {
+      "type": "password",
+      "name": "password",
+      "placeholder": "At least 6 characters"
+    }
+  ],
+  "textSnippets": [
+    "Convee\nStart collaborating in minutes.\n\nCreate your workspace, invite your team, and let AI take the load off the busywork.\n\nFree trial · No credit card required\nCreate your account\n\nYou'll be the owner of your new workspace.\n\nFull name\nOrganization name (optional)\nWork email\nPassword\nCreate account\nAlready have an account? Sign in",
+    "Convee\nStart collaborating in minutes.\n\nCreate your workspace, invite your team, and let AI take the load off the busywork.\n\nFree trial · No credit card required",
+    "Start collaborating in minutes.\n\nCreate your workspace, invite your team, and let AI take the load off the busywork.",
+    "Create your workspace, invite your team, and let AI take the load off the busywork.",
+    "Free trial · No credit card required",
+    "Create your account\n\nYou'll be the owner of your new workspace.\n\nFull name\nOrganization name (optional)\nWork email\nPassword\nCreate account\nAlready have an account? Sign in",
+    "Create your account\n\nYou'll be the owner of your new workspace.",
+    "You'll be the owner of your new workspace.",
+    "Full name\nOrganization name (optional)\nWork email\nPassword\nCreate account\nAlready have an account? Sign in",
+    "Organization name (optional)",
+    "Already have an account? Sign in"
+  ]
+}
