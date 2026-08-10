@@ -334,6 +334,20 @@ export default function ChannelPage() {
     const onTypingStart = ({ channelId: c, userId }) => { if (c === channelId) setTyping((t) => ({ ...t, [userId]: Date.now() })); };
     const onTypingStop = ({ channelId: c, userId }) => { if (c === channelId) setTyping((t) => { const cp = { ...t }; delete cp[userId]; return cp; }); };
 
+    const onPresence = ({ userId, status }) => {
+      setChannel((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          members: (prev.members || []).map((m) =>
+            m.userId === userId || m.user?.id === userId
+              ? { ...m, user: { ...(m.user || {}), status } }
+              : m
+          ),
+        };
+      });
+    };
+
     s.on('message:new', onNew);
     s.on('message:updated', onUpdated);
     s.on('message:deleted', onDeleted);
@@ -341,6 +355,7 @@ export default function ChannelPage() {
     s.on('reaction:removed', onReactRemoved);
     s.on('typing:start', onTypingStart);
     s.on('typing:stop', onTypingStop);
+    s.on('user:presence', onPresence);
 
     return () => {
       s.off('connect', joinChannel);
@@ -351,6 +366,7 @@ export default function ChannelPage() {
       s.off('reaction:removed', onReactRemoved);
       s.off('typing:start', onTypingStart);
       s.off('typing:stop', onTypingStop);
+      s.off('user:presence', onPresence);
       s.emit('channel:leave', channelId);
     };
   }, [channelId, threadFor?.id]);
@@ -571,6 +587,14 @@ export default function ChannelPage() {
           <div className="font-semibold truncate">
             {channel?.type === 'DIRECT' ? (dmPartner?.fullName || channel?.name) : channel?.name}
           </div>
+          {channel?.type === 'DIRECT' && dmPartner && (
+            <div className="flex items-center gap-1.5 ml-1 bg-muted/40 px-2 py-0.5 rounded-full border border-border/50">
+              <span className={`h-2 w-2 rounded-full ${dmPartner?.status === 'online' ? 'bg-emerald-500 animate-pulse' : 'bg-muted-foreground/40'}`} />
+              <span className="text-[11px] font-semibold text-muted-foreground">
+                {dmPartner?.status === 'online' ? 'Online' : 'Offline'}
+              </span>
+            </div>
+          )}
           <Badge variant="outline" className="text-[10px] uppercase">{channel?.type}</Badge>
           {channel?.type !== 'DIRECT' && (
             <Button

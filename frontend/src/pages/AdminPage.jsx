@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { useOrgData } from '@/contexts/OrgDataContext';
 import { orgApi } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -11,7 +12,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { Building2, Users, Layers, Plus, Mail, Trash2, Crown, ChevronRight, GraduationCap, UserCheck, Filter, Key } from 'lucide-react';
+import { Building2, Users, Layers, Plus, Mail, Trash2, Crown, ChevronRight, GraduationCap, UserCheck, Filter, Key, HeartHandshake } from 'lucide-react';
 import { connectSocket, getSocket } from '@/lib/socket';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
@@ -25,10 +26,15 @@ export default function AdminPage() {
   const activeTab = searchParams.get('tab') || 'members';
 
   const { currentOrg, user, refresh, memberships } = useAuth();
+  const {
+    members, setMembers,
+    departments, setDepartments,
+    projects, setProjects,
+    loading: orgLoading,
+    refreshOrgData,
+  } = useOrgData();
+
   const isFullAdmin = ['DIRECTOR', 'OWNER', 'PRINCIPAL', 'ADMIN'].includes(currentOrg?.role);
-  const [members, setMembers] = useState([]);
-  const [departments, setDepartments] = useState([]);
-  const [projects, setProjects] = useState([]);
   const [invite, setInvite] = useState({ open: false, email: '', fullName: '', role: 'TEACHER' });
   const [newDept, setNewDept] = useState({ open: false, name: '' });
   const [newTeam, setNewTeam] = useState({ open: false, gradeName: '', sectionName: '', deptId: '' });
@@ -39,13 +45,21 @@ export default function AdminPage() {
   const [deleteTeamDialog, setDeleteTeamDialog] = useState({ open: false, team: null });
   const [transferFlow, setTransferFlow] = useState({ open: false, step: 1, targetEmail: '', verifyEmail: '', targetMember: null, loading: false });
 
-  // Sub-tabs for Members section: 'faculty' | 'students'
+  // Sub-tabs for Members section: 'faculty' | 'students' | 'parents'
   const [memberSubTab, setMemberSubTab] = useState('faculty');
   const [studentWingFilter, setStudentWingFilter] = useState('ALL');
   const [studentClassFilter, setStudentClassFilter] = useState('ALL');
 
   const facultyMembers = useMemo(() => {
-    return members.filter((m) => m.role !== 'STUDENT');
+    return members.filter(
+      (m) => m.role !== 'STUDENT' && m.role !== 'PARENT' && !m.user?.email?.includes('parent') && !m.title?.toLowerCase().includes('parent')
+    );
+  }, [members]);
+
+  const parentMembers = useMemo(() => {
+    return members.filter(
+      (m) => m.role === 'PARENT' || m.user?.email?.includes('parent') || m.title?.toLowerCase().includes('parent')
+    );
   }, [members]);
 
   const adminMembers = useMemo(() => {
@@ -75,21 +89,9 @@ export default function AdminPage() {
     return targetDept?.teams || [];
   }, [departments, studentWingFilter]);
 
-  const load = useCallback(async () => {
-    if (!currentOrg?.id) return;
-    try {
-      const [m, d, p] = await Promise.all([
-        orgApi.members(currentOrg.id).catch((err) => { console.error('Error fetching members:', err); return []; }),
-        orgApi.departments(currentOrg.id).catch((err) => { console.error('Error fetching departments:', err); return []; }),
-        orgApi.projects(currentOrg.id).catch((err) => { console.error('Error fetching projects:', err); return []; }),
-      ]);
-      setMembers(Array.isArray(m) ? m : []);
-      setDepartments(Array.isArray(d) ? d : []);
-      setProjects(Array.isArray(p) ? p : []);
-    } catch (err) {
-      console.error('Error in AdminPage load:', err);
-    }
-  }, [currentOrg?.id]);
+  const load = useCallback(() => {
+    refreshOrgData();
+  }, [refreshOrgData]);
 
   useEffect(() => {
     load();
@@ -283,6 +285,17 @@ export default function AdminPage() {
   const isCurrentUserOwner = currentOrg?.role === 'DIRECTOR' || user?.id === currentOrg?.ownerId;
   const allTeams = departments.flatMap((d) => (d.teams || []).map((t) => ({ ...t, deptName: d.name })));
 
+  if (orgLoading && members.length === 0) {
+    return (
+      <div className="p-8 flex items-center justify-center min-h-[400px]">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+          <p className="text-sm text-muted-foreground animate-pulse">Loading administration workspace...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="p-4 sm:p-6 lg:p-8 space-y-4" data-testid="admin-page">
       <div>
@@ -304,11 +317,10 @@ export default function AdminPage() {
                 <button
                   type="button"
                   onClick={() => setMemberSubTab('faculty')}
-                  className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center gap-1.5 ${
-                    memberSubTab === 'faculty'
+                  className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center gap-1.5 ${memberSubTab === 'faculty'
                       ? 'bg-background text-foreground shadow-sm'
                       : 'text-muted-foreground hover:text-foreground'
-                  }`}
+                    }`}
                 >
                   <UserCheck className="h-3.5 w-3.5 text-blue-500" />
                   <span>Faculty & Staff</span>
@@ -317,15 +329,26 @@ export default function AdminPage() {
                 <button
                   type="button"
                   onClick={() => setMemberSubTab('students')}
-                  className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center gap-1.5 ${
-                    memberSubTab === 'students'
+                  className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center gap-1.5 ${memberSubTab === 'students'
                       ? 'bg-background text-foreground shadow-sm'
                       : 'text-muted-foreground hover:text-foreground'
-                  }`}
+                    }`}
                 >
                   <GraduationCap className="h-3.5 w-3.5 text-emerald-500" />
                   <span>Students Directory</span>
                   <Badge variant="secondary" className="ml-1 text-[10px] px-1.5 py-0">{members.filter((m) => m.role === 'STUDENT').length}</Badge>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMemberSubTab('parents')}
+                  className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center gap-1.5 ${memberSubTab === 'parents'
+                      ? 'bg-background text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                >
+                  <HeartHandshake className="h-3.5 w-3.5 text-purple-500" />
+                  <span>Parents Directory</span>
+                  <Badge variant="secondary" className="ml-1 text-[10px] px-1.5 py-0">{parentMembers.length}</Badge>
                 </button>
               </div>
 
@@ -403,11 +426,10 @@ export default function AdminPage() {
                               ) : (
                                 <Badge
                                   variant="secondary"
-                                  className={`text-[10px] uppercase font-bold tracking-wide ${
-                                    m.role === 'DIRECTOR'
+                                  className={`text-[10px] uppercase font-bold tracking-wide ${m.role === 'DIRECTOR'
                                       ? 'bg-amber-500/10 text-amber-500 border border-amber-500/30 font-extrabold'
                                       : ''
-                                  }`}
+                                    }`}
                                 >
                                   {m.role}
                                 </Badge>
@@ -434,6 +456,67 @@ export default function AdminPage() {
                         <tr>
                           <td colSpan={5} className="text-center py-8 text-xs text-muted-foreground">
                             No faculty or staff members in this department yet.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              ) : memberSubTab === 'parents' ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="border-b border-border bg-muted/20">
+                      <tr className="text-left text-muted-foreground">
+                        <th className="px-4 py-2.5 font-medium">Parent / Guardian Name</th>
+                        <th className="px-4 py-2.5 font-medium">Email</th>
+                        <th className="px-4 py-2.5 font-medium">Role Tag</th>
+                        <th className="px-4 py-2.5 font-medium">Joined</th>
+                        <th className="px-4 py-2.5 font-medium text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {parentMembers.map((m) => {
+                        const canRemove = canRemoveMember(m);
+                        return (
+                          <tr key={m.id} className="border-b border-border hover:bg-muted/30 transition-colors">
+                            <td className="px-4 py-2.5">
+                              <div className="flex items-center gap-2">
+                                <Avatar className="h-7 w-7">
+                                  <AvatarImage src={m.user?.avatarUrl} />
+                                  <AvatarFallback className="text-[10px] bg-purple-500/10 text-purple-500 font-bold">
+                                    {initials(m.user?.fullName || m.user?.email)}
+                                  </AvatarFallback>
+                                </Avatar>
+                                <span className="font-medium">{m.user?.fullName || m.user?.email || 'Parent / Guardian'}</span>
+                              </div>
+                            </td>
+                            <td className="px-4 py-2.5 text-muted-foreground">{m.user?.email}</td>
+                            <td className="px-4 py-2.5">
+                              <Badge variant="secondary" className="text-[10px] uppercase font-bold tracking-wide bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                                PARENT
+                              </Badge>
+                            </td>
+                            <td className="px-4 py-2.5 text-muted-foreground text-xs">{new Date(m.joinedAt).toLocaleDateString()}</td>
+                            <td className="px-4 py-2.5 text-right space-x-1">
+                              {canRemove && (
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                                  onClick={() => setRemoveDialog({ open: true, member: m })}
+                                  title="Remove parent"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {parentMembers.length === 0 && (
+                        <tr>
+                          <td colSpan={5} className="text-center py-8 text-xs text-muted-foreground">
+                            No parent/guardian accounts registered in this workspace yet.
                           </td>
                         </tr>
                       )}
@@ -715,7 +798,7 @@ export default function AdminPage() {
           <div className="space-y-3">
             <div><Label>Email</Label><Input value={invite.email} onChange={(e) => setInvite({ ...invite, email: e.target.value })} placeholder="person@company.com" /></div>
             <div><Label>Full name</Label><Input value={invite.fullName} onChange={(e) => setInvite({ ...invite, fullName: e.target.value })} placeholder="Jane Doe" /></div>
-            <div><Label>Role</Label><Select value={invite.role} onValueChange={(v) => setInvite({ ...invite, role: v })}><SelectTrigger><SelectValue/></SelectTrigger><SelectContent>{(assignableRoles.length > 0 ? assignableRoles : ['TEACHER']).map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}</SelectContent></Select></div>
+            <div><Label>Role</Label><Select value={invite.role} onValueChange={(v) => setInvite({ ...invite, role: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{(assignableRoles.length > 0 ? assignableRoles : ['TEACHER']).map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}</SelectContent></Select></div>
           </div>
           <DialogFooter><Button variant="outline" onClick={() => setInvite({ ...invite, open: false })}>Cancel</Button><Button onClick={submitInvite} disabled={!invite.email}>Invite</Button></DialogFooter>
         </DialogContent>
@@ -767,7 +850,7 @@ export default function AdminPage() {
             <div>
               <Label>School Wing / Department</Label>
               <Select value={newTeam.deptId} onValueChange={(v) => setNewTeam({ ...newTeam, deptId: v })}>
-                <SelectTrigger><SelectValue placeholder="Choose school wing"/></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder="Choose school wing" /></SelectTrigger>
                 <SelectContent>{departments.map((d) => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}</SelectContent>
               </Select>
             </div>
@@ -811,11 +894,10 @@ export default function AdminPage() {
                       key={t.id}
                       type="button"
                       onClick={() => toggleTeamSelection(t.id)}
-                      className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all flex items-center gap-1.5 border ${
-                        isSelected
+                      className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all flex items-center gap-1.5 border ${isSelected
                           ? 'bg-primary text-primary-foreground border-primary shadow-sm'
                           : 'bg-background hover:bg-muted text-muted-foreground border-border'
-                      }`}
+                        }`}
                     >
                       <span>{t.deptName} &rarr; {t.name}</span>
                       {isSelected && <span className="font-bold">&times;</span>}

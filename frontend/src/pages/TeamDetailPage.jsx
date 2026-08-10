@@ -9,9 +9,10 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
-import { ArrowLeft, Building2, Users, FolderGit2, UserPlus, UserCheck, Trash2, ChevronRight, Shield, Settings, Crown, MessageSquare } from 'lucide-react';
+import { ArrowLeft, Building2, Users, FolderGit2, UserPlus, UserCheck, Trash2, ChevronRight, Shield, Settings, Crown, MessageSquare, Loader2, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
 
@@ -25,6 +26,7 @@ export default function TeamDetailPage() {
   const { currentOrg, user } = useAuth();
   const [team, setTeam] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMembers, setLoadingMembers] = useState(false);
   const [orgMembers, setOrgMembers] = useState([]);
   const [addMemberDialog, setAddMemberDialog] = useState({ open: false, selectedUserIds: [], search: '' });
   const [managerDialog, setManagerDialog] = useState({ open: false, managerId: '' });
@@ -33,18 +35,28 @@ export default function TeamDetailPage() {
     if (!currentOrg?.id || !teamId) return;
     try {
       setLoading(true);
-      const [teamData, membersData] = await Promise.all([
-        orgApi.getTeam(currentOrg.id, teamId),
-        orgApi.members(currentOrg.id),
-      ]);
+      const teamData = await orgApi.getTeam(currentOrg.id, teamId);
       setTeam(teamData);
-      setOrgMembers(Array.isArray(membersData) ? membersData : []);
     } catch (e) {
-      toast.error(e?.response?.data?.error || 'Failed to load team details');
+      toast.error(e?.response?.data?.error || 'Failed to load class details');
     } finally {
       setLoading(false);
     }
   }, [currentOrg?.id, teamId]);
+
+  const openAddMemberDialog = async () => {
+    setAddMemberDialog({ open: true, selectedUserIds: [], search: '' });
+    if (orgMembers.length === 0 && currentOrg?.id) {
+      setLoadingMembers(true);
+      try {
+        const m = await orgApi.members(currentOrg.id);
+        setOrgMembers(Array.isArray(m) ? m : []);
+      } catch (e) {
+      } finally {
+        setLoadingMembers(false);
+      }
+    }
+  };
 
   useEffect(() => {
     loadTeam();
@@ -54,18 +66,18 @@ export default function TeamDetailPage() {
     if (!addMemberDialog.selectedUserIds?.length) return;
     try {
       await orgApi.addTeamMember(currentOrg.id, teamId, addMemberDialog.selectedUserIds);
-      toast.success(`${addMemberDialog.selectedUserIds.length} member(s) added to team`);
+      toast.success(`${addMemberDialog.selectedUserIds.length} member(s) added to class`);
       setAddMemberDialog({ open: false, selectedUserIds: [], search: '' });
       loadTeam();
     } catch (e) {
-      toast.error(e?.response?.data?.error || 'Failed to add members to team');
+      toast.error(e?.response?.data?.error || 'Failed to add members to class');
     }
   };
 
   const handleRemoveMember = async (membershipId) => {
     try {
       await orgApi.removeTeamMember(currentOrg.id, teamId, membershipId);
-      toast.success('Member removed from team');
+      toast.success('Member removed from class');
       loadTeam();
     } catch (e) {
       toast.error(e?.response?.data?.error || 'Failed to remove member');
@@ -75,29 +87,45 @@ export default function TeamDetailPage() {
   const handleUpdateManager = async () => {
     try {
       await orgApi.updateTeam(currentOrg.id, teamId, { managerId: managerDialog.managerId || null });
-      toast.success('Team manager updated');
+      toast.success('Class Teacher updated');
       setManagerDialog({ open: false, managerId: '' });
       loadTeam();
     } catch (e) {
-      toast.error(e?.response?.data?.error || 'Failed to update manager');
+      toast.error(e?.response?.data?.error || 'Failed to update Class Teacher');
     }
   };
 
   if (loading) {
     return (
-      <div className="flex h-96 items-center justify-center text-muted-foreground">
-        Loading team details...
+      <div className="p-6 space-y-6 max-w-5xl mx-auto animate-pulse">
+        <Skeleton className="h-6 w-32" />
+        <div className="flex items-center justify-between">
+          <Skeleton className="h-10 w-64" />
+          <Skeleton className="h-9 w-36" />
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <Skeleton className="h-20" />
+          <Skeleton className="h-20" />
+          <Skeleton className="h-20" />
+        </div>
+        <Skeleton className="h-64" />
       </div>
     );
   }
 
   if (!team) {
     return (
-      <div className="p-8 text-center space-y-4">
-        <h2 className="text-xl font-semibold">Team not found</h2>
-        <Button variant="outline" onClick={() => navigate('/app/admin')}>
-          <ArrowLeft className="h-4 w-4 mr-2" /> Back to Admin
-        </Button>
+      <div className="p-8 text-center space-y-4 max-w-md mx-auto my-12">
+        <h2 className="text-xl font-semibold">Class Section not found</h2>
+        <p className="text-xs text-muted-foreground">The class details could not be loaded or the database connection was interrupted.</p>
+        <div className="flex justify-center gap-2">
+          <Button variant="outline" onClick={loadTeam} className="gap-1.5 text-xs font-semibold">
+            <RefreshCw className="h-3.5 w-3.5" /> Retry Loading
+          </Button>
+          <Button variant="default" onClick={() => navigate('/app/admin')} className="gap-1.5 text-xs font-semibold">
+            <ArrowLeft className="h-3.5 w-3.5" /> Back to Admin
+          </Button>
+        </div>
       </div>
     );
   }
@@ -142,7 +170,7 @@ export default function TeamDetailPage() {
 
           <div className="flex items-center gap-2">
             {canManage && (
-              <Button size="sm" onClick={() => setAddMemberDialog({ open: true, userId: '' })}>
+              <Button size="sm" onClick={openAddMemberDialog}>
                 <UserPlus className="h-4 w-4 mr-1.5" /> Add Member to Class
               </Button>
             )}
@@ -203,7 +231,7 @@ export default function TeamDetailPage() {
                 <CardDescription className="text-xs">Manage workspace members assigned to this team</CardDescription>
               </div>
               {canManage && (
-                <Button size="sm" variant="outline" onClick={() => setAddMemberDialog({ open: true, userId: '' })}>
+                <Button size="sm" variant="outline" onClick={openAddMemberDialog}>
                   <UserPlus className="h-4 w-4 mr-1.5" /> Add Member
                 </Button>
               )}

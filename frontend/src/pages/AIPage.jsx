@@ -1,13 +1,14 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { aiApi, taskApi } from '@/lib/api';
+import { aiApi, taskApi, channelApi, parentApi } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Sparkles, Send, Zap, ListTodo, FileText, MessageSquareText, Plus, Trash2, PanelLeft, Clock, GraduationCap, BookOpen, Check } from 'lucide-react';
+import { Sparkles, Send, Zap, ListTodo, FileText, MessageSquareText, Plus, Trash2, PanelLeft, Clock, GraduationCap, BookOpen, Check, UserCheck, Mail } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
 import FormattedMarkdown from '@/components/FormattedMarkdown';
@@ -26,7 +27,15 @@ const STUDENT_PROMPTS = [
   { icon: MessageSquareText, label: 'Grade Announcements', prompt: 'What are the latest announcements for my grade and school wing?' },
 ];
 
+const PARENT_PROMPTS = [
+  { icon: ListTodo, label: "Child's Progress & Homework 📊", prompt: "Summarize my child's current academic progress, attendance rate, and pending homework assignments." },
+  { icon: MessageSquareText, label: 'Contact Class Teacher ✉️', prompt: 'Draft a polite message to my child\'s Class Teacher regarding their recent homework performance and attendance.' },
+  { icon: GraduationCap, label: 'Contact Head of Department (HOD) 🏛️', prompt: 'Draft a message to the Head of Department (HOD) to discuss my child\'s overall academic progress and support.' },
+  { icon: Sparkles, label: 'Help Child With Homework 💡', prompt: 'My child needs help understanding their homework assignment. Can you break down the concept step-by-step so I can guide them?' },
+];
+
 const TEACHER_PROMPTS = [
+  { icon: GraduationCap, label: 'Generate Quiz / Question Bank 📝', prompt: 'Generate an Exam Question Bank (5 MCQs + 3 Short Answer Questions with answer key) from the topic: Photosynthesis & Cell Respiration.' },
   { icon: ListTodo, label: 'Check Homework Submissions', prompt: 'Who has submitted their homework and who has not submitted yet for my class?' },
   { icon: BookOpen, label: 'Create Class Homework', prompt: 'Create a new science homework assignment for Grade 10 Sec A on Quadratic Equations due next Monday with instructions and checklist.' },
   { icon: Sparkles, label: 'Class Submission Analytics', prompt: 'Give me a full breakdown of homework submission rates across my class sections and department.' },
@@ -36,6 +45,7 @@ const TEACHER_PROMPTS = [
 function initials(n) { return (n || '?').split(' ').map((x) => x[0]).slice(0, 2).join('').toUpperCase(); }
 
 export default function AIPage() {
+  const navigate = useNavigate();
   const { user, currentOrg } = useAuth();
   const [conversations, setConversations] = useState([]);
   const [activeSessionKey, setActiveSessionKey] = useState('');
@@ -46,7 +56,8 @@ export default function AIPage() {
   const scrollRef = useRef();
 
   const isStudent = currentOrg?.role === 'STUDENT';
-  const activePrompts = isStudent ? STUDENT_PROMPTS : TEACHER_PROMPTS;
+  const isParent = currentOrg?.role === 'PARENT' || user?.email?.includes('parent');
+  const activePrompts = isStudent ? STUDENT_PROMPTS : isParent ? PARENT_PROMPTS : TEACHER_PROMPTS;
 
   const loadConversations = useCallback(async () => {
     try {
@@ -221,16 +232,56 @@ export default function AIPage() {
     }
   };
 
+  const handleSendFacultyMessage = async (contactProposal) => {
+    try {
+      let targetUserId = contactProposal.recipientId;
+      if (!targetUserId || targetUserId === 'class_teacher' || targetUserId === 'hod') {
+        const children = await parentApi.getMyChildren().catch(() => []);
+        if (children.length > 0) {
+          const studentId = children[0].userId || children[0].user?.id;
+          const report = await parentApi.getChildReport(studentId, currentOrg?.id).catch(() => null);
+          if (targetUserId === 'hod' && report?.hodUser?.id) {
+            targetUserId = report.hodUser.id;
+          } else if (report?.classTeacher?.id) {
+            targetUserId = report.classTeacher.id;
+          }
+        }
+      }
+
+      if (!targetUserId || targetUserId.includes(' ')) {
+        toast.error('Faculty contact not found');
+        return;
+      }
+
+      const dmCh = await channelApi.dm(currentOrg.id, targetUserId);
+      if (contactProposal.draftMessage) {
+        await channelApi.sendMessage(dmCh.id, { content: contactProposal.draftMessage });
+        toast.success(`Draft sent to ${contactProposal.recipientName || contactProposal.recipientRole || 'Faculty'}! 💬`);
+      }
+      navigate(`/app/channels/${dmCh.id}`);
+    } catch (e) {
+      toast.error('Failed to message faculty member');
+    }
+  };
+
   const renderAIMessageContent = (msgObj) => {
     const content = msgObj.content;
     const jsonMatch = content.match(/```json\s*(\{[\s\S]*?"action"\s*:\s*"create_homework"[\s\S]*?\})\s*```/);
+    const contactMatch = content.match(/```json\s*(\{[\s\S]*?"action"\s*:\s*"contact_faculty"[\s\S]*?\})\s*```/);
+    
     let proposal = null;
+    let contactProposal = null;
     let textOnly = content;
 
     if (jsonMatch) {
       try {
         proposal = JSON.parse(jsonMatch[1]);
         textOnly = content.replace(jsonMatch[0], '').trim();
+      } catch (e) {}
+    } else if (contactMatch) {
+      try {
+        contactProposal = JSON.parse(contactMatch[1]);
+        textOnly = content.replace(contactMatch[0], '').trim();
       } catch (e) {}
     }
 
@@ -279,6 +330,28 @@ export default function AIPage() {
             </Button>
           </Card>
         )}
+
+        {contactProposal && (
+          <Card className="border border-purple-500/30 bg-purple-500/10 p-3.5 rounded-xl space-y-2.5 text-xs">
+            <div className="flex items-center justify-between font-bold text-purple-400">
+              <span className="flex items-center gap-1.5"><MessageSquareText className="h-4 w-4" /> Message Draft for {contactProposal.recipientRole || 'Faculty'}</span>
+              <Badge variant="outline" className="text-[10px] bg-purple-500/20 text-purple-300">Ready to Send</Badge>
+            </div>
+            <div className="font-semibold text-sm text-foreground">{contactProposal.recipientName || contactProposal.recipientRole}</div>
+            {contactProposal.draftMessage && (
+              <div className="p-2.5 rounded-lg bg-background/80 border border-border text-foreground text-xs whitespace-pre-wrap max-h-36 overflow-y-auto">
+                {contactProposal.draftMessage}
+              </div>
+            )}
+            <Button
+              size="sm"
+              onClick={() => handleSendFacultyMessage(contactProposal)}
+              className="w-full h-8 font-bold text-xs shadow-md mt-1 bg-purple-600 hover:bg-purple-700 text-white"
+            >
+              <MessageSquareText className="h-3.5 w-3.5 mr-1.5" /> Send Direct Message to {contactProposal.recipientRole || 'Faculty'}
+            </Button>
+          </Card>
+        )}
       </div>
     );
   };
@@ -299,15 +372,15 @@ export default function AIPage() {
           </Button>
 
           <div className="flex items-center gap-2">
-            <div className={`h-8 w-8 rounded-md flex items-center justify-center ${isStudent ? 'bg-emerald-500/15 text-emerald-500' : 'bg-accent/15 text-accent'}`}>
-              {isStudent ? <GraduationCap className="h-4.5 w-4.5" /> : <Sparkles className="h-4.5 w-4.5" />}
+            <div className={`h-8 w-8 rounded-md flex items-center justify-center ${isStudent ? 'bg-emerald-500/15 text-emerald-500' : isParent ? 'bg-purple-500/15 text-purple-500' : 'bg-accent/15 text-accent'}`}>
+              {isStudent ? <GraduationCap className="h-4.5 w-4.5" /> : isParent ? <UserCheck className="h-4.5 w-4.5" /> : <Sparkles className="h-4.5 w-4.5" />}
             </div>
             <div>
               <div className="font-display font-semibold text-sm leading-tight">
-                {isStudent ? 'Academic AI Study Buddy' : 'AI Campus & Homework Assistant'}
+                {isStudent ? 'Academic AI Study Buddy' : isParent ? 'Parent AI Academic Assistant' : 'AI Campus & Homework Assistant'}
               </div>
               <div className="text-[11px] text-muted-foreground">
-                {isStudent ? 'Your 24/7 personal tutor for homework, class tasks, and projects' : 'Class homework creation & student submission tracking'}
+                {isStudent ? 'Your 24/7 personal tutor for homework, class tasks, and projects' : isParent ? "Monitor your child's progress & homework, and connect with Teachers & HOD" : 'Class homework creation & student submission tracking'}
               </div>
             </div>
           </div>

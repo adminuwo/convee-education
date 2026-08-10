@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { orgApi } from '@/lib/api';
+import { orgApi, attendanceApi } from '@/lib/api';
+import { useOrgData } from '@/contexts/OrgDataContext';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,7 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { Building2, Users, Layers, Crown, ChevronRight, GraduationCap, UserCheck, Search, BookOpen, Sparkles, FolderGit2 } from 'lucide-react';
+import { Building2, Users, Layers, Crown, ChevronRight, GraduationCap, UserCheck, Search, BookOpen, Sparkles, FolderGit2, CalendarCheck, AlertTriangle, CheckCircle, Clock } from 'lucide-react';
 import { connectSocket, getSocket } from '@/lib/socket';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
@@ -25,40 +26,45 @@ export default function TeacherPage() {
   const activeTab = searchParams.get('tab') || 'students';
 
   const { currentOrg, user, refresh, memberships } = useAuth();
-  const [members, setMembers] = useState([]);
-  const [departments, setDepartments] = useState([]);
-  const [projects, setProjects] = useState([]);
+  const { members: orgMembers, departments, projects, loading: loadingOrgData, refreshOrgData } = useOrgData();
+  const members = orgMembers;
   const [studentSearch, setStudentSearch] = useState('');
   const [selectedClassId, setSelectedClassId] = useState('');
 
-  const load = useCallback(async () => {
+  // Attendance state per student
+  const [attendanceMap, setAttendanceMap] = useState({});
+  const [attendanceStats, setAttendanceStats] = useState(null);
+  const [savingAttendance, setSavingAttendance] = useState(false);
+
+  // Fetch low attendance stats for alerts
+  const loadAttendanceStats = useCallback(async () => {
     if (!currentOrg?.id) return;
     try {
-      const [m, d, p] = await Promise.all([
-        orgApi.members(currentOrg.id).catch(() => []),
-        orgApi.departments(currentOrg.id).catch(() => []),
-        orgApi.projects(currentOrg.id).catch(() => []),
-      ]);
-      setMembers(Array.isArray(m) ? m : []);
-      setDepartments(Array.isArray(d) ? d : []);
-      setProjects(Array.isArray(p) ? p : []);
-    } catch (err) {
-      console.error('Error in TeacherPage load:', err);
+      const stats = await attendanceApi.getStats(currentOrg.id);
+      setAttendanceStats(stats);
+    } catch (e) {
+      // ignore
     }
   }, [currentOrg?.id]);
 
   useEffect(() => {
-    load();
+    loadAttendanceStats();
+  }, [loadAttendanceStats]);
+
+  useEffect(() => {
     let s = getSocket() || connectSocket();
     if (!s) return;
-    const handleUpdate = () => { load(); if (typeof refresh === 'function') refresh(); };
+    const handleUpdate = () => {
+      refreshOrgData();
+      if (typeof refresh === 'function') refresh();
+    };
     s.on('department:updated', handleUpdate);
     s.on('membership:updated', handleUpdate);
     return () => {
       s.off('department:updated', handleUpdate);
       s.off('membership:updated', handleUpdate);
     };
-  }, [load, refresh]);
+  }, [refreshOrgData, refresh]);
 
   // All Class Sections across departments
   const allTeams = useMemo(() => {
@@ -102,6 +108,37 @@ export default function TeacherPage() {
   }, [selectedClassId, myClassTeacherTeams]);
 
   // Students belonging to the selected Class Teacher section
+  const [invite, setInvite] = useState({ open: false, email: '', fullName: '', role: 'STUDENT' });
+  const submitInvite = async () => {
+    try { await orgApi.invite(currentOrg.id, invite); toast.success('Invited member to department'); setInvite({ open: false, email: '', fullName: '', role: 'STUDENT' }); refreshOrgData(); } catch (e) { toast.error(e?.response?.data?.error || 'Failed'); }
+  };
+
+  const handleSaveAttendance = async () => {
+    if (!activeClassTeam || classStudents.length === 0) return;
+    setSavingAttendance(true);
+    try {
+      const records = classStudents.map((s) => {
+        const uId = s.userId || s.user?.id;
+        return {
+          studentId: uId,
+          status: attendanceMap[uId] || 'PRESENT',
+        };
+      });
+
+      await attendanceApi.batchLog({
+        orgId: currentOrg.id,
+        teamId: activeClassTeam.id,
+        records,
+      });
+
+      toast.success(`Logged today's attendance for ${records.length} students! 📋`);
+      loadAttendanceStats();
+    } catch (e) {
+      toast.error('Failed to log attendance');
+    } finally {
+      setSavingAttendance(false);
+    }
+  };
   const classStudents = useMemo(() => {
     if (!activeClassTeam) return [];
     
@@ -229,9 +266,29 @@ export default function TeacherPage() {
               </CardHeader>
 
               <CardContent className="pt-4 space-y-4">
-                {/* Search Bar */}
-                <div className="flex items-center gap-2 max-w-sm">
-                  <div className="relative w-full">
+                {/* Low Attendance Warning Alert Banner */}
+                {attendanceStats?.lowAttendanceCount > 0 && (
+                  <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-3 text-xs text-amber-700 dark:text-amber-300">
+                    <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <div className="font-bold flex items-center gap-2">
+                        <span>Low Monthly Attendance Alert (&lt;75%)</span>
+                        <Badge variant="destructive" className="text-[10px] px-1.5 py-0 rounded-full font-bold">
+                          {attendanceStats.lowAttendanceCount} Student(s)
+                        </Badge>
+                      </div>
+                      <div className="text-[11px] mt-0.5 text-amber-600 dark:text-amber-400">
+                        The following student(s) fall below 75% monthly attendance: {' '}
+                        <strong>{attendanceStats.lowAttendanceAlerts.map(a => `${a.studentName} (${a.percentage}%)`).join(', ')}</strong>.
+                        Notification alerts sent to HODs and Principal.
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Header Controls: Search + Batch Attendance Action */}
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  <div className="relative w-full sm:w-72">
                     <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                     <Input
                       type="text"
@@ -241,44 +298,88 @@ export default function TeacherPage() {
                       className="pl-9 h-9 text-xs"
                     />
                   </div>
+
+                  <Button
+                    onClick={handleSaveAttendance}
+                    disabled={savingAttendance || classStudents.length === 0}
+                    className="w-full sm:w-auto h-9 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-sm"
+                  >
+                    <CalendarCheck className="h-4 w-4 mr-1.5" /> Log Today's Attendance ({classStudents.length} Students)
+                  </Button>
                 </div>
 
-                {/* Students Table */}
+                {/* Students Table with 1-Click Attendance Toggle */}
                 <div className="overflow-x-auto rounded-md border border-border">
                   <table className="w-full text-sm">
                     <thead className="border-b border-border bg-muted/30">
                       <tr className="text-left text-muted-foreground text-xs font-semibold">
                         <th className="px-4 py-2.5">Student Name</th>
                         <th className="px-4 py-2.5">Email</th>
-                        <th className="px-4 py-2.5">Role / Position</th>
-                        <th className="px-4 py-2.5">Enrolled Date</th>
+                        <th className="px-4 py-2.5 text-center">Today's Attendance Status</th>
+                        <th className="px-4 py-2.5 text-right">Monthly Stat</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {classStudents.map((s) => (
-                        <tr key={s.id || s.userId} className="border-b border-border hover:bg-muted/30 transition-colors">
-                          <td className="px-4 py-2.5">
-                            <div className="flex items-center gap-2.5">
-                              <Avatar className="h-8 w-8 border border-border">
-                                <AvatarImage src={s.user?.avatarUrl} />
-                                <AvatarFallback className="text-[10px] bg-emerald-500/10 text-emerald-500 font-bold">
-                                  {initials(s.user?.fullName || s.user?.email)}
-                                </AvatarFallback>
-                              </Avatar>
-                              <span className="font-semibold text-foreground text-xs">{s.user?.fullName || s.user?.email || 'Unnamed Student'}</span>
-                            </div>
-                          </td>
-                          <td className="px-4 py-2.5 text-xs text-muted-foreground">{s.user?.email}</td>
-                          <td className="px-4 py-2.5">
-                            <Badge variant="outline" className="text-[10px] uppercase font-bold bg-emerald-500/10 text-emerald-500 border-emerald-500/30">
-                              STUDENT
-                            </Badge>
-                          </td>
-                          <td className="px-4 py-2.5 text-xs text-muted-foreground">
-                            {s.joinedAt ? new Date(s.joinedAt).toLocaleDateString() : 'Active'}
-                          </td>
-                        </tr>
-                      ))}
+                      {classStudents.map((s) => {
+                        const uId = s.userId || s.user?.id;
+                        const currentStatus = attendanceMap[uId] || 'PRESENT';
+                        const studentStat = attendanceStats?.studentStats?.find(st => st.studentId === uId);
+
+                        return (
+                          <tr key={s.id || uId} className="border-b border-border hover:bg-muted/30 transition-colors">
+                            <td className="px-4 py-2.5">
+                              <div className="flex items-center gap-2.5">
+                                <Avatar className="h-8 w-8 border border-border">
+                                  <AvatarImage src={s.user?.avatarUrl} />
+                                  <AvatarFallback className="text-[10px] bg-emerald-500/10 text-emerald-500 font-bold">
+                                    {initials(s.user?.fullName || s.user?.email)}
+                                  </AvatarFallback>
+                                </Avatar>
+                                <div>
+                                  <div className="font-semibold text-foreground text-xs">{s.user?.fullName || s.user?.email || 'Student'}</div>
+                                  {studentStat?.isLowAttendance && (
+                                    <Badge variant="destructive" className="text-[9px] px-1 py-0 h-3.5 font-bold mt-0.5">
+                                      Low Attendance ({studentStat.percentage}%)
+                                    </Badge>
+                                  )}
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-4 py-2.5 text-xs text-muted-foreground">{s.user?.email}</td>
+                            <td className="px-4 py-2.5">
+                              <div className="flex items-center justify-center gap-1">
+                                {[
+                                  { key: 'PRESENT', label: 'Present', color: 'bg-emerald-500 text-white' },
+                                  { key: 'ABSENT', label: 'Absent', color: 'bg-red-500 text-white' },
+                                  { key: 'LATE', label: 'Late', color: 'bg-amber-500 text-white' },
+                                  { key: 'EXCUSED', label: 'Excused', color: 'bg-blue-500 text-white' },
+                                ].map((st) => {
+                                  const isSelected = currentStatus === st.key;
+                                  return (
+                                    <button
+                                      key={st.key}
+                                      type="button"
+                                      onClick={() => setAttendanceMap(prev => ({ ...prev, [uId]: st.key }))}
+                                      className={`px-2 py-1 rounded text-[10px] font-bold transition-all ${
+                                        isSelected
+                                          ? `${st.color} shadow-sm ring-1 ring-white/20`
+                                          : 'bg-muted/60 text-muted-foreground hover:bg-muted'
+                                      }`}
+                                    >
+                                      {st.label}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </td>
+                            <td className="px-4 py-2.5 text-right font-bold text-xs">
+                              <span className={studentStat?.percentage < 75 ? 'text-red-500 font-bold' : 'text-emerald-500'}>
+                                {studentStat?.percentage ?? 100}%
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
                       {classStudents.length === 0 && (
                         <tr>
                           <td colSpan={4} className="text-center py-8 text-xs text-muted-foreground">

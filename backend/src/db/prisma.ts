@@ -4,9 +4,9 @@ import { env } from '../config/env';
 let dbUrl = env.DATABASE_URL || process.env.DATABASE_URL || '';
 if (dbUrl) {
   if (dbUrl.includes('connection_limit=')) {
-    dbUrl = dbUrl.replace(/connection_limit=\d+/, 'connection_limit=2');
+    dbUrl = dbUrl.replace(/connection_limit=\d+/, 'connection_limit=5');
   } else {
-    dbUrl += (dbUrl.includes('?') ? '&' : '?') + 'connection_limit=2&pool_timeout=20';
+    dbUrl += (dbUrl.includes('?') ? '&' : '?') + 'connection_limit=5&pool_timeout=30';
   }
 }
 
@@ -15,7 +15,10 @@ const prisma = new PrismaClient({
   log: ['error', 'warn'],
 });
 
+let ensured = false;
 export async function ensureProjectTeamTable() {
+  if (ensured) return;
+  ensured = true;
   try {
     await prisma.$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS "ProjectTeam" (
@@ -60,6 +63,7 @@ export async function ensureProjectTeamTable() {
   }
 }
 
-ensureProjectTeamTable();
+// Run asynchronously in background on startup
+setTimeout(() => ensureProjectTeamTable().catch(() => {}), 1000);
 
 export default prisma;

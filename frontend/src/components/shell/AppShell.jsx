@@ -4,6 +4,7 @@ import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
 import { CommandPalette } from './CommandPalette';
 import { useAuth } from '@/contexts/AuthContext';
+import { OrgDataProvider } from '@/contexts/OrgDataContext';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
 
 export default function AppShell() {
@@ -24,6 +25,17 @@ export default function AppShell() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  useEffect(() => {
+    if (currentOrg?.role === 'PARENT') {
+      const allowedPrefixes = ['/app/parent', '/app/home', '/app/homework', '/app/meetings', '/app/ai', '/app/channels', '/app/profile'];
+      const currentPath = location.pathname;
+      const isAllowed = allowedPrefixes.some((prefix) => currentPath.startsWith(prefix));
+      if (!isAllowed) {
+        navigate('/app/parent', { replace: true });
+      }
+    }
+  }, [currentOrg?.role, location.pathname, navigate]);
+
   if (!currentOrg) {
     return (
       <div className="flex h-screen flex-col items-center justify-center gap-3 p-8 text-center">
@@ -34,7 +46,8 @@ export default function AppShell() {
   }
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-background text-foreground" data-testid="app-shell">
+    <OrgDataProvider>
+      <div className="flex h-screen w-full overflow-hidden bg-background text-foreground" data-testid="app-shell">
       {/* Desktop sidebar */}
       <aside className="hidden md:flex md:w-[280px] flex-shrink-0 border-r border-border bg-[hsl(var(--sidebar))]">
         <Sidebar />
@@ -55,5 +68,6 @@ export default function AppShell() {
 
       <CommandPalette open={cmdOpen} setOpen={setCmdOpen} />
     </div>
-  );
+  </OrgDataProvider>
+);
 }

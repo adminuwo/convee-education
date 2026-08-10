@@ -1,13 +1,24 @@
+import crypto from 'crypto';
 import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import prisma from '../db/prisma';
 import { authenticate, attachOrg } from '../middleware/auth';
 import { requireRole } from '../middleware/rbac';
 import { validate } from '../middleware/validate';
 import { hashPassword } from '../utils/password';
+import { isEmailConfigured, sendVerificationEmail, verifyEmailDomain } from '../utils/email';
 
 const router = Router();
 router.use(authenticate);
+
+const inviteLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 50,
+  message: { error: 'Too many invitations sent from this IP. Please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 const CreateOrgSchema = z.object({
   name: z.string().min(1),
@@ -68,31 +79,38 @@ router.get('/:orgId/departments', async (req, res, next) => {
     const m = await prisma.membership.findFirst({ where: { userId: req.user!.id, orgId: req.params.orgId, isActive: true } });
     if (!m) return res.status(403).json({ error: 'Not a member' });
 
-    await prisma.$executeRawUnsafe(`
-      UPDATE "Membership" m
-      SET "departmentId" = t."departmentId"
-      FROM "Team" t
-      WHERE m."teamId" = t.id AND m."orgId" = $1 AND m."departmentId" IS NULL
-    `, req.params.orgId).catch(() => {});
-
-    const departments = await prisma.department.findMany({
-      where: { orgId: req.params.orgId, deletedAt: null },
-      include: {
-        teams: {
-          where: { deletedAt: null },
-          include: {
-            memberships: {
-              where: { isActive: true },
-              include: {
-                user: { select: { id: true, fullName: true, email: true, avatarUrl: true } },
+    const [departments, teamChannels, orgMemberships] = await Promise.all([
+      prisma.department.findMany({
+        where: { orgId: req.params.orgId, deletedAt: null },
+        include: {
+          teams: {
+            where: { deletedAt: null },
+            include: {
+              memberships: {
+                where: { isActive: true },
+                include: {
+                  user: { select: { id: true, fullName: true, email: true, avatarUrl: true } },
+                },
               },
+              _count: { select: { memberships: true, projects: true } },
             },
-            _count: { select: { memberships: true, projects: true } },
+          },
+          _count: { select: { memberships: true, teams: true } },
+        },
+      }),
+      prisma.channel.findMany({
+        where: { orgId: req.params.orgId, type: 'TEAM', deletedAt: null },
+        include: {
+          members: {
+            include: { user: { select: { id: true, fullName: true, email: true, avatarUrl: true } } },
           },
         },
-        _count: { select: { memberships: true, teams: true } },
-      },
-    });
+      }),
+      prisma.membership.findMany({
+        where: { orgId: req.params.orgId, isActive: true },
+        select: { id: true, userId: true, departmentId: true, teamId: true },
+      }),
+    ]);
 
     const headIds = departments.map((d) => d.headId).filter(Boolean) as string[];
     const headUsers = headIds.length > 0 ? await prisma.user.findMany({
@@ -101,21 +119,7 @@ router.get('/:orgId/departments', async (req, res, next) => {
     }) : [];
     const headUserMap = new Map(headUsers.map((u) => [u.id, u]));
 
-    const teamChannels = await prisma.channel.findMany({
-      where: { orgId: req.params.orgId, type: 'TEAM', deletedAt: null },
-      include: {
-        members: {
-          include: { user: { select: { id: true, fullName: true, email: true, avatarUrl: true } } },
-        },
-      },
-    });
-
     const channelMap = new Map(teamChannels.map((c) => [c.name.toLowerCase(), c.members]));
-
-    const orgMemberships = await prisma.membership.findMany({
-      where: { orgId: req.params.orgId, isActive: true },
-      select: { id: true, userId: true, departmentId: true, teamId: true },
-    });
 
     const result = departments.map((d) => {
       const deptUserIds = new Set<string>();
@@ -301,7 +305,7 @@ async function syncTeamChannel(orgId: string, teamId: string, io: any) {
         where: { channelId_userId: { channelId: ch.id, userId: uid } },
         create: { channelId: ch.id, userId: uid, isAdmin: uid === team.managerId },
         update: {},
-      }).catch(() => {});
+      }).catch(() => { });
     }
 
     if (io) {
@@ -314,7 +318,7 @@ async function syncTeamChannel(orgId: string, teamId: string, io: any) {
       });
       io.emit('channel:created', fullChannel);
     }
-  } catch (err) {}
+  } catch (err) { }
 }
 
 async function syncProjectChannel(orgId: string, projectId: string, io: any) {
@@ -355,7 +359,7 @@ async function syncProjectChannel(orgId: string, projectId: string, io: any) {
         where: { channelId_userId: { channelId: ch.id, userId: uid } },
         create: { channelId: ch.id, userId: uid },
         update: {},
-      }).catch(() => {});
+      }).catch(() => { });
     }
 
     if (io) {
@@ -370,7 +374,7 @@ async function syncProjectChannel(orgId: string, projectId: string, io: any) {
       io.emit('project:created', { id: project.id, name: project.name, orgId });
       io.emit('project:updated', { id: project.id, name: project.name, orgId });
     }
-  } catch (err) {}
+  } catch (err) { }
 }
 
 async function postSystemAnnouncement(orgId: string, content: string, io: any, senderId?: string) {
@@ -499,7 +503,7 @@ async function saveTeamMembers(teamId: string, userIds: string[]) {
     await prisma.membership.updateMany({
       where: { userId: uId, isActive: true },
       data: { teamId },
-    }).catch(() => {});
+    }).catch(() => { });
   }
 }
 
@@ -508,8 +512,8 @@ async function removeTeamMemberSql(teamId: string, membershipId: string) {
     await prisma.membership.update({
       where: { id: membershipId },
       data: { teamId: null },
-    }).catch(() => {});
-  } catch (e) {}
+    }).catch(() => { });
+  } catch (e) { }
 }
 
 async function getMembershipsForTeams(teamIds: string[], orgId: string) {
@@ -561,7 +565,7 @@ router.delete('/:orgId/teams/:teamId/members/:membershipId', async (req, res, ne
     await prisma.membership.update({
       where: { id: req.params.membershipId },
       data: { teamId: null },
-    }).catch(() => {});
+    }).catch(() => { });
     await syncTeamChannel(req.params.orgId, req.params.teamId, req.app.locals.io);
 
     res.json({ ok: true, message: 'Member removed from team' });
@@ -574,7 +578,7 @@ async function saveProjectTeams(projectId: string, teamIds: string[]) {
     await prisma.$executeRawUnsafe(
       `INSERT INTO "ProjectTeam" ("projectId", "teamId") VALUES ($1, $2) ON CONFLICT DO NOTHING`,
       projectId, tId
-    ).catch(() => {});
+    ).catch(() => { });
   }
 }
 
@@ -784,7 +788,7 @@ router.delete('/:orgId/projects/:projectId/teams/:teamId', async (req, res, next
     await prisma.$executeRawUnsafe(
       `DELETE FROM "ProjectTeam" WHERE "projectId" = $1 AND "teamId" = $2`,
       req.params.projectId, req.params.teamId
-    ).catch(() => {});
+    ).catch(() => { });
 
     res.json({ ok: true, message: 'Team removed from project' });
   } catch (e) { next(e); }
@@ -876,7 +880,7 @@ router.post('/invitations/:membershipId/respond', async (req, res, next) => {
           where: { channelId_userId: { channelId: genChannel.id, userId: req.user!.id } },
           create: { channelId: genChannel.id, userId: req.user!.id },
           update: {},
-        }).catch(() => {});
+        }).catch(() => { });
       }
 
       res.json({ message: 'Invitation accepted successfully!', org: mem.organization });
@@ -890,9 +894,10 @@ router.post('/invitations/:membershipId/respond', async (req, res, next) => {
 });
 
 // Invite (creates user if not exists & sends in-app notification with accept/decline)
-router.post('/:orgId/invite', async (req, res, next) => {
+router.post('/:orgId/invite', inviteLimiter, async (req, res, next) => {
   try {
-    const m = await prisma.membership.findFirst({ where: { userId: req.user!.id, orgId: req.params.orgId, isActive: true } });
+    const orgId = req.params.orgId as string;
+    const m = await prisma.membership.findFirst({ where: { userId: req.user!.id, orgId, isActive: true } });
     if (!m || !['ADMIN', 'DIRECTOR', 'PRINCIPAL', 'DEAN', 'HOD'].includes(m.role)) return res.status(403).json({ error: 'Insufficient permissions' });
     const { email, fullName, role, departmentId, teamId } = req.body;
     if (!email) return res.status(400).json({ error: 'Email required' });
@@ -911,7 +916,7 @@ router.post('/:orgId/invite', async (req, res, next) => {
         data: { email, fullName: fullName || email?.split('@')?.[0] || 'User', isVerified: false, passwordHash: null },
       });
     }
-    const existing = await prisma.membership.findFirst({ where: { userId: user.id, orgId: req.params.orgId } });
+    const existing = await prisma.membership.findFirst({ where: { userId: user.id, orgId } });
     if (existing) {
       if (existing.isActive) {
         return res.status(409).json({ error: 'This user is already registered with your organization.' });
@@ -920,16 +925,16 @@ router.post('/:orgId/invite', async (req, res, next) => {
       }
     }
     const mem = await prisma.membership.create({
-      data: { userId: user.id, orgId: req.params.orgId, role: targetRole as any, departmentId, teamId, isActive: false },
+      data: { userId: user.id, orgId, role: targetRole as any, departmentId, teamId, isActive: false },
     });
 
     const inviter = await prisma.user.findUnique({ where: { id: req.user!.id } });
-    const org = await prisma.organization.findUnique({ where: { id: req.params.orgId } });
+    const org = await prisma.organization.findUnique({ where: { id: orgId } });
 
     const notif = await prisma.notification.create({
       data: {
         userId: user.id,
-        orgId: req.params.orgId,
+        orgId,
         type: 'APPROVAL_REQUEST',
         title: `Invitation to join ${org?.name || 'Organization'}`,
         body: `${inviter?.fullName || 'An admin'} invited you to join ${org?.name || 'an organization'} as ${targetRole}.`,
@@ -1272,6 +1277,9 @@ async function generateStudentAccount({
   teamId,
   departmentName,
   className,
+  studentEmail,
+  parentEmail,
+  parentFullName,
 }: {
   orgId: string;
   fullName: string;
@@ -1280,6 +1288,9 @@ async function generateStudentAccount({
   teamId?: string;
   departmentName?: string;
   className?: string;
+  studentEmail?: string;
+  parentEmail?: string;
+  parentFullName?: string;
 }) {
   const cleanName = fullName.trim();
   const cleanAdm = admissionNo.trim().toUpperCase();
@@ -1324,34 +1335,88 @@ async function generateStudentAccount({
     if (t) teamName = t.name;
   }
 
+  // Check uniqueness of Admission Number within the Organization
+  if (cleanAdm) {
+    const admSlug = cleanAdm.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const existingStudent = await prisma.membership.findFirst({
+      where: {
+        orgId,
+        role: 'STUDENT',
+        OR: [
+          { title: { contains: cleanAdm, mode: 'insensitive' } },
+          { user: { email: { contains: `.${admSlug}@`, mode: 'insensitive' } } },
+        ],
+      },
+      include: { user: true },
+    });
+
+    if (existingStudent) {
+      throw new Error(`Admission Number "${cleanAdm}" has already been assigned. Duplicate admission numbers are not allowed.`);
+    }
+  }
+
   // Generate Unique Student ID & Unique Email
   const randomCode = Math.floor(1000 + Math.random() * 9000);
   const studentId = `STU-${new Date().getFullYear()}-${cleanAdm ? cleanAdm.replace(/[^A-Z0-9]/gi, '') : randomCode}`;
-  
-  const nameSlug = cleanName.toLowerCase().replace(/[^a-z0-9]/g, '');
-  const admSlug = cleanAdm ? cleanAdm.toLowerCase().replace(/[^a-z0-9]/g, '') : randomCode;
-  
-  let email = `stu.${nameSlug}.${admSlug}@demo.edu`;
-  let counter = 1;
 
-  while (await prisma.user.findUnique({ where: { email } })) {
-    email = `stu.${nameSlug}.${admSlug}${counter}@demo.edu`;
-    counter++;
+  let email: string;
+  let isCustomStudentEmail = false;
+
+  if (studentEmail && studentEmail.trim()) {
+    email = studentEmail.trim().toLowerCase();
+    isCustomStudentEmail = true;
+
+    // Validate email syntax and DNS MX records
+    const domainCheck = await verifyEmailDomain(email);
+    if (!domainCheck.valid) {
+      throw new Error(domainCheck.reason || 'Invalid student email address or non-existent domain');
+    }
+  } else {
+    // If no email provided, use studentId as unique email identifier in database
+    email = studentId;
   }
 
   const tempPassword = generateTempPassword();
   const passwordHash = await hashPassword(tempPassword);
 
-  // Create User
-  const user = await prisma.user.create({
-    data: {
-      email,
-      fullName: cleanName,
-      passwordHash,
-      isVerified: true,
-      systemRole: 'USER',
-    },
-  });
+  // Create or Update User for Student
+  let user = await prisma.user.findUnique({ where: { email } });
+  let studentEmailVerificationSent = false;
+
+  if (!user) {
+    user = await prisma.user.create({
+      data: {
+        email,
+        fullName: cleanName,
+        passwordHash,
+        isVerified: !isCustomStudentEmail,
+        systemRole: 'USER',
+      },
+    });
+  } else {
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { fullName: cleanName, passwordHash },
+    });
+  }
+
+  // Send verification email to custom student email if configured
+  if (isCustomStudentEmail && isEmailConfigured()) {
+    try {
+      const vToken = crypto.randomBytes(32).toString('hex');
+      await prisma.emailVerificationToken.create({
+        data: {
+          userId: user.id,
+          token: vToken,
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24h
+        },
+      });
+      await sendVerificationEmail(user.email, user.fullName, vToken);
+      studentEmailVerificationSent = true;
+    } catch (vErr) {
+      console.error('Failed to send student verification email:', vErr);
+    }
+  }
 
   // Create Membership as STUDENT
   const membership = await prisma.membership.create({
@@ -1361,7 +1426,89 @@ async function generateStudentAccount({
       role: 'STUDENT',
       departmentId: finalDeptId || null,
       teamId: finalTeamId || null,
+      title: `Student ID: ${studentId}${cleanAdm ? ` | Adm: ${cleanAdm}` : ''}`,
     },
+  });
+
+  // ALWAYS create parent user & link (whether info provided or not)
+  let pEmailToUse: string;
+  let isCustomEmail = false;
+  const parentId = `PAR-${new Date().getFullYear()}-${cleanAdm ? cleanAdm.replace(/[^A-Z0-9]/gi, '') : randomCode}`;
+
+  if (parentEmail && parentEmail.trim()) {
+    pEmailToUse = parentEmail.trim().toLowerCase();
+    isCustomEmail = true;
+
+    // Validate email syntax and DNS MX records
+    const domainCheck = await verifyEmailDomain(pEmailToUse);
+    if (!domainCheck.valid) {
+      throw new Error(domainCheck.reason || 'Invalid parent email address or non-existent domain');
+    }
+  } else {
+    // If no parent email provided, use parentId as unique email identifier in database
+    pEmailToUse = parentId;
+  }
+
+  const pName = parentFullName?.trim() || `Parent of ${cleanName}`;
+  const parentTempPassword = generateTempPassword();
+  const parentPasswordHash = await hashPassword(parentTempPassword);
+
+  let parentUser = await prisma.user.findUnique({ where: { email: pEmailToUse } });
+  let emailVerificationSent = false;
+
+  if (!parentUser) {
+    parentUser = await prisma.user.create({
+      data: {
+        email: pEmailToUse,
+        fullName: pName,
+        passwordHash: parentPasswordHash,
+        isVerified: !isCustomEmail, // Default internal accounts are verified; custom emails require verification link
+        systemRole: 'USER',
+      },
+    });
+  } else {
+    await prisma.user.update({
+      where: { id: parentUser.id },
+      data: { fullName: pName, passwordHash: parentPasswordHash },
+    });
+  }
+
+  // Send verification email to custom parent email if configured
+  if (isCustomEmail && isEmailConfigured()) {
+    try {
+      const vToken = crypto.randomBytes(32).toString('hex');
+      await prisma.emailVerificationToken.create({
+        data: {
+          userId: parentUser.id,
+          token: vToken,
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24h
+        },
+      });
+      await sendVerificationEmail(parentUser.email, parentUser.fullName, vToken);
+      emailVerificationSent = true;
+    } catch (vErr) {
+      console.error('Failed to send parent verification email:', vErr);
+    }
+  }
+
+  // Create or update parent membership as PARENT
+  await prisma.membership.upsert({
+    where: { userId_orgId: { userId: parentUser.id, orgId } },
+    create: { userId: parentUser.id, orgId, role: 'PARENT', title: `Parent ID: ${parentId}${cleanAdm ? ` | Adm: ${cleanAdm}` : ''}`, isActive: true },
+    update: { role: 'PARENT', title: `Parent ID: ${parentId}${cleanAdm ? ` | Adm: ${cleanAdm}` : ''}`, isActive: true },
+  });
+
+  // Link Parent & Student
+  await prisma.parentStudentLink.upsert({
+    where: {
+      orgId_parentUserId_studentUserId: {
+        orgId,
+        parentUserId: parentUser.id,
+        studentUserId: user.id,
+      },
+    },
+    create: { orgId, parentUserId: parentUser.id, studentUserId: user.id },
+    update: {},
   });
 
   // Auto-add student to default org channels (#general, #announcements)
@@ -1374,7 +1521,7 @@ async function generateStudentAccount({
       where: { channelId_userId: { channelId: dc.id, userId: user.id } },
       create: { channelId: dc.id, userId: user.id },
       update: {},
-    }).catch(() => {});
+    }).catch(() => { });
   }
 
   // Auto-add student to class team channel if teamName specified
@@ -1388,7 +1535,7 @@ async function generateStudentAccount({
         where: { channelId_userId: { channelId: classChannel.id, userId: user.id } },
         create: { channelId: classChannel.id, userId: user.id },
         update: {},
-      }).catch(() => {});
+      }).catch(() => { });
     }
   }
 
@@ -1401,6 +1548,20 @@ async function generateStudentAccount({
       },
       select: { id: true },
     });
+    const projIds = classProjects.map((p) => p.id);
+    if (projIds.length > 0) {
+      const projChannels = await prisma.channel.findMany({
+        where: { orgId, projectId: { in: projIds } },
+        select: { id: true },
+      });
+      for (const pc of projChannels) {
+        await prisma.channelMember.upsert({
+          where: { channelId_userId: { channelId: pc.id, userId: user.id } },
+          create: { channelId: pc.id, userId: user.id },
+          update: {},
+        }).catch(() => { });
+      }
+    }
   }
 
   return {
@@ -1409,10 +1570,24 @@ async function generateStudentAccount({
     fullName: cleanName,
     admissionNo: cleanAdm || 'N/A',
     studentId,
-    email,
+    email: isCustomStudentEmail ? email : 'N/A',
     tempPassword,
     departmentName: deptName || 'General',
     className: teamName || 'Unassigned',
+    parentId,
+    parent: {
+      id: parentUser.id,
+      parentId,
+      fullName: pName,
+      email: isCustomEmail ? pEmailToUse : 'N/A',
+      tempPassword: parentTempPassword,
+      isCustomEmail,
+      emailVerificationSent,
+    },
+    parentEmail: isCustomEmail ? pEmailToUse : 'N/A',
+    parentPassword: parentTempPassword,
+    parentName: pName,
+    emailVerificationSent,
   };
 }
 
@@ -1426,7 +1601,7 @@ router.post('/:orgId/students/generate-single', async (req, res, next) => {
       return res.status(403).json({ error: 'Only Admins, Directors, Principals, and Deans can access the Student ID Generator.' });
     }
 
-    const { admissionNo, fullName, departmentId, teamId, departmentName, className } = req.body;
+    const { admissionNo, fullName, departmentId, teamId, departmentName, className, studentEmail, parentEmail, parentFullName } = req.body;
     if (!admissionNo || !admissionNo.trim()) {
       return res.status(400).json({ error: 'Student Admission Number is required.' });
     }
@@ -1442,10 +1617,18 @@ router.post('/:orgId/students/generate-single', async (req, res, next) => {
       teamId,
       departmentName,
       className,
+      studentEmail,
+      parentEmail,
+      parentFullName,
     });
 
     res.status(201).json(studentData);
-  } catch (e) { next(e); }
+  } catch (e: any) {
+    if (e?.message && typeof e.message === 'string') {
+      return res.status(400).json({ error: e.message });
+    }
+    next(e);
+  }
 });
 
 // Mass Student ID & Account Generator (Admin Only - Bulk CSV)
@@ -1473,6 +1656,9 @@ router.post('/:orgId/students/generate-mass', async (req, res, next) => {
           admissionNo: row.admissionNo || row.admissionId || '',
           departmentName: row.departmentName || row.wing || '',
           className: row.className || row.section || '',
+          studentEmail: row.studentEmail || row.student_email || '',
+          parentEmail: row.parentEmail || row.parent_email || '',
+          parentFullName: row.parentFullName || row.parentName || row.parent_name || '',
         });
         results.push(generated);
       } catch (err) {

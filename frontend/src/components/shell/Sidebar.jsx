@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useNavigate, useLocation, useParams } from 'react-router-dom';
-import { Home, Hash, ListTodo, Sparkles, Calendar, FolderOpen, BarChart3, Shield, ShieldCheck, Settings, Plus, ChevronDown, ChevronRight, Lock, Volume2, Users, MoreHorizontal, Building2, Check, GraduationCap, FolderGit2, BookOpen, Key } from 'lucide-react';
+import { Home, Hash, ListTodo, Sparkles, Calendar, FolderOpen, BarChart3, Shield, ShieldCheck, Settings, Plus, ChevronDown, ChevronRight, Lock, Volume2, Users, MoreHorizontal, Building2, Check, GraduationCap, FolderGit2, BookOpen, Key, UserCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
+import { useOrgData } from '@/contexts/OrgDataContext';
 import { channelApi, orgApi } from '@/lib/api';
 import { connectSocket, getSocket } from '@/lib/socket';
 import { toast } from 'sonner';
@@ -20,6 +21,8 @@ import { Sun, Moon, LogOut, User as UserIcon } from 'lucide-react';
 const PRIMARY_NAV = [
   { key: 'home', label: 'Home', icon: Home, path: '/app/home' },
   { key: 'tasks', label: 'Tasks', icon: ListTodo, path: '/app/tasks' },
+  { key: 'homework', label: 'Homework', icon: BookOpen, path: '/app/homework' },
+  { key: 'parent', label: 'Parent Portal', icon: UserCheck, path: '/app/parent' },
   { key: 'ai', label: 'AI Assistant', icon: Sparkles, path: '/app/ai' },
   { key: 'meetings', label: 'Meetings', icon: Calendar, path: '/app/meetings' },
   { key: 'files', label: 'Files', icon: FolderOpen, path: '/app/files' },
@@ -36,58 +39,32 @@ export function Sidebar({ onNavigate }) {
   const params = useParams();
   const { user, memberships, currentOrg, switchOrg, logout, refresh } = useAuth();
   const { theme, toggle } = useTheme();
-  const [channels, setChannels] = useState([]);
-  const [projects, setProjects] = useState([]);
-  const [loadingChannels, setLoadingChannels] = useState(true);
-  const [loadingProjects, setLoadingProjects] = useState(true);
+  
+  const {
+    departments,
+    projects,
+    channels,
+    setChannels,
+    members: orgMembers,
+    loading: loadingOrgData,
+    refreshOrgData,
+  } = useOrgData();
+
+  const loadingProjects = loadingOrgData && projects.length === 0;
+  const loadingChannels = loadingOrgData && channels.length === 0;
+
   const [openGroups, setOpenGroups] = useState({ classes: true, projects: true, channels: true, dms: true });
   const [newCh, setNewCh] = useState({ open: false, name: '', type: 'PUBLIC' });
   const [newOrg, setNewOrg] = useState({ open: false, name: '' });
   const [newDm, setNewDm] = useState({ open: false, targetUserId: '' });
-  const [orgMembers, setOrgMembers] = useState([]);
 
   const isAdmin = currentOrg && ['ADMIN', 'PRINCIPAL', 'DEAN', 'HOD', 'TEACHER', 'DIRECTOR'].includes(currentOrg.role);
   const isManagerPlus = isAdmin;
   const isOwner = currentOrg?.role === 'DIRECTOR';
 
-  const [departments, setDepartments] = useState([]);
   const [openDepts, setOpenDepts] = useState({});
   const [openGrades, setOpenGrades] = useState({});
   const [openSections, setOpenSections] = useState({});
-
-  const loadChannels = useCallback(async () => {
-    if (!currentOrg?.id) return;
-    try {
-      const c = await channelApi.list(currentOrg.id);
-      setChannels(c);
-    } catch (e) { /* ignore */ }
-    finally { setLoadingChannels(false); }
-  }, [currentOrg?.id]);
-
-  const loadProjects = useCallback(async () => {
-    if (!currentOrg?.id) return;
-    try {
-      const p = await orgApi.projects(currentOrg.id);
-      setProjects(Array.isArray(p) ? p : []);
-    } catch (e) { /* ignore */ }
-    finally { setLoadingProjects(false); }
-  }, [currentOrg?.id]);
-
-  const loadDepartments = useCallback(async () => {
-    if (!currentOrg?.id) return;
-    try {
-      const d = await orgApi.departments(currentOrg.id);
-      setDepartments(Array.isArray(d) ? d : []);
-    } catch (e) { /* ignore */ }
-  }, [currentOrg?.id]);
-
-  const loadOrgMembers = useCallback(async () => {
-    if (!currentOrg?.id) return;
-    try {
-      const m = await orgApi.members(currentOrg.id);
-      setOrgMembers(m || []);
-    } catch (e) { /* ignore */ }
-  }, [currentOrg?.id]);
 
   const currentChannelId = useMemo(() => {
     const match = location.pathname.match(/\/app\/channels\/([^/]+)/);
@@ -100,24 +77,21 @@ export function Sidebar({ onNavigate }) {
       setChannels((prev) => prev.map((x) => (x.id === currentChannelId ? { ...x, unreadCount: 0 } : x)));
       channelApi.markRead(currentChannelId).catch(() => {});
     }
-  }, [currentChannelId]);
+  }, [currentChannelId, setChannels]);
 
   useEffect(() => {
-    Promise.all([loadChannels(), loadProjects(), loadDepartments()]);
     let s = getSocket() || connectSocket();
     if (!s) return;
 
     const handleChannelCreated = (newCh) => {
       if (!newCh || !currentOrg?.id || newCh.orgId === currentOrg.id) {
-        loadChannels();
-        loadProjects();
+        refreshOrgData();
       }
     };
 
     const handleProjectUpdated = (proj) => {
       if (!proj || !currentOrg?.id || proj.orgId === currentOrg.id) {
-        loadProjects();
-        loadChannels();
+        refreshOrgData();
       }
     };
 
@@ -125,7 +99,7 @@ export function Sidebar({ onNavigate }) {
       setChannels((prev) => {
         const exists = prev.some((c) => c.id === msg.channelId);
         if (!exists) {
-          loadChannels();
+          refreshOrgData();
           return prev;
         }
         return prev.map((c) => {
@@ -141,16 +115,24 @@ export function Sidebar({ onNavigate }) {
     };
 
     const handlePresence = ({ userId, status }) => {
-      // presence update
+      setChannels((prev) =>
+        prev.map((ch) => ({
+          ...ch,
+          members: (ch.members || []).map((m) =>
+            m.userId === userId || m.user?.id === userId
+              ? { ...m, user: { ...(m.user || {}), status } }
+              : m
+          ),
+        }))
+      );
     };
 
     const handleChannelDeleted = () => {
-      loadChannels();
-      loadProjects();
+      refreshOrgData();
     };
 
     const handleDeptOrMemberUpdate = () => {
-      loadDepartments();
+      refreshOrgData();
       if (typeof refresh === 'function') refresh();
     };
 
@@ -173,7 +155,7 @@ export function Sidebar({ onNavigate }) {
       s.off('department:updated', handleDeptOrMemberUpdate);
       s.off('membership:updated', handleDeptOrMemberUpdate);
     };
-  }, [loadChannels, loadProjects, loadDepartments, currentOrg?.id, currentChannelId, user?.id, navigate, refresh]);
+  }, [refreshOrgData, setChannels, currentOrg?.id, currentChannelId, user?.id, navigate, refresh]);
 
   const getDMUser = (ch) => {
     if (!ch || ch.type !== 'DIRECT' || !ch.members) return null;
@@ -189,10 +171,21 @@ export function Sidebar({ onNavigate }) {
 
   const go = (p) => { navigate(p); onNavigate?.(); };
 
-  const active = (p) => location.pathname.startsWith(p);
+  const active = (p) => {
+    if (location.pathname === p) return true;
+    if (p !== '/app' && p !== '/app/home') {
+      return location.pathname.startsWith(p + '/');
+    }
+    return false;
+  };
 
   const isStudent = currentOrg?.role === 'STUDENT';
+  const isParent = currentOrg?.role === 'PARENT';
   const navItems = PRIMARY_NAV.filter((it) => {
+    if (isParent) {
+      return ['parent', 'homework', 'ai', 'meetings'].includes(it.key);
+    }
+    if (it.key === 'parent') return false;
     if (isStudent && (it.key === 'analytics' || it.key === 'tasks')) return false;
     return true;
   });
@@ -215,19 +208,48 @@ export function Sidebar({ onNavigate }) {
   const userDeptId = activeMembership?.departmentId || '';
 
   const classChannels = channels.filter((c) => c.type === 'TEAM');
-  const standardChannels = channels.filter((c) => c.type !== 'TEAM' && c.type !== 'DIRECT' && c.type !== 'PROJECT');
+  const standardChannels = channels.filter((c) => {
+    if (c.type === 'TEAM' || c.type === 'DIRECT' || c.type === 'PROJECT') return false;
+    if (isParent) {
+      return c.type === 'ANNOUNCEMENT' || c.name.toLowerCase().includes('announc');
+    }
+    return true;
+  });
   const chDMs = channels.filter((c) => c.type === 'DIRECT');
 
   const displayDepartments = useMemo(() => {
-    if (isFullAccessRole) return departments;
+    const roleUpper = (currentOrg?.role || '').toUpperCase();
+    const titleUpper = (user?.title || '').toUpperCase();
+
+    // Top Level Admins (Director, Principal, Admin) -> See ALL classes in ALL departments
+    const isTopAdmin = ['ADMIN', 'DIRECTOR', 'PRINCIPAL'].some(
+      (r) => roleUpper.includes(r) || titleUpper.includes(r)
+    );
+    if (isTopAdmin) return departments;
 
     const myTeamChannelNames = new Set(
       classChannels.map((c) => c.name.toLowerCase())
     );
 
+    // Find all departments where this user is HOD or Dean
+    const hodDeptIds = new Set(
+      departments
+        .filter(
+          (d) =>
+            d.headId === user?.id ||
+            (userDeptId && d.id === userDeptId) ||
+            d.memberships?.some(
+              (m) =>
+                (m.userId === user?.id || m.user?.id === user?.id) &&
+                ['HOD', 'DEAN'].some((r) => (m.role || '').toUpperCase().includes(r) || titleUpper.includes(r))
+            )
+        )
+        .map((d) => d.id)
+    );
+
     return departments
       .filter((d) => {
-        if (userDeptId && d.id === userDeptId) return true;
+        if (hodDeptIds.has(d.id)) return true;
         if (d.teams?.some((t) => {
           const chName = `team-${t.name.toLowerCase().replace(/[^a-z0-9]/g, '-')}`;
           return (
@@ -239,19 +261,26 @@ export function Sidebar({ onNavigate }) {
         })) return true;
         return false;
       })
-      .map((d) => ({
-        ...d,
-        teams: d.teams?.filter((t) => {
-          if (userDeptId && d.id === userDeptId && currentOrg?.role === 'HOD') return true;
-          const chName = `team-${t.name.toLowerCase().replace(/[^a-z0-9]/g, '-')}`;
-          if (userTeamId && t.id === userTeamId) return true;
-          if (t.managerId === user?.id) return true;
-          if (myTeamChannelNames.has(chName)) return true;
-          if (user?.id && t.memberships?.some((m) => m.userId === user?.id || m.user?.id === user?.id)) return true;
-          return false;
-        }),
-      }));
-  }, [departments, isFullAccessRole, userDeptId, userTeamId, user?.id, currentOrg?.role, classChannels]);
+      .map((d) => {
+        const isMyDept = hodDeptIds.has(d.id);
+        return {
+          ...d,
+          teams: d.teams?.filter((t) => {
+            // HOD / Dean gets ALL classes in their own department
+            if (isMyDept) return true;
+
+            // For other departments, must be Class Teacher or assigned member
+            const chName = `team-${t.name.toLowerCase().replace(/[^a-z0-9]/g, '-')}`;
+            if (userTeamId && t.id === userTeamId) return true;
+            if (t.managerId === user?.id) return true;
+            if (myTeamChannelNames.has(chName)) return true;
+            if (user?.id && t.memberships?.some((m) => m.userId === user?.id || m.user?.id === user?.id)) return true;
+            return false;
+          }),
+        };
+      })
+      .filter((d) => (d.teams || []).length > 0 || hodDeptIds.has(d.id));
+  }, [departments, userDeptId, userTeamId, user?.id, user?.title, currentOrg?.role, classChannels]);
 
   const getGroupedGrades = (teams) => {
     const gradesMap = {};
@@ -294,7 +323,7 @@ export function Sidebar({ onNavigate }) {
       });
       setNewCh({ open: false, name: '', type: 'PUBLIC', memberIds: [] });
       toast.success('Channel created');
-      await loadChannels();
+      await refreshOrgData();
       navigate(`/app/channels/${c.id}`);
     } catch (e) { toast.error(e?.response?.data?.error || 'Failed'); }
   };
@@ -304,7 +333,7 @@ export function Sidebar({ onNavigate }) {
     try {
       const dmCh = await channelApi.dm(currentOrg.id, targetUserId);
       setNewDm({ open: false, targetUserId: '' });
-      await loadChannels();
+      await refreshOrgData();
       navigate(`/app/channels/${dmCh.id}`);
     } catch (e) { toast.error(e?.response?.data?.error || 'Failed to start direct message'); }
   };
@@ -374,17 +403,6 @@ export function Sidebar({ onNavigate }) {
                 {it.label}
               </button>
             ))}
-            <button
-              onClick={() => go('/app/homework')}
-              className={`w-full flex items-center gap-2.5 rounded-md px-2 py-1.5 text-sm transition-colors ${
-                active('/app/homework')
-                  ? 'bg-[hsl(var(--sidebar-active-bg))] text-[hsl(var(--sidebar-active))] font-medium'
-                  : 'text-[hsl(var(--sidebar-foreground))] hover:bg-black/5 dark:hover:bg-white/5'
-              }`}
-              data-testid="nav-homework"
-            >
-              <BookOpen className="h-4 w-4 text-blue-500" /> Homework
-            </button>
             {isFullAccessRole ? (
               <>
                 <button
@@ -462,248 +480,252 @@ export function Sidebar({ onNavigate }) {
                 <ShieldCheck className="h-4 w-4" /> Super Admin
               </button>
             )}
-          </div>
-
-          {/* Classes group */}
-          <div className="mt-4">
-            <div className="flex items-center gap-1 px-2 py-1">
-              <button onClick={() => setOpenGroups({ ...openGroups, classes: !openGroups.classes })} className="flex items-center gap-1 text-xs font-medium uppercase text-muted-foreground tracking-wide hover:text-foreground">
-                {openGroups.classes ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-                <span>Classes</span>
-              </button>
-              {isManagerPlus && (
-                <button
-                  onClick={() => navigate('/app/admin?tab=structure')}
-                  className="h-5 w-5 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-black/10 dark:hover:bg-white/10 transition-all shrink-0 ml-1"
-                  title="Manage Classes & Sections"
-                  data-testid="new-class-btn"
-                >
-                  <Plus className="h-3.5 w-3.5" />
+          </div>          {/* Classes / School Wings group */}
+          {!isParent && (
+            <div className="mt-4">
+              <div className="flex items-center gap-1 px-2 py-1">
+                <button onClick={() => setOpenGroups({ ...openGroups, classes: !openGroups.classes })} className="flex items-center gap-1 text-xs font-medium uppercase text-muted-foreground tracking-wide hover:text-foreground">
+                  {openGroups.classes ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                  <span>Classes</span>
                 </button>
-              )}
-            </div>
-            {openGroups.classes && (
-              <div className="mt-1 space-y-1 pl-1">
-                {displayDepartments.map((dept) => {
-                  const isDeptOpen = openDepts[dept.id] ?? isStudent;
-                  const groupedGrades = getGroupedGrades(dept.teams || []);
-                  const gradeNames = Object.keys(groupedGrades);
-
-                  return (
-                    <div key={dept.id} className="space-y-0.5">
-                      {/* Level 1: School Wing / Department Dropdown */}
-                      <button
-                        onClick={() => setOpenDepts((prev) => ({ ...prev, [dept.id]: !prev[dept.id] }))}
-                        className="w-full flex items-center justify-between rounded-md px-2 py-1 text-xs font-semibold text-foreground/90 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-                      >
-                        <div className="flex items-center gap-1.5 truncate">
-                          {isDeptOpen ? <ChevronDown className="h-3 w-3 text-muted-foreground" /> : <ChevronRight className="h-3 w-3 text-muted-foreground" />}
-                          <Building2 className="h-3.5 w-3.5 text-blue-500 shrink-0" />
-                          <span className="truncate">{dept.name}</span>
-                        </div>
-                        <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 border-border text-muted-foreground font-medium">
-                          {dept.teams?.length || 0}
-                        </Badge>
-                      </button>
-
-                      {/* Level 2: Classes / Grades under Department */}
-                      {isDeptOpen && (
-                        <div className="ml-3 pl-2 border-l border-border/50 space-y-0.5">
-                          {gradeNames.map((gradeName) => {
-                            const gradeKey = `${dept.id}_${gradeName}`;
-                            const isGradeOpen = openGrades[gradeKey] ?? isStudent;
-                            const teamsInGrade = groupedGrades[gradeName];
-
-                            return (
-                              <div key={gradeKey} className="space-y-0.5">
-                                {/* Grade / Class Dropdown */}
-                                <button
-                                  onClick={() => setOpenGrades((prev) => ({ ...prev, [gradeKey]: !prev[gradeKey] }))}
-                                  className="w-full flex items-center justify-between rounded-md px-2 py-0.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-                                >
-                                  <div className="flex items-center gap-1.5 truncate">
-                                    {isGradeOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-                                    <GraduationCap className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
-                                    <span className="truncate font-semibold">{gradeName}</span>
-                                  </div>
-                                </button>
-
-                                {/* Level 3: Sections under Grade */}
-                                {isGradeOpen && (
-                                  <div className="ml-3 pl-2 border-l border-border/40 space-y-0.5">
-                                    {teamsInGrade.map((team) => {
-                                      const isSectionOpen = openSections[team.id] ?? false;
-                                      const targetChannel = classChannels.find(
-                                        (c) => c.name.toLowerCase() === `team-${team.name.toLowerCase().replace(/[^a-z0-9]/g, '-')}`
-                                      );
-                                      const isSelected = targetChannel && currentChannelId === targetChannel.id;
-
-                                      const rawMembers = [
-                                        ...(team.manager ? [{ id: `mgr-${team.manager.id}`, userId: team.manager.id, user: team.manager, role: 'TEACHER' }] : []),
-                                        ...(team.memberships || []),
-                                      ];
-
-                                      if (targetChannel && targetChannel.members) {
-                                        targetChannel.members.forEach((cm) => {
-                                          if (cm.user) {
-                                            rawMembers.push({
-                                              id: `cm-${cm.userId}`,
-                                              userId: cm.userId,
-                                              user: cm.user,
-                                              role: 'MEMBER',
-                                            });
-                                          }
-                                        });
-                                      }
-
-                                      const uniqueMembers = Array.from(
-                                        new Map(rawMembers.map((m) => [m.userId || m.user?.id || m.id, m])).values()
-                                      );
-
-                                      return (
-                                        <div key={team.id} className="space-y-0.5 min-w-0">
-                                          <div className="w-full flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs min-w-0">
-                                            <button
-                                              onClick={() => {
-                                                if (targetChannel) handleSelectChannel(targetChannel.id);
-                                                else navigate('/app/admin?tab=structure');
-                                              }}
-                                              className={`flex items-center gap-1.5 truncate min-w-0 text-left py-0.5 ${
-                                                isSelected ? 'text-primary font-bold' : 'text-foreground/80 hover:text-foreground'
-                                              }`}
-                                            >
-                                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
-                                              <span className="truncate">{team.sectionName}</span>
-                                            </button>
-
-                                            {/* Toggle Members dropdown placed right next to Section Name */}
-                                            {uniqueMembers.length > 0 && (
-                                              <button
-                                                onClick={() => setOpenSections((prev) => ({ ...prev, [team.id]: !prev[team.id] }))}
-                                                className="p-0.5 text-muted-foreground hover:text-foreground rounded transition-colors shrink-0 ml-0.5"
-                                                title={`${uniqueMembers.length} Member(s)`}
-                                              >
-                                                <Badge variant="secondary" className="text-[9px] px-1 py-0 h-3.5 flex items-center gap-0.5">
-                                                  <UserIcon className="h-2.5 w-2.5" />
-                                                  {uniqueMembers.length}
-                                                  {isSectionOpen ? <ChevronDown className="h-2.5 w-2.5" /> : <ChevronRight className="h-2.5 w-2.5" />}
-                                                </Badge>
-                                              </button>
-                                            )}
-                                          </div>
-
-                                          {/* Level 4: Enrolled Members under Section */}
-                                          {isSectionOpen && (
-                                            <div className="ml-2 pl-1.5 border-l border-border/30 space-y-0.5 min-w-0 overflow-hidden">
-                                              {uniqueMembers.map((m) => {
-                                                const uId = m.userId || m.user?.id || m.id;
-                                                const fullName = m.user?.fullName || m.user?.email || 'User';
-                                                const hasRoleInName = /\([^)]+\)$/.test(fullName);
-                                                const roleLabel = (!hasRoleInName && m.role && m.role !== 'MEMBER') ? ` (${m.role.charAt(0) + m.role.slice(1).toLowerCase()})` : '';
-                                                return (
-                                                  <div key={uId} className="flex items-center gap-1.5 px-1 py-0.5 text-[11px] text-muted-foreground truncate min-w-0" title={`${fullName}${roleLabel}`}>
-                                                    <Avatar className="h-3.5 w-3.5 shrink-0">
-                                                      <AvatarImage src={m.user?.avatarUrl} />
-                                                      <AvatarFallback className="text-[7px] bg-primary/10 text-primary font-bold">
-                                                        {initials(fullName)}
-                                                      </AvatarFallback>
-                                                    </Avatar>
-                                                    <span className="truncate min-w-0">{fullName}{roleLabel}</span>
-                                                  </div>
-                                                );
-                                              })}
-                                            </div>
-                                          )}
-                                        </div>
-                                      );
-                                    })}
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-
-                {displayDepartments.length === 0 && <div className="px-2 py-1 text-xs text-muted-foreground">No assigned classes found</div>}
-              </div>
-            )}
-          </div>
-
-          {/* Projects group */}
-          <div className="mt-4">
-            <div className="flex items-center gap-1 px-2 py-1">
-              <button onClick={() => setOpenGroups({ ...openGroups, projects: !openGroups.projects })} className="flex items-center gap-1 text-xs font-medium uppercase text-muted-foreground tracking-wide hover:text-foreground">
-                {openGroups.projects ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-                <span>Projects</span>
-              </button>
-              {isManagerPlus && (
-                <button
-                  onClick={() => navigate('/app/admin?tab=projects')}
-                  className="h-5 w-5 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-black/10 dark:hover:bg-white/10 transition-all shrink-0 ml-1"
-                  title="Manage Projects"
-                  data-testid="new-project-btn"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                </button>
-              )}
-            </div>
-            {openGroups.projects && (
-              <div className="mt-1 space-y-0.5">
-                {loadingProjects ? (
-                  <div className="space-y-1.5 px-2 py-1">
-                    <div className="h-4 w-3/4 rounded bg-muted/30 animate-pulse" />
-                  </div>
-                ) : (
-                  <>
-                    {projects.map((p) => {
-                      const isSelected = location.pathname === `/app/projects/${p.id}`;
-                      return (
-                        <button
-                          key={p.id}
-                          onClick={() => {
-                            navigate(`/app/projects/${p.id}`);
-                            onNavigate?.();
-                          }}
-                          className={`w-full flex items-center justify-between rounded-md px-2 py-1 text-sm transition-colors ${
-                            isSelected
-                              ? 'bg-[hsl(var(--sidebar-active-bg))] text-[hsl(var(--sidebar-active))] font-medium'
-                              : 'text-[hsl(var(--sidebar-foreground))] hover:bg-black/5 dark:hover:bg-white/5'
-                          }`}
-                          data-testid={`project-item-${p.name}`}
-                        >
-                          <div className="flex items-center gap-2 truncate min-w-0">
-                            <FolderGit2 className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
-                            <span className="truncate">{p.name}</span>
-                          </div>
-                        </button>
-                      );
-                    })}
-                    {projects.length === 0 && <div className="px-2 py-1 text-xs text-muted-foreground">No assigned projects</div>}
-                  </>
+                {isManagerPlus && (
+                  <button
+                    onClick={() => navigate('/app/admin?tab=structure')}
+                    className="h-5 w-5 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-black/10 dark:hover:bg-white/10 transition-all shrink-0 ml-1"
+                    title="Manage Classes & Sections"
+                    data-testid="new-class-btn"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                  </button>
                 )}
               </div>
-            )}
-          </div>
+              {openGroups.classes && (
+                <div className="mt-1 space-y-1 pl-1">
+                  {displayDepartments.map((dept) => {
+                    const isDeptOpen = openDepts[dept.id] ?? isStudent;
+                    const groupedGrades = getGroupedGrades(dept.teams || []);
+                    const gradeNames = Object.keys(groupedGrades);
+
+                    return (
+                      <div key={dept.id} className="space-y-0.5">
+                        {/* Level 1: School Wing / Department Dropdown */}
+                        <button
+                          onClick={() => setOpenDepts((prev) => ({ ...prev, [dept.id]: !prev[dept.id] }))}
+                          className="w-full flex items-center justify-between rounded-md px-2 py-1 text-xs font-semibold text-foreground/90 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                        >
+                          <div className="flex items-center gap-1.5 truncate">
+                            {isDeptOpen ? <ChevronDown className="h-3 w-3 text-muted-foreground" /> : <ChevronRight className="h-3 w-3 text-muted-foreground" />}
+                            <Building2 className="h-3.5 w-3.5 text-blue-500 shrink-0" />
+                            <span className="truncate">{dept.name}</span>
+                          </div>
+                          <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 border-border text-muted-foreground font-medium">
+                            {dept.teams?.length || 0}
+                          </Badge>
+                        </button>
+
+                        {/* Level 2: Classes / Grades under Department */}
+                        {isDeptOpen && (
+                          <div className="ml-3 pl-2 border-l border-border/50 space-y-0.5">
+                            {gradeNames.map((gradeName) => {
+                              const gradeKey = `${dept.id}_${gradeName}`;
+                              const isGradeOpen = openGrades[gradeKey] ?? isStudent;
+                              const teamsInGrade = groupedGrades[gradeName];
+
+                              return (
+                                <div key={gradeKey} className="space-y-0.5">
+                                  {/* Grade / Class Dropdown */}
+                                  <button
+                                    onClick={() => setOpenGrades((prev) => ({ ...prev, [gradeKey]: !prev[gradeKey] }))}
+                                    className="w-full flex items-center justify-between rounded-md px-2 py-0.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                                  >
+                                    <div className="flex items-center gap-1.5 truncate">
+                                      {isGradeOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                                      <GraduationCap className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                                      <span className="truncate font-semibold">{gradeName}</span>
+                                    </div>
+                                  </button>
+
+                                  {/* Level 3: Sections under Grade */}
+                                  {isGradeOpen && (
+                                    <div className="ml-3 pl-2 border-l border-border/40 space-y-0.5">
+                                      {teamsInGrade.map((team) => {
+                                        const isSectionOpen = openSections[team.id] ?? false;
+                                        const targetChannel = classChannels.find(
+                                          (c) => c.name.toLowerCase() === `team-${team.name.toLowerCase().replace(/[^a-z0-9]/g, '-')}`
+                                        );
+                                        const isSelected = targetChannel && currentChannelId === targetChannel.id;
+
+                                        const rawMembers = [
+                                          ...(team.manager ? [{ id: `mgr-${team.manager.id}`, userId: team.manager.id, user: team.manager, role: 'TEACHER' }] : []),
+                                          ...(team.memberships || []),
+                                        ];
+
+                                        if (targetChannel && targetChannel.members) {
+                                          targetChannel.members.forEach((cm) => {
+                                            if (cm.user) {
+                                              rawMembers.push({
+                                                id: `cm-${cm.userId}`,
+                                                userId: cm.userId,
+                                                user: cm.user,
+                                                role: 'MEMBER',
+                                              });
+                                            }
+                                          });
+                                        }
+
+                                        const uniqueMembers = Array.from(
+                                          new Map(rawMembers.map((m) => [m.userId || m.user?.id || m.id, m])).values()
+                                        );
+
+                                        return (
+                                          <div key={team.id} className="space-y-0.5 min-w-0">
+                                            <div className="w-full flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs min-w-0">
+                                              <button
+                                                onClick={() => {
+                                                  if (targetChannel) handleSelectChannel(targetChannel.id);
+                                                  else navigate('/app/admin?tab=structure');
+                                                }}
+                                                className={`flex items-center gap-1.5 truncate min-w-0 text-left py-0.5 ${
+                                                  isSelected ? 'text-primary font-bold' : 'text-foreground/80 hover:text-foreground'
+                                                }`}
+                                              >
+                                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
+                                                <span className="truncate">{team.sectionName}</span>
+                                              </button>
+
+                                              {/* Toggle Members dropdown placed right next to Section Name */}
+                                              {uniqueMembers.length > 0 && (
+                                                <button
+                                                  onClick={() => setOpenSections((prev) => ({ ...prev, [team.id]: !prev[team.id] }))}
+                                                  className="p-0.5 text-muted-foreground hover:text-foreground rounded transition-colors shrink-0 ml-0.5"
+                                                  title={`${uniqueMembers.length} Member(s)`}
+                                                >
+                                                  <Badge variant="secondary" className="text-[9px] px-1 py-0 h-3.5 flex items-center gap-0.5">
+                                                    <UserIcon className="h-2.5 w-2.5" />
+                                                    {uniqueMembers.length}
+                                                    {isSectionOpen ? <ChevronDown className="h-2.5 w-2.5" /> : <ChevronRight className="h-2.5 w-2.5" />}
+                                                  </Badge>
+                                                </button>
+                                              )}
+                                            </div>
+
+                                            {/* Level 4: Enrolled Members under Section */}
+                                            {isSectionOpen && (
+                                              <div className="ml-2 pl-1.5 border-l border-border/30 space-y-0.5 min-w-0 overflow-hidden">
+                                                {uniqueMembers.map((m) => {
+                                                  const uId = m.userId || m.user?.id || m.id;
+                                                  const fullName = m.user?.fullName || m.user?.email || 'User';
+                                                  const hasRoleInName = /\([^)]+\)$/.test(fullName);
+                                                  const roleLabel = (!hasRoleInName && m.role && m.role !== 'MEMBER') ? ` (${m.role.charAt(0) + m.role.slice(1).toLowerCase()})` : '';
+                                                  return (
+                                                    <div key={uId} className="flex items-center gap-1.5 px-1 py-0.5 text-[11px] text-muted-foreground truncate min-w-0" title={`${fullName}${roleLabel}`}>
+                                                      <Avatar className="h-3.5 w-3.5 shrink-0">
+                                                        <AvatarImage src={m.user?.avatarUrl} />
+                                                        <AvatarFallback className="text-[7px] bg-primary/10 text-primary font-bold">
+                                                          {initials(fullName)}
+                                                        </AvatarFallback>
+                                                      </Avatar>
+                                                      <span className="truncate min-w-0">{fullName}{roleLabel}</span>
+                                                    </div>
+                                                  );
+                                                })}
+                                              </div>
+                                            )}
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {displayDepartments.length === 0 && <div className="px-2 py-1 text-xs text-muted-foreground">No assigned classes found</div>}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Projects group */}
+          {!isParent && (
+            <div className="mt-4">
+              <div className="flex items-center gap-1 px-2 py-1">
+                <button onClick={() => setOpenGroups({ ...openGroups, projects: !openGroups.projects })} className="flex items-center gap-1 text-xs font-medium uppercase text-muted-foreground tracking-wide hover:text-foreground">
+                  {openGroups.projects ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                  <span>Projects</span>
+                </button>
+                {isManagerPlus && (
+                  <button
+                    onClick={() => navigate('/app/admin?tab=projects')}
+                    className="h-5 w-5 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-black/10 dark:hover:bg-white/10 transition-all shrink-0 ml-1"
+                    title="Manage Projects"
+                    data-testid="new-project-btn"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+              {openGroups.projects && (
+                <div className="mt-1 space-y-0.5">
+                  {loadingProjects ? (
+                    <div className="space-y-1.5 px-2 py-1">
+                      <div className="h-4 w-3/4 rounded bg-muted/30 animate-pulse" />
+                    </div>
+                  ) : (
+                    <>
+                      {projects.map((p) => {
+                        const isSelected = location.pathname === `/app/projects/${p.id}`;
+                        return (
+                          <button
+                            key={p.id}
+                            onClick={() => {
+                              navigate(`/app/projects/${p.id}`);
+                              onNavigate?.();
+                            }}
+                            className={`w-full flex items-center justify-between rounded-md px-2 py-1 text-sm transition-colors ${
+                              isSelected
+                                ? 'bg-[hsl(var(--sidebar-active-bg))] text-[hsl(var(--sidebar-active))] font-medium'
+                                : 'text-[hsl(var(--sidebar-foreground))] hover:bg-black/5 dark:hover:bg-white/5'
+                            }`}
+                            data-testid={`project-item-${p.name}`}
+                          >
+                            <div className="flex items-center gap-2 truncate min-w-0">
+                              <FolderGit2 className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+                              <span className="truncate">{p.name}</span>
+                            </div>
+                          </button>
+                        );
+                      })}
+                      {projects.length === 0 && <div className="px-2 py-1 text-xs text-muted-foreground">No assigned projects</div>}
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Channels group */}
           <div className="mt-4">
             <div className="flex items-center gap-1 px-2 py-1">
               <button onClick={() => setOpenGroups({ ...openGroups, channels: !openGroups.channels })} className="flex items-center gap-1 text-xs font-medium uppercase text-muted-foreground tracking-wide hover:text-foreground">
                 {openGroups.channels ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-                <span>Channels</span>
+                <span>Announcements & Channels</span>
               </button>
-              <button
-                onClick={() => { loadOrgMembers(); setNewCh({ open: true, name: '', type: 'PUBLIC', memberIds: [] }); }}
-                className="h-5 w-5 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-black/10 dark:hover:bg-white/10 transition-all shrink-0 ml-1"
-                title="Create Channel"
-                data-testid="new-channel-btn"
-              >
-                <Plus className="h-3.5 w-3.5" />
-              </button>
+              {!isParent && (
+                <button
+                  onClick={() => { refreshOrgData(); setNewCh({ open: true, name: '', type: 'PUBLIC', memberIds: [] }); }}
+                  className="h-5 w-5 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-black/10 dark:hover:bg-white/10 transition-all shrink-0 ml-1"
+                  title="Create Channel"
+                  data-testid="new-channel-btn"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                </button>
+              )}
             </div>
             {openGroups.channels && (
               <div className="mt-1 space-y-0.5">
@@ -757,7 +779,7 @@ export function Sidebar({ onNavigate }) {
                 <span>Direct messages</span>
               </button>
               <button
-                onClick={() => { loadOrgMembers(); setNewDm({ open: true, targetUserId: '' }); }}
+                onClick={() => { refreshOrgData(); setNewDm({ open: true, targetUserId: '' }); }}
                 className="h-5 w-5 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-black/10 dark:hover:bg-white/10 transition-all shrink-0 ml-1"
                 title="New Direct Message"
                 data-testid="new-dm-btn"

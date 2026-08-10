@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { useOrgData } from '@/contexts/OrgDataContext';
 import { orgApi } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -24,9 +25,8 @@ export default function DepartmentPage() {
   const activeTab = searchParams.get('tab') || 'members';
 
   const { currentOrg, user, refresh, memberships } = useAuth();
-  const [members, setMembers] = useState([]);
-  const [departments, setDepartments] = useState([]);
-  const [projects, setProjects] = useState([]);
+  const { members: orgMembers, departments, projects, loading: loadingOrgData, refreshOrgData } = useOrgData();
+  const members = orgMembers;
   const [invite, setInvite] = useState({ open: false, email: '', fullName: '', role: 'TEACHER' });
   const [newTeam, setNewTeam] = useState({ open: false, gradeName: '', sectionName: '', deptId: '' });
   const [newProject, setNewProject] = useState({ open: false, name: '', description: '', teamIds: [] });
@@ -74,24 +74,56 @@ export default function DepartmentPage() {
   }, [userDeptId, departments, user?.id]);
 
   const scopedDepartments = useMemo(() => {
-    const isDeptLeader = ['HOD', 'DEAN', 'DIRECTOR', 'PRINCIPAL', 'OWNER', 'ADMIN'].includes(currentOrg?.role);
+    const roleUpper = (currentOrg?.role || '').toUpperCase();
+    const titleUpper = (user?.title || '').toUpperCase();
 
-    const depts = departments.filter((d) => {
-      if (effectiveUserDeptId && d.id === effectiveUserDeptId) return true;
-      return d.teams?.some((t) => t.id === userTeamId || t.managerId === user?.id || t.memberships?.some((m) => m.userId === user?.id || m.user?.id === user?.id));
-    });
+    // Top Level Admins (Director, Principal, Admin) -> See ALL departments and ALL classes
+    const isTopAdmin = ['ADMIN', 'DIRECTOR', 'PRINCIPAL', 'OWNER'].some(
+      (r) => roleUpper.includes(r) || titleUpper.includes(r)
+    );
+    if (isTopAdmin) return departments;
 
-    return depts.map((d) => {
-      if (isDeptLeader && d.id === effectiveUserDeptId) {
-        return d;
-      }
-      const myTeams = (d.teams || []).filter((t) => t.id === userTeamId || t.managerId === user?.id || t.memberships?.some((m) => m.userId === user?.id || m.user?.id === user?.id));
-      return {
-        ...d,
-        teams: myTeams,
-      };
-    });
-  }, [departments, effectiveUserDeptId, userTeamId, user?.id, currentOrg?.role]);
+    const hodDeptIds = new Set(
+      departments
+        .filter(
+          (d) =>
+            d.headId === user?.id ||
+            (effectiveUserDeptId && d.id === effectiveUserDeptId) ||
+            d.memberships?.some(
+              (m) =>
+                (m.userId === user?.id || m.user?.id === user?.id) &&
+                ['HOD', 'DEAN'].some((r) => (m.role || '').toUpperCase().includes(r) || titleUpper.includes(r))
+            )
+        )
+        .map((d) => d.id)
+    );
+
+    return departments
+      .filter((d) => {
+        if (hodDeptIds.has(d.id)) return true;
+        return d.teams?.some(
+          (t) =>
+            t.id === userTeamId ||
+            t.managerId === user?.id ||
+            t.memberships?.some((m) => m.userId === user?.id || m.user?.id === user?.id)
+        );
+      })
+      .map((d) => {
+        const isMyDept = hodDeptIds.has(d.id);
+        if (isMyDept) return d; // HOD / Dean gets ALL classes in their department!
+
+        const myTeams = (d.teams || []).filter(
+          (t) =>
+            t.id === userTeamId ||
+            t.managerId === user?.id ||
+            t.memberships?.some((m) => m.userId === user?.id || m.user?.id === user?.id)
+        );
+        return {
+          ...d,
+          teams: myTeams,
+        };
+      });
+  }, [departments, effectiveUserDeptId, userTeamId, user?.id, user?.title, currentOrg?.role]);
 
   const scopedDeptIds = useMemo(() => new Set(scopedDepartments.map((d) => d.id)), [scopedDepartments]);
   const scopedTeamIds = useMemo(
@@ -146,43 +178,25 @@ export default function DepartmentPage() {
     return targetDept?.teams || [];
   }, [scopedDepartments, studentWingFilter]);
 
-  const load = useCallback(async () => {
-    if (!currentOrg?.id) return;
-    try {
-      const [m, d, p] = await Promise.all([
-        orgApi.members(currentOrg.id).catch(() => []),
-        orgApi.departments(currentOrg.id).catch(() => []),
-        orgApi.projects(currentOrg.id).catch(() => []),
-      ]);
-      setMembers(Array.isArray(m) ? m : []);
-      setDepartments(Array.isArray(d) ? d : []);
-      setProjects(Array.isArray(p) ? p : []);
-    } catch (err) {
-      console.error('Error in DepartmentPage load:', err);
-    }
-  }, [currentOrg?.id]);
+  // Data is loaded via OrgDataContext; use refreshOrgData when a manual refresh is needed
 
   useEffect(() => {
-    load();
     let s = getSocket() || connectSocket();
     if (!s) return;
-
     const handleUpdate = () => {
-      load();
+      refreshOrgData();
       if (typeof refresh === 'function') refresh();
     };
-
     s.on('department:updated', handleUpdate);
     s.on('membership:updated', handleUpdate);
-
     return () => {
       s.off('department:updated', handleUpdate);
       s.off('membership:updated', handleUpdate);
     };
-  }, [load, refresh]);
+  }, [refreshOrgData, refresh]);
 
   const submitInvite = async () => {
-    try { await orgApi.invite(currentOrg.id, invite); toast.success('Invited member to department'); setInvite({ open: false, email: '', fullName: '', role: 'STUDENT' }); load(); } catch (e) { toast.error(e?.response?.data?.error || 'Failed'); }
+    try { await orgApi.invite(currentOrg.id, invite); toast.success('Invited member to department'); setInvite({ open: false, email: '', fullName: '', role: 'STUDENT' }); refreshOrgData(); } catch (e) { toast.error(e?.response?.data?.error || 'Failed'); }
   };
 
   const submitTeam = async () => {
@@ -198,7 +212,7 @@ export default function DepartmentPage() {
       await orgApi.createTeam(currentOrg.id, targetDeptId, { name: combinedName });
       toast.success('Class & Section created');
       setNewTeam({ open: false, gradeName: '', sectionName: '', deptId: '' });
-      load();
+      refreshOrgData();
     } catch (e) {
       toast.error(e?.response?.data?.error || 'Failed');
     }
@@ -210,7 +224,7 @@ export default function DepartmentPage() {
       await orgApi.deleteTeam(currentOrg.id, deleteTeamDialog.team.id);
       toast.success('Class Section deleted');
       setDeleteTeamDialog({ open: false, team: null });
-      load();
+      refreshOrgData();
     } catch (e) {
       toast.error(e?.response?.data?.error || 'Failed to delete Class Section');
     }

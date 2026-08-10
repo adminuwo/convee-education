@@ -21,10 +21,10 @@ async function seed() {
   // 2. Director (Institution Owner & Director)
   const demoPw = await hashPassword('Demo1234!');
   const director = await prisma.user.upsert({
-    where: { email: 'director@stxaviers.edu' },
+    where: { email: 'director@demo.edu' },
     update: { passwordHash: demoPw, isVerified: true },
     create: {
-      email: 'director@stxaviers.edu',
+      email: 'director@demo.edu',
       passwordHash: demoPw,
       fullName: 'Dr. Arthur Vance (Director)',
       isVerified: true,
@@ -133,7 +133,8 @@ async function seed() {
     { email: 'teacher.sarah@demo.edu', fullName: 'Sarah Chen (Teacher)', role: 'TEACHER' as any, title: 'Senior CS Instructor' },
     { email: 'teacher.mike@demo.edu', fullName: 'Mike Johnson (Teacher)', role: 'TEACHER' as any, title: 'Physics & Math Instructor' },
     { email: 'teacher.emily@demo.edu', fullName: 'Dr. Emily Watson (Teacher)', role: 'TEACHER' as any, title: 'Chemistry Instructor' },
-    { email: 'student.alex@demo.edu', fullName: 'Alex Rivera (Student)', role: 'STUDENT' as any, title: 'Student - Grade 10 Sec A' },
+    { email: 'student.alex@demo.edu', fullName: 'Alex Rivera (Student)', role: 'STUDENT' as any, title: 'Student ID: STU-2026-ALEX' },
+    { email: 'parent.alex@demo.edu', fullName: 'Carlos Rivera (Parent)', role: 'PARENT' as any, title: 'Parent ID: PAR-2026-ALEX' },
   ];
 
   const createdUsers: Record<string, string> = { [director.email]: director.id };
@@ -155,9 +156,9 @@ async function seed() {
   // Assign demo Student, Teacher, and HOD to Grade 10 - Sec A class
   const grade10Team = await prisma.team.findFirst({ where: { name: 'Grade 10 - Sec A' } });
   if (grade10Team) {
-    const studentUser = createdUsers['student.alex@stxaviers.edu'];
-    const teacherUser = createdUsers['teacher.sarah@stxaviers.edu'];
-    const hodUser = createdUsers['hod.cs@stxaviers.edu'];
+    const studentUser = createdUsers['student.alex@demo.edu'];
+    const teacherUser = createdUsers['teacher.sarah@demo.edu'];
+    const hodUser = createdUsers['hod.cs@demo.edu'];
 
     for (const uid of [studentUser, teacherUser, hodUser]) {
       if (uid) {
@@ -190,7 +191,7 @@ async function seed() {
 
   // Enroll staff members into demo standard channels (exclude students from private faculty channels)
   const allStaffIds = Object.entries(createdUsers)
-    .filter(([email]) => email !== 'student.alex@stxaviers.edu')
+    .filter(([email]) => email !== 'student.alex@demo.edu')
     .map(([, id]) => id);
 
   const demoChannels = await prisma.channel.findMany({
@@ -200,7 +201,7 @@ async function seed() {
   for (const channel of demoChannels) {
     if (channel.type === 'PRIVATE') {
       // Remove any student membership from private staff channels
-      const studentId = createdUsers['student.alex@stxaviers.edu'];
+      const studentId = createdUsers['student.alex@demo.edu'];
       if (studentId) {
         await prisma.channelMember.deleteMany({
           where: { channelId: channel.id, userId: studentId },
@@ -232,7 +233,7 @@ async function seed() {
       priority: 'HIGH' as const,
       dueDate: nextWeek,
       projectId: boardExamPrep?.id || null,
-      assigneeIds: [createdUsers['teacher.sarah@stxaviers.edu'], createdUsers['hod.cs@stxaviers.edu']],
+      assigneeIds: [createdUsers['teacher.sarah@demo.edu'], createdUsers['hod.cs@demo.edu']],
       checklist: ['Audit Theory question papers', 'Review exam rubrics', 'Get Dean approval'],
     },
     {
@@ -242,7 +243,7 @@ async function seed() {
       priority: 'MEDIUM' as const,
       dueDate: tomorrow,
       projectId: boardExamPrep?.id || null,
-      assigneeIds: [createdUsers['teacher.mike@stxaviers.edu']],
+      assigneeIds: [createdUsers['teacher.mike@demo.edu']],
       checklist: ['Vendor quote comparison', 'Submit purchase request', 'Verify equipment delivery'],
     },
     {
@@ -252,7 +253,7 @@ async function seed() {
       priority: 'URGENT' as const,
       dueDate: tomorrow,
       projectId: stemFair?.id || null,
-      assigneeIds: [createdUsers['principal@stxaviers.edu'], createdUsers['dean@stxaviers.edu']],
+      assigneeIds: [createdUsers['principal@demo.edu'], createdUsers['dean@demo.edu']],
       checklist: ['Select faculty judging panel', 'Publish guidelines', 'Release event schedule'],
     },
   ];
@@ -295,9 +296,9 @@ async function seed() {
       startTime: meetingStart1,
       endTime: meetingEnd1,
       location: 'Faculty Boardroom / Google Meet',
-      meetingUrl: 'https://meet.google.com/stx-cs-faculty',
+      meetingUrl: 'https://meet.google.com/demo-cs-faculty',
       agenda: '1. Fundamentals of Python Curriculum\n2. Lab Assignment Guidelines\n3. Q&A',
-      attendeeIds: [createdUsers['hod.cs@stxaviers.edu'], createdUsers['teacher.sarah@stxaviers.edu']],
+      attendeeIds: [createdUsers['hod.cs@demo.edu'], createdUsers['teacher.sarah@demo.edu']],
     },
     {
       title: 'Academic Council HOD, Dean & Director Sync',
@@ -305,9 +306,9 @@ async function seed() {
       startTime: academicSyncStart,
       endTime: academicSyncEnd,
       location: 'Academic Senate Room / Virtual Live Stream',
-      meetingUrl: 'https://meet.google.com/stx-academic-sync',
+      meetingUrl: 'https://meet.google.com/demo-academic-sync',
       agenda: '1. Semester Curriculum Review\n2. STEM Fair Budget Approval\n3. Departmental Feedback',
-      attendeeIds: [director.id, createdUsers['principal@stxaviers.edu'], createdUsers['dean@stxaviers.edu'], createdUsers['hod.cs@stxaviers.edu'], createdUsers['hod.physics@stxaviers.edu']],
+      attendeeIds: [director.id, createdUsers['principal@demo.edu'], createdUsers['dean@demo.edu'], createdUsers['hod.cs@demo.edu'], createdUsers['hod.physics@demo.edu']],
     },
   ];
 
@@ -336,13 +337,13 @@ async function seed() {
   console.log('\n====================================================');
   console.log('✅ Educational Database Seeding Completed!');
   console.log('====================================================');
-  console.log('Institution: St. Xavier\'s International Academy (slug: st-xaviers)');
+  console.log('Institution: Demo International Academy (slug: demo-academy)');
   console.log('Super Admin: admin@platform.io / SuperAdmin123!');
-  console.log('Director:    director@stxaviers.edu / Demo1234!');
-  console.log('Principal:   principal@stxaviers.edu / Demo1234!');
-  console.log('Dean:        dean@stxaviers.edu / Demo1234!');
-  console.log('HODs:        hod.cs@stxaviers.edu, hod.physics@stxaviers.edu (Password: Demo1234!)');
-  console.log('Teachers:    teacher.sarah@stxaviers.edu, teacher.mike@stxaviers.edu, teacher.emily@stxaviers.edu (Password: Demo1234!)');
+  console.log('Director:    director@demo.edu / Demo1234!');
+  console.log('Principal:   principal@demo.edu / Demo1234!');
+  console.log('Dean:        dean@demo.edu / Demo1234!');
+  console.log('HODs:        hod.cs@demo.edu, hod.physics@demo.edu (Password: Demo1234!)');
+  console.log('Teachers:    teacher.sarah@demo.edu, teacher.mike@demo.edu, teacher.emily@demo.edu (Password: Demo1234!)');
   console.log('====================================================\n');
 }
 

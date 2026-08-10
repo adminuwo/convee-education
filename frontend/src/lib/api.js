@@ -216,3 +216,29 @@ export const studentApi = {
   generateMass: (orgId, data) => api.post(`/orgs/${orgId}/students/generate-mass`, data).then((r) => r.data),
 };
 
+export const attendanceApi = {
+  batchLog: (data) => api.post('/attendance/batch', data).then((r) => r.data),
+  getByTeam: (teamId, date) => api.get(`/attendance/team/${teamId}`, { params: { date } }).then((r) => r.data),
+  getStats: (orgId) => api.get('/attendance/stats', { params: { orgId } }).then((r) => r.data),
+};
+
+export const homeworkApi = {
+  submit: (taskId, data) => api.post(`/homework/${taskId}/submit`, data).then((r) => r.data),
+  getSubmissions: (taskId) => api.get(`/homework/${taskId}/submissions`).then((r) => r.data),
+  gradeSubmission: (taskId, submissionId, data) => api.post(`/homework/${taskId}/submissions/${submissionId}/grade`, data).then((r) => r.data),
+  getDepartmentOverview: (orgId) => api.get('/homework/oversight/departments-overview', { params: { orgId } }).then((r) => r.data),
+  getDepartmentTeachers: (orgId, departmentId) => api.get('/homework/oversight/department-teachers', { params: { orgId, departmentId } }).then((r) => r.data),
+  getTeacherAssignments: (orgId, teacherId) => api.get('/homework/oversight/teacher-assignments', { params: { orgId, teacherId } }).then((r) => r.data),
+};
+
+export const parentApi = {
+  getMyChildren: () => api.get('/parent/my-children').then((r) => r.data),
+  getChildReport: (studentId, orgId) => api.get(`/parent/child/${studentId}/report`, { params: { orgId } }).then((r) => r.data),
+  linkParentStudent: (data) => api.post('/parent/link', data).then((r) => r.data),
+};
+
+export const aiExtendedApi = {
+  generateQuiz: (data) => api.post('/ai/generate-quiz', data).then((r) => r.data),
+  dailyBriefing: (orgId) => api.post('/ai/daily-briefing', { orgId }).then((r) => r.data),
+};
+

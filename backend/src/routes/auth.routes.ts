@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import crypto from 'crypto';
 import prisma from '../db/prisma';
@@ -12,6 +13,14 @@ import { sendVerificationEmail, sendPasswordResetEmail, isEmailConfigured } from
 
 const router = Router();
 
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 30, // Limit each IP to 30 requests per windowMs
+  message: { error: 'Too many login or registration attempts. Please try again after 15 minutes.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 const RegisterSchema = z.object({
   email: z.string().email(),
   password: z.string().min(6),
@@ -20,9 +29,9 @@ const RegisterSchema = z.object({
 });
 
 const LoginSchema = z.object({
-  email: z.string().email(),
+  email: z.string().min(1),
   password: z.string().min(1),
-  portalMode: z.enum(['faculty', 'student']).optional(),
+  portalMode: z.enum(['faculty', 'student', 'parent']).optional(),
 });
 
 const RefreshSchema = z.object({ refreshToken: z.string() });
@@ -50,7 +59,7 @@ function generateToken(): string {
 }
 
 // -------- Register --------
-router.post('/register', validate(RegisterSchema), async (req, res, next) => {
+router.post('/register', authLimiter, validate(RegisterSchema), async (req, res, next) => {
   try {
     const { email, password, fullName, orgName } = req.body;
     const existing = await prisma.user.findUnique({ where: { email } });
@@ -130,12 +139,26 @@ router.post('/register', validate(RegisterSchema), async (req, res, next) => {
 router.get('/verify-email', async (req, res, next) => {
   try {
     const { token } = req.query as { token: string };
-    if (!token) return res.status(400).json({ error: 'Missing token' });
+    if (!token) return res.status(400).json({ error: 'Missing verification token' });
 
-    const record = await prisma.emailVerificationToken.findUnique({ where: { token } });
-    if (!record) return res.status(400).json({ error: 'Invalid or expired verification link' });
-    if (record.usedAt) return res.status(400).json({ error: 'This link has already been used' });
-    if (record.expiresAt < new Date()) return res.status(400).json({ error: 'Verification link has expired' });
+    const record = await prisma.emailVerificationToken.findUnique({
+      where: { token },
+      include: { user: true },
+    });
+
+    if (!record) return res.status(400).json({ error: 'Invalid or non-existent verification link.' });
+
+    // If user is already verified or token was already processed, treat as successful
+    if (record.user?.isVerified || record.usedAt) {
+      if (record.userId && !record.user?.isVerified) {
+        await prisma.user.update({ where: { id: record.userId }, data: { isVerified: true } });
+      }
+      return res.json({ success: true, message: 'Your email address is already verified! You can log in now.' });
+    }
+
+    if (record.expiresAt < new Date()) {
+      return res.status(400).json({ error: 'Verification link has expired. Please request a new verification email.' });
+    }
 
     await prisma.$transaction([
       prisma.user.update({ where: { id: record.userId }, data: { isVerified: true } }),
@@ -152,13 +175,40 @@ router.get('/verify-email', async (req, res, next) => {
 router.post('/resend-verification', async (req, res, next) => {
   try {
     const { email } = req.body;
-    if (!email) return res.status(400).json({ error: 'Email is required' });
-    if (!isEmailConfigured()) return res.status(503).json({ error: 'Email service not configured' });
+    const rawInput = (email || '').trim();
+    if (!rawInput) return res.status(400).json({ error: 'Email or User ID is required' });
+    if (!isEmailConfigured()) return res.status(503).json({ error: 'Email service is not configured (RESEND_API_KEY missing)' });
 
-    const user = await prisma.user.findUnique({ where: { email } });
-    // Always return success to prevent email enumeration
-    if (!user || user.isVerified) {
-      return res.json({ message: 'If that email exists and is unverified, a new link has been sent.' });
+    const cleanInput = rawInput.toLowerCase();
+    const codeSlug = cleanInput.replace(/^(stu|par)-\d+-/i, '').replace(/[^a-z0-9]/g, '');
+
+    const user = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { email: { equals: rawInput, mode: 'insensitive' as const } },
+          { email: { equals: cleanInput, mode: 'insensitive' as const } },
+          { email: { contains: cleanInput, mode: 'insensitive' as const } },
+          ...(codeSlug ? [{ email: { contains: codeSlug, mode: 'insensitive' as const } }] : []),
+          {
+            memberships: {
+              some: {
+                OR: [
+                  { title: { contains: rawInput, mode: 'insensitive' as const } },
+                  { title: { contains: cleanInput, mode: 'insensitive' as const } },
+                  ...(codeSlug ? [{ title: { contains: codeSlug, mode: 'insensitive' as const } }] : []),
+                ],
+              },
+            },
+          },
+        ],
+      },
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'No user account found with this Email / ID.' });
+    }
+    if (user.isVerified) {
+      return res.status(400).json({ error: 'This account is already verified! You can log in directly.' });
     }
 
     // Invalidate old tokens
@@ -177,8 +227,11 @@ router.post('/resend-verification', async (req, res, next) => {
     });
 
     await sendVerificationEmail(user.email, user.fullName, token);
-    res.json({ message: 'If that email exists and is unverified, a new link has been sent.' });
-  } catch (e) {
+    res.json({ success: true, message: `Verification email sent successfully to ${user.email}!` });
+  } catch (e: any) {
+    if (e?.message && typeof e.message === 'string') {
+      return res.status(400).json({ error: e.message });
+    }
     next(e);
   }
 });
@@ -240,13 +293,57 @@ router.post('/reset-password', validate(ResetPasswordSchema), async (req, res, n
 });
 
 // -------- Login --------
-router.post('/login', validate(LoginSchema), async (req, res, next) => {
+router.post('/login', authLimiter, validate(LoginSchema), async (req, res, next) => {
   try {
     const { email, password, portalMode } = req.body;
-    const user = await prisma.user.findUnique({ where: { email } });
-    if (!user || !user.passwordHash) return res.status(401).json({ error: 'Invalid credentials' });
+    const rawInput = (email || '').trim();
+    const cleanInput = rawInput.toLowerCase();
+
+    const targetRole = portalMode === 'student' ? 'STUDENT' : portalMode === 'parent' ? 'PARENT' : undefined;
+
+    // 1. Find by exact email or ID
+    let user = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { email: { equals: rawInput, mode: 'insensitive' as const } },
+          { email: { equals: cleanInput, mode: 'insensitive' as const } },
+        ],
+        ...(targetRole ? { memberships: { some: { role: targetRole } } } : {}),
+      },
+    });
+
+    // 2. If not found by exact email/ID, match by Student ID / Parent ID / Admission Number across memberships & email
+    if (!user) {
+      const codeSlug = cleanInput.replace(/^(stu|par)-\d+-/i, '').replace(/[^a-z0-9]/g, '');
+      const membershipWhere = {
+        ...(targetRole ? { role: targetRole } : {}),
+        OR: [
+          { title: { contains: rawInput, mode: 'insensitive' as const } },
+          { title: { contains: cleanInput, mode: 'insensitive' as const } },
+          ...(codeSlug ? [{ title: { contains: codeSlug, mode: 'insensitive' as const } }] : []),
+        ],
+      };
+
+      const orConditions: any[] = [
+        { email: { contains: cleanInput, mode: 'insensitive' as const } },
+        { memberships: { some: membershipWhere } },
+      ];
+
+      if (codeSlug) {
+        orConditions.push({ email: { contains: codeSlug, mode: 'insensitive' as const } });
+      }
+
+      user = await prisma.user.findFirst({
+        where: {
+          OR: orConditions,
+          ...(targetRole ? { memberships: { some: { role: targetRole } } } : {}),
+        },
+      });
+    }
+
+    if (!user || !user.passwordHash) return res.status(401).json({ error: 'Invalid credentials. Please check your ID / Email and password.' });
     const ok = await verifyPassword(password, user.passwordHash);
-    if (!ok) return res.status(401).json({ error: 'Invalid credentials' });
+    if (!ok) return res.status(401).json({ error: 'Invalid credentials. Please check your ID / Email and password.' });
 
     // Block unverified users only if email service is configured
     if (!user.isVerified && isEmailConfigured()) {

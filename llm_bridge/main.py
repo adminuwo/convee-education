@@ -1,5 +1,5 @@
 """
-LLM Bridge - Internal Python microservice that proxies to emergentintegrations library.
+LLM Bridge - Internal Python microservice that proxies directly to OpenAI API.
 Only listens on localhost:8002. The Node.js backend calls this internally.
 """
 import os
@@ -18,18 +18,10 @@ if os.path.exists(backend_env):
 else:
     load_dotenv('/app/backend/.env')
 
-try:
-    from emergentintegrations.llm.chat import LlmChat, UserMessage
-    HAS_EMERGENT = True
-except ImportError:
-    LlmChat = None
-    UserMessage = None
-    HAS_EMERGENT = False
-
 app = FastAPI(title="LLM Bridge", version="1.0.0")
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:8001", "http://127.0.0.1:8001"], allow_methods=["*"], allow_headers=["*"])
 
-OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '') or os.environ.get('EMERGENT_LLM_KEY', '')
+OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '')
 
 
 class ChatRequest(BaseModel):
@@ -47,7 +39,7 @@ class ChatResponse(BaseModel):
 
 @app.get('/health')
 async def health():
-    return {'status': 'ok', 'llm_key_configured': bool(OPENAI_API_KEY), 'has_emergent': HAS_EMERGENT}
+    return {'status': 'ok', 'llm_key_configured': bool(OPENAI_API_KEY)}
 
 
 async def call_openai_direct(api_key: str, model: str, system_msg: str, user_msg: str) -> str:
@@ -84,29 +76,8 @@ async def call_openai_direct(api_key: str, model: str, system_msg: str, user_msg
 @app.post('/chat', response_model=ChatResponse)
 async def chat(req: ChatRequest):
     if not OPENAI_API_KEY:
-        raise HTTPException(status_code=503, detail='No LLM API key configured (set OPENAI_API_KEY or EMERGENT_LLM_KEY in backend/.env)')
+        raise HTTPException(status_code=503, detail='No LLM API key configured (set OPENAI_API_KEY in backend/.env)')
 
-    # Priority 1: Use Emergent integrations if installed and key isn't standard sk-
-    if HAS_EMERGENT and LlmChat and not OPENAI_API_KEY.startswith("sk-"):
-        try:
-            chat_instance = LlmChat(
-                api_key=OPENAI_API_KEY,
-                session_id=req.session_key,
-                system_message=req.system_message,
-            ).with_model(req.provider, req.model)
-            user_msg = UserMessage(text=req.user_message)
-            response = await chat_instance.send_message(user_msg)
-            if hasattr(response, 'text'):
-                text = response.text
-            elif isinstance(response, str):
-                text = response
-            else:
-                text = str(response)
-            return ChatResponse(text=text, session_key=req.session_key)
-        except Exception:
-            pass # Fallback to direct OpenAI if emergent fails
-
-    # Priority 2: Direct OpenAI API call for standard OpenAI ChatGPT keys (sk-...)
     try:
         text = await call_openai_direct(OPENAI_API_KEY, req.model, req.system_message, req.user_message)
         return ChatResponse(text=text, session_key=req.session_key)
@@ -114,7 +85,7 @@ async def chat(req: ChatRequest):
         raise HTTPException(status_code=500, detail=f'OpenAI API error: {str(e)}')
 
 
-
 if __name__ == '__main__':
     import uvicorn
     uvicorn.run(app, host='0.0.0.0', port=8002)
+

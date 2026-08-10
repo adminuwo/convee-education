@@ -1,4 +1,28 @@
 // craco.config.js
+const fs = require("fs");
+
+// Suppress Node.js DEP0176 deprecation warning (fs.F_OK is deprecated) in Node 22+
+const originalEmitWarning = process.emitWarning;
+process.emitWarning = (warning, ...args) => {
+  if (
+    (typeof warning === "string" && warning.includes("DEP0176")) ||
+    (typeof warning === "object" && warning?.code === "DEP0176")
+  ) {
+    return;
+  }
+  return originalEmitWarning.call(process, warning, ...args);
+};
+
+// Polyfill fs.F_OK property to avoid deprecation getter trigger
+try {
+  Object.defineProperty(fs, "F_OK", {
+    value: fs.constants?.F_OK ?? 0,
+    writable: false,
+    configurable: true,
+    enumerable: true,
+  });
+} catch (_) {}
+
 const path = require("path");
 require("dotenv").config();
 
@@ -128,21 +152,7 @@ webpackConfig.devServer = (devServerConfig) => {
   return devServerConfig;
 };
 
-// Wrap with visual edits (automatically adds babel plugin, dev server, and overlay in dev mode)
-if (isDevServer) {
-  try {
-    const { withVisualEdits } = require("@emergentbase/visual-edits/craco");
-    webpackConfig = withVisualEdits(webpackConfig);
-  } catch (err) {
-    if (err.code === 'MODULE_NOT_FOUND' && err.message.includes('@emergentbase/visual-edits/craco')) {
-      console.warn(
-        "[visual-edits] @emergentbase/visual-edits not installed — visual editing disabled."
-      );
-    } else {
-      throw err;
-    }
-  }
-}
+
 
 const configureDevServer = webpackConfig.devServer;
 webpackConfig.devServer = (devServerConfig) =>

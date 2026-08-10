@@ -11,6 +11,14 @@ export function setupSocketIO(httpServer: HttpServer): SocketIOServer {
     transports: ['websocket', 'polling'],
   });
 
+  // Track active socket connections per user ID
+  const activeUserSockets = new Map<string, Set<string>>();
+
+  // On server startup, reset all user statuses to 'offline' in database
+  prisma.user.updateMany({ data: { status: 'offline' } }).catch((e) => {
+    logger.error('Failed to reset user statuses on startup', e?.message);
+  });
+
   io.use((socket: Socket, next) => {
     try {
       const token = socket.handshake.auth?.token || socket.handshake.query?.token;
@@ -28,9 +36,21 @@ export function setupSocketIO(httpServer: HttpServer): SocketIOServer {
     logger.info(`Socket connected: ${socket.id} user=${user.email}`);
     socket.join(`user:${user.id}`);
 
-    // Mark user online
-    await prisma.user.update({ where: { id: user.id }, data: { status: 'online', lastSeenAt: new Date() } }).catch(() => {});
-    io.emit('user:presence', { userId: user.id, status: 'online' });
+    // Track user socket connection
+    let userSockets = activeUserSockets.get(user.id);
+    if (!userSockets) {
+      userSockets = new Set();
+      activeUserSockets.set(user.id, userSockets);
+    }
+
+    const wasOffline = userSockets.size === 0;
+    userSockets.add(socket.id);
+
+    if (wasOffline) {
+      // Mark user online in database and broadcast presence
+      await prisma.user.update({ where: { id: user.id }, data: { status: 'online', lastSeenAt: new Date() } }).catch(() => {});
+      io.emit('user:presence', { userId: user.id, status: 'online' });
+    }
 
     // Auto-join user's org rooms + channel rooms (including public channels)
     try {
@@ -66,8 +86,15 @@ export function setupSocketIO(httpServer: HttpServer): SocketIOServer {
 
     socket.on('disconnect', async () => {
       logger.info(`Socket disconnected: ${socket.id} user=${user.email}`);
-      await prisma.user.update({ where: { id: user.id }, data: { status: 'offline', lastSeenAt: new Date() } }).catch(() => {});
-      io.emit('user:presence', { userId: user.id, status: 'offline' });
+      const sockets = activeUserSockets.get(user.id);
+      if (sockets) {
+        sockets.delete(socket.id);
+        if (sockets.size === 0) {
+          activeUserSockets.delete(user.id);
+          await prisma.user.update({ where: { id: user.id }, data: { status: 'offline', lastSeenAt: new Date() } }).catch(() => {});
+          io.emit('user:presence', { userId: user.id, status: 'offline' });
+        }
+      }
     });
   });
 

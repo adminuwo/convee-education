@@ -78,8 +78,8 @@ export default function LoginPage({ initialPortal = 'faculty' }) {
   const resendVerification = async () => {
     setResendLoading(true);
     try {
-      await authApi.resendVerification(unverifiedEmail);
-      toast.success('Verification email sent! Check your inbox.');
+      const res = await authApi.resendVerification(unverifiedEmail);
+      toast.success(res?.message || 'Verification email sent! Check your inbox.');
     } catch (e) {
       toast.error(e?.response?.data?.error || 'Failed to resend email');
     } finally {
@@ -250,11 +250,11 @@ export default function LoginPage({ initialPortal = 'faculty' }) {
         <Card className="w-full max-w-md border-border shadow-md">
           <CardHeader className="pb-4">
             {/* Mode Switcher Tabs */}
-            <div className="grid grid-cols-2 gap-1 p-1 bg-muted/40 rounded-lg border border-border mb-3">
+            <div className="grid grid-cols-3 gap-1 p-1 bg-muted/40 rounded-lg border border-border mb-3">
               <button
                 type="button"
                 onClick={() => setPortalMode('faculty')}
-                className={`py-2 px-3 rounded-md text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
+                className={`py-2 px-2 rounded-md text-[11px] font-semibold flex items-center justify-center gap-1 transition-all ${
                   portalMode === 'faculty'
                     ? 'bg-background text-foreground shadow-xs border border-border'
                     : 'text-muted-foreground hover:text-foreground'
@@ -262,13 +262,13 @@ export default function LoginPage({ initialPortal = 'faculty' }) {
                 data-testid="faculty-tab-btn"
               >
                 <UserCheck className="h-3.5 w-3.5 text-blue-500" />
-                <span>Faculty & Staff</span>
+                <span>Faculty</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setPortalMode('student')}
-                className={`py-2 px-3 rounded-md text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
+                className={`py-2 px-2 rounded-md text-[11px] font-semibold flex items-center justify-center gap-1 transition-all ${
                   portalMode === 'student'
                     ? 'bg-background text-foreground shadow-xs border border-border'
                     : 'text-muted-foreground hover:text-foreground'
@@ -276,7 +276,21 @@ export default function LoginPage({ initialPortal = 'faculty' }) {
                 data-testid="student-tab-btn"
               >
                 <GraduationCap className="h-3.5 w-3.5 text-emerald-500" />
-                <span>Student Portal</span>
+                <span>Student</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPortalMode('parent')}
+                className={`py-2 px-2 rounded-md text-[11px] font-semibold flex items-center justify-center gap-1 transition-all ${
+                  portalMode === 'parent'
+                    ? 'bg-background text-foreground shadow-xs border border-border'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+                data-testid="parent-tab-btn"
+              >
+                <ShieldCheck className="h-3.5 w-3.5 text-purple-500" />
+                <span>Parent</span>
               </button>
             </div>
 
@@ -287,12 +301,19 @@ export default function LoginPage({ initialPortal = 'faculty' }) {
                 </CardTitle>
                 <p className="text-sm text-muted-foreground mt-1">Sign in with your institutional credentials.</p>
               </div>
-            ) : (
+            ) : portalMode === 'student' ? (
               <div>
                 <CardTitle className="font-display text-2xl flex items-center gap-2">
                   <GraduationCap className="h-5 w-5 text-emerald-500" /> Student Portal Sign In
                 </CardTitle>
                 <p className="text-sm text-muted-foreground mt-1">Access your class channels, assignments, and campus updates.</p>
+              </div>
+            ) : (
+              <div>
+                <CardTitle className="font-display text-2xl flex items-center gap-2">
+                  <ShieldCheck className="h-5 w-5 text-purple-500" /> Parent Portal Sign In
+                </CardTitle>
+                <p className="text-sm text-muted-foreground mt-1">View your child's attendance rate, homework, and message teachers.</p>
               </div>
             )}
           </CardHeader>
@@ -300,15 +321,23 @@ export default function LoginPage({ initialPortal = 'faculty' }) {
           <CardContent className="space-y-4">
             <form onSubmit={submit} className="space-y-4">
               <div>
-                <Label htmlFor="email">{portalMode === 'student' ? 'Student Email / ID' : 'Faculty Email'}</Label>
+                <Label htmlFor="email">
+                  {portalMode === 'student' ? 'Student ID / Admission No' : portalMode === 'parent' ? 'Parent ID' : 'Faculty Email'}
+                </Label>
                 <Input
                   id="email"
-                  type="email"
+                  type={portalMode === 'faculty' ? 'email' : 'text'}
                   required
                   autoFocus
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder={portalMode === 'student' ? 'student.alex@demo.edu' : 'director@demo.edu'}
+                  placeholder={
+                    portalMode === 'student'
+                      ? 'e.g. STU-2026-ALEX'
+                      : portalMode === 'parent'
+                      ? 'e.g. PAR-2026-ALEX'
+                      : 'director@demo.edu'
+                  }
                   data-testid="login-email-input"
                 />
               </div>
@@ -333,7 +362,7 @@ export default function LoginPage({ initialPortal = 'faculty' }) {
                 </div>
               </div>
               <Button type="submit" className="w-full font-semibold" disabled={loading} data-testid="login-submit-button">
-                {loading ? 'Signing in…' : portalMode === 'student' ? 'Sign in to Student Portal' : 'Sign in to Faculty Portal'}
+                {loading ? 'Signing in…' : portalMode === 'student' ? 'Sign in to Student Portal' : portalMode === 'parent' ? 'Sign in to Parent Portal' : 'Sign in to Faculty Portal'}
               </Button>
             </form>
 
@@ -348,7 +377,7 @@ export default function LoginPage({ initialPortal = 'faculty' }) {
                   New institution? <Link to="/register" className="font-semibold text-primary hover:underline">Register your school/college</Link>
                 </div>
               </>
-            ) : (
+            ) : portalMode === 'student' ? (
               /* Student Notice Box */
               <div className="mt-4 p-3 rounded-lg border border-emerald-500/20 bg-emerald-500/5 text-xs text-emerald-400 space-y-1">
                 <div className="font-semibold flex items-center gap-1 text-emerald-300">
@@ -358,17 +387,27 @@ export default function LoginPage({ initialPortal = 'faculty' }) {
                   Student accounts are generated directly by the school administration. Self-registration is disabled for students. Please contact your class teacher or school administrator to receive your credentials.
                 </p>
               </div>
+            ) : (
+              /* Parent Notice Box */
+              <div className="mt-4 p-3 rounded-lg border border-purple-500/20 bg-purple-500/5 text-xs text-purple-400 space-y-1">
+                <div className="font-semibold flex items-center gap-1 text-purple-300">
+                  <UserCheck className="h-3.5 w-3.5 shrink-0" /> Parent Portal Access
+                </div>
+                <p className="text-muted-foreground text-[11px] leading-relaxed">
+                  Parent accounts allow monitoring of student attendance records, graded homework rubrics, and direct messaging with class teachers.
+                </p>
+              </div>
             )}
 
             {/* Quick Demo Logins */}
             <div className="mt-4 pt-3 border-t border-border space-y-2">
               <div className="text-[11px] font-semibold uppercase text-muted-foreground tracking-wider">
-                {portalMode === 'student' ? 'Demo Student Account' : 'Demo Faculty Accounts'}
+                {portalMode === 'student' ? 'Demo Student Account' : portalMode === 'parent' ? 'Demo Parent Account' : 'Demo Faculty Accounts'}
               </div>
               {portalMode === 'student' ? (
                 <button
                   type="button"
-                  onClick={() => handleQuickLogin('student.alex@demo.edu', 'Demo1234!', 'student')}
+                  onClick={() => handleQuickLogin('STU-2026-ALEX', 'Demo1234!', 'student')}
                   disabled={loading}
                   className="w-full rounded-md border border-emerald-500/30 bg-emerald-500/10 p-2.5 text-xs text-left hover:bg-emerald-500/20 transition-all cursor-pointer flex items-center justify-between"
                   data-testid="student-demo-btn"
@@ -377,10 +416,27 @@ export default function LoginPage({ initialPortal = 'faculty' }) {
                     <GraduationCap className="h-4 w-4 text-emerald-500" />
                     <div>
                       <div className="font-semibold text-foreground">Alex Rivera (Student)</div>
-                      <div className="text-[10px] text-muted-foreground">Grade 10 Sec A · student.alex@demo.edu</div>
+                      <div className="text-[10px] text-muted-foreground">Grade 10 Sec A · Student ID: STU-2026-ALEX</div>
                     </div>
                   </div>
                   <span className="text-[11px] text-emerald-500 font-semibold">Log in →</span>
+                </button>
+              ) : portalMode === 'parent' ? (
+                <button
+                  type="button"
+                  onClick={() => handleQuickLogin('PAR-2026-ALEX', 'Demo1234!', 'parent')}
+                  disabled={loading}
+                  className="w-full rounded-md border border-purple-500/30 bg-purple-500/10 p-2.5 text-xs text-left hover:bg-purple-500/20 transition-all cursor-pointer flex items-center justify-between"
+                  data-testid="parent-demo-btn"
+                >
+                  <div className="flex items-center gap-2">
+                    <UserCheck className="h-4 w-4 text-purple-500" />
+                    <div>
+                      <div className="font-semibold text-foreground">Carlos Rivera (Parent)</div>
+                      <div className="text-[10px] text-muted-foreground">Parent of Alex Rivera · Parent ID: PAR-2026-ALEX</div>
+                    </div>
+                  </div>
+                  <span className="text-[11px] text-purple-500 font-semibold">Log in →</span>
                 </button>
               ) : (
                 <div className="grid grid-cols-2 gap-2">

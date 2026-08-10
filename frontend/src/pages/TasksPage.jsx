@@ -201,6 +201,7 @@ export default function TasksPage() {
       (d.teams || []).forEach((t) => {
         teamsList.push({
           ...t,
+          departmentId: t.departmentId || d.id,
           deptName: d.name,
         });
       });
@@ -215,15 +216,44 @@ export default function TasksPage() {
   }, [tasks]);
 
   const myClassTeams = useMemo(() => {
-    if (['DIRECTOR', 'ADMIN', 'PRINCIPAL'].includes(currentOrg?.role)) {
-      return allTeams;
-    }
+    const roleUpper = (currentOrg?.role || '').toUpperCase();
+    const titleUpper = (user?.title || '').toUpperCase();
+
+    // Top Level Admins (Director, Principal, Admin) -> See ALL classes in ALL departments
+    const isTopAdmin = ['ADMIN', 'DIRECTOR', 'PRINCIPAL'].some(
+      (r) => roleUpper.includes(r) || titleUpper.includes(r)
+    );
+    if (isTopAdmin) return allTeams;
+
+    // Deans & HODs: Auto-access ALL classes in their own department(s); require assignment for other depts
+    const deptHeadIds = new Set(
+      departments
+        .filter(
+          (d) =>
+            d.headId === user?.id ||
+            d.memberships?.some(
+              (m) =>
+                (m.userId === user?.id || m.user?.id === user?.id) &&
+                ['HOD', 'DEAN'].some((r) => (m.role || '').toUpperCase().includes(r) || titleUpper.includes(r))
+            )
+        )
+        .map((d) => d.id)
+    );
+
+    const isDeanOrHOD =
+      deptHeadIds.size > 0 ||
+      ['HOD', 'DEAN'].some((r) => roleUpper.includes(r) || titleUpper.includes(r));
+
     return allTeams.filter((t) => {
+      // Deans & HODs automatically see all classes in their own department
+      if (isDeanOrHOD && (deptHeadIds.has(t.departmentId) || deptHeadIds.has(t.department?.id))) return true;
+
+      // Class Teacher / Manager or assigned member in other departments
       if (t.managerId === user?.id) return true;
       if (t.memberships?.some((m) => m.userId === user?.id || m.user?.id === user?.id)) return true;
       return false;
     });
-  }, [allTeams, user?.id, currentOrg?.role]);
+  }, [allTeams, departments, user?.id, user?.title, currentOrg?.role]);
 
   const submit = async () => {
     try {

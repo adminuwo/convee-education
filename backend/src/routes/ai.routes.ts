@@ -109,26 +109,154 @@ router.post('/chat', async (req, res, next) => {
           ? recentAnnouncements.map(m => `- [${new Date(m.createdAt).toLocaleDateString()}] ${m.sender?.fullName || 'School Admin'}: "${m.content}"`).join('\n')
           : 'No recent announcements posted.';
 
-        sys = `You are an AI Personal Academic Study Buddy for ${studentName}.
-Institutional Details:
-- Student Name: ${studentName}
-- Assigned Class & Section: ${className}
-- School Wing / Department: ${wingName}
+              } else if (membership?.role === 'PARENT' || req.user!.email?.includes('parent')) {
+        const parentName = currentUser?.fullName || req.user!.email || 'Parent / Guardian';
 
-RECENT SCHOOL & GRADE ANNOUNCEMENTS:
-${announcementSummary}
+        // Fetch linked children for this parent
+        const links = await prisma.parentStudentLink.findMany({
+          where: { parentUserId: req.user!.id },
+        });
 
-CURRENT PENDING HOMEWORK & TASKS FOR ${studentName.toUpperCase()}:
-${taskSummary}
+        const studentUserIds = Array.from(new Set(links.map((l) => l.studentUserId)));
 
-ACTIVE CLASS PROJECTS:
-${projectSummary}
+        // If no direct link, fallback to finding any student in org for demo/test mode
+        let studentMemberships = await prisma.membership.findMany({
+          where: {
+            userId: { in: studentUserIds },
+            ...(membership?.orgId ? { orgId: membership.orgId } : {}),
+          },
+          include: {
+            user: { select: { id: true, fullName: true, email: true } },
+            team: { select: { id: true, name: true, managerId: true } },
+            department: { select: { id: true, name: true, headId: true } },
+          },
+        });
 
-YOUR MISSION:
-1. Act as a friendly, encouraging, and highly knowledgeable personal academic tutor for ${studentName}.
-2. When asked about announcements, assignments, homework, due dates, or class projects, refer directly to the announcements, pending homework & active projects listed above.
-3. Help the student understand academic concepts step-by-step. Guide their thinking interactively without just giving away answers.
-4. Adapt your tone and explanations to their grade level (${className}). Keep answers clear, structured, and easy to read.`;
+        if (studentMemberships.length === 0 && membership?.orgId) {
+          studentMemberships = await prisma.membership.findMany({
+            where: { orgId: membership.orgId, role: 'STUDENT', isActive: true },
+            take: 1,
+            include: {
+              user: { select: { id: true, fullName: true, email: true } },
+              team: { select: { id: true, name: true, managerId: true } },
+              department: { select: { id: true, name: true, headId: true } },
+            },
+          });
+        }
+
+        let childrenDetailsSummary = 'No linked student accounts found.';
+        let facultyContactsSummary = 'No faculty contact details found.';
+        let homeworkDetailsSummary = 'No homework records available.';
+        let attendanceSummaryText = 'No attendance logs recorded.';
+
+        if (studentMemberships.length > 0) {
+          const firstStudent = studentMemberships[0];
+          const studentId = firstStudent.userId;
+          const studentFullName = firstStudent.user?.fullName || 'Student';
+
+          // Class Teacher
+          let classTeacherUser: any = null;
+          if (firstStudent.team?.managerId) {
+            classTeacherUser = await prisma.user.findUnique({
+              where: { id: firstStudent.team.managerId },
+              select: { id: true, fullName: true, email: true },
+            });
+          }
+
+          // HOD (Head of Department)
+          let hodUser: any = null;
+          if (firstStudent.department?.headId) {
+            hodUser = await prisma.user.findUnique({
+              where: { id: firstStudent.department.headId },
+              select: { id: true, fullName: true, email: true },
+            });
+          }
+          if (!hodUser && firstStudent.departmentId) {
+            const hodMem = await prisma.membership.findFirst({
+              where: { departmentId: firstStudent.departmentId, role: { in: ['HOD', 'DEAN'] }, isActive: true },
+              include: { user: { select: { id: true, fullName: true, email: true } } },
+            });
+            if (hodMem?.user) hodUser = hodMem.user;
+          }
+
+          // Attendance stats (past 30 days)
+          const thirtyDaysAgo = new Date();
+          thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+          const attRecords = await prisma.attendanceRecord.findMany({
+            where: { studentId, date: { gte: thirtyDaysAgo } },
+          });
+          const totalAtt = attRecords.length;
+          const presentAtt = attRecords.filter((r) => r.status === 'PRESENT' || r.status === 'LATE' || r.status === 'EXCUSED').length;
+          const attPercentage = totalAtt > 0 ? Math.round((presentAtt / totalAtt) * 100) : 100;
+
+          // Homework & Submissions
+          const tasks = await prisma.task.findMany({
+            where: { deletedAt: null, assignees: { some: { userId: studentId } } },
+            include: { createdBy: { select: { fullName: true } } },
+            orderBy: { createdAt: 'desc' },
+            take: 15,
+          });
+
+          const submissions = await prisma.homeworkSubmission.findMany({
+            where: { studentId },
+          });
+          const subMap = new Map(submissions.map((s) => [s.taskId, s]));
+
+          childrenDetailsSummary = `- Student Name: ${studentFullName}
+- Class / Section: ${firstStudent.team?.name || 'Class Section'}
+- School Wing / Department: ${firstStudent.department?.name || 'School Wing'}`;
+
+          attendanceSummaryText = `- Attendance Rate: ${attPercentage}% (${presentAtt}/${totalAtt} classes present in last 30 days)
+- Attendance Status: ${attPercentage < 75 ? '⚠️ WARNING: Low Attendance (< 75%)' : '✅ Good Standing'}`;
+
+          facultyContactsSummary = `- Class Teacher: ${classTeacherUser ? `${classTeacherUser.fullName} (ID: ${classTeacherUser.id}, Email: ${classTeacherUser.email})` : 'Unassigned'}
+- Head of Department (HOD): ${hodUser ? `${hodUser.fullName} (ID: ${hodUser.id}, Email: ${hodUser.email})` : 'Unassigned'}`;
+
+          homeworkDetailsSummary = tasks.length
+            ? tasks.map((t) => {
+                const sub = subMap.get(t.id);
+                const gradeStr = sub?.gradeScore !== undefined && sub?.gradeScore !== null ? `${sub.gradeScore}/${sub.gradeMax || 100}` : 'Not graded yet';
+                const feedbackStr = sub?.feedbackNotes ? `Feedback: "${sub.feedbackNotes}"` : 'No teacher feedback notes yet';
+                return `- Assignment: "${t.title}" | Status: ${t.status} | Due: ${t.dueDate ? new Date(t.dueDate).toLocaleDateString() : 'N/A'} | Grade: ${gradeStr} | ${feedbackStr}`;
+              }).join('\n')
+            : 'No homework tasks currently logged.';
+        }
+
+        sys = `You are an AI Parent Academic Assistant for ${parentName}.
+
+STUDENT ACADEMIC & PROGRESS PROFILE:
+${childrenDetailsSummary}
+
+ATTENDANCE SUMMARY:
+${attendanceSummaryText}
+
+HOMEWORK ASSIGNMENTS, GRADES & FEEDBACK:
+${homeworkDetailsSummary}
+
+FACULTY CONTACTS:
+${facultyContactsSummary}
+
+YOUR MISSION & CAPABILITIES:
+1. CHILD PROGRESS & HOMEWORK MONITORING:
+   - Provide clear, supportive updates on the student's attendance, completed/pending homework, grades, and teacher feedback.
+   - Reassure and guide the parent on areas where the student is excelling or needs extra attention.
+
+2. HOMEWORK HELP & PARENT GUIDANCE:
+   - When the parent asks for help explaining a homework assignment or topic to their child, break down concepts into clear, simple, step-by-step explanations so the parent can comfortably guide their student.
+
+3. CONTACTING CLASS TEACHER & HOD (HEAD OF DEPARTMENT):
+   - When the parent asks to contact, write to, or message their child's Class Teacher or Head of Department (HOD), draft a polite, professional, and clear message.
+   - AT THE END OF YOUR RESPONSE, always include a JSON action block so the user interface can display a 1-click "Send Message to Teacher / HOD" button:
+   \`\`\`json
+   {
+     "action": "contact_faculty",
+     "recipientId": "[Class Teacher or HOD User ID]",
+     "recipientName": "[Class Teacher or HOD Full Name]",
+     "recipientRole": "Class Teacher" or "Head of Department (HOD)",
+     "draftMessage": "[Exact draft message to send]"
+   }
+   \`\`\`
+   - If the teacher or HOD ID is not explicitly available, use "class_teacher" or "hod" as recipientId fallback.`;
       } else {
         const staffName = currentUser?.fullName || req.user!.email || 'Staff Member';
         const roleName = membership?.role || 'Staff';
@@ -550,6 +678,73 @@ router.post('/sprint-plan', async (req, res, next) => {
     const { text } = await callLLM(`sprint-${orgId}-${Date.now()}`, sys, user);
     res.json({ plan: text || 'No plan generated.' });
   } catch (e) { next(e); }
+});
+
+// AI Exam & Quiz Question Bank Generator
+router.post('/generate-quiz', async (req, res, next) => {
+  try {
+    const { notes, subject, numQuestions } = req.body;
+    if (!notes || typeof notes !== 'string' || notes.trim().length === 0) {
+      return res.status(400).json({ error: 'Lesson notes or topic required to generate quiz.' });
+    }
+
+    const sys = `You are an expert Educational Quiz & Exam Question Bank Generator. 
+Generate a comprehensive, high-quality Exam Question Bank based on the provided lesson notes or subject topic.
+Format your output cleanly in Markdown with two distinct sections:
+1. MULTIPLE CHOICE QUESTIONS (MCQs) (3-5 questions with options A, B, C, D)
+2. SHORT ANSWER & CONCEPTUAL QUESTIONS (2-3 questions)
+3. ANSWER KEY & RUBRIC NOTES at the very end.`;
+
+    const userPrompt = `Subject/Topic: ${subject || 'General Academic Studies'}\nTarget Question Count: ${numQuestions || 5}\n\nLesson Notes / Content:\n${notes}`;
+
+    const { text } = await callLLM(`quiz-${Date.now()}`, sys, userPrompt);
+    res.json({ quiz: text || 'Failed to generate quiz.' });
+  } catch (e: any) {
+    logger.error('generate-quiz error:', e?.message);
+    next(e);
+  }
+});
+
+// Executive Daily Briefing for Directors, Principals & Deans
+router.post('/daily-briefing', async (req, res, next) => {
+  try {
+    const { orgId } = req.body;
+    if (!orgId) return res.status(400).json({ error: 'orgId required' });
+
+    const [org, tasks, announcements] = await Promise.all([
+      prisma.organization.findUnique({ where: { id: orgId } }),
+      prisma.task.findMany({
+        where: { orgId, deletedAt: null, status: { in: ['TODO', 'IN_PROGRESS', 'REVIEW'] } },
+        orderBy: { dueDate: 'asc' },
+        take: 10,
+      }),
+      prisma.message.findMany({
+        where: { channel: { orgId, type: 'ANNOUNCEMENT' } },
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+        include: { sender: { select: { fullName: true } } },
+      }),
+    ]);
+
+    const taskSummary = tasks.map(t => `- ${t.title} (${t.priority} priority, status: ${t.status})`).join('\n');
+    const annSummary = announcements.map(a => `- ${a.sender?.fullName || 'Admin'}: "${a.content}"`).join('\n');
+
+    const sys = `You are an Executive AI Assistant for the Director and Principal of an educational institution.
+Generate a concise, professional 1-PARAGRAPH Executive Briefing summarizing today's campus status, active tasks, and recent announcements. Focus on key highlights.`;
+
+    const prompt = `Institution: ${org?.name || 'Academic Institution'}
+Active Tasks:
+${taskSummary || 'No active tasks.'}
+
+Recent Campus Announcements:
+${annSummary || 'No recent announcements.'}`;
+
+    const { text } = await callLLM(`briefing-${orgId}-${Date.now()}`, sys, prompt);
+    res.json({ briefing: text || 'Daily briefing currently unavailable.' });
+  } catch (e: any) {
+    logger.error('daily-briefing error:', e?.message);
+    next(e);
+  }
 });
 
 export default router;

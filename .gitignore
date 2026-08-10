@@ -42,12 +42,15 @@ uploads/
 # Environment & Credentials
 .env
 .env.*
+!.env.example
 *.env
 *.key
 .credentials
 credentials.json
 *token.json*
 memory/test_credentials.md
+DUMMY_DATA.txt
+dummy_data.txt
 
 # Databases
 *.db
@@ -89,3 +92,14 @@ temp/
 *.tmp
 .screenshots/
 plan.md
+
+# Generated Scraper & Temp Data Outputs
+scraped_output.json
+*.scraped_output.json
+# Agent Generated Files & Artifacts
+agent_artifacts/
+.agent_artifacts/
+*.png
+*.jpg
+*.jpeg
+

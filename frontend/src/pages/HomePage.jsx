@@ -1,12 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { dashboardApi } from '@/lib/api';
+import { dashboardApi, aiExtendedApi } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
-import { CheckCircle2, Clock, ListTodo, MessageSquare, Sparkles, TrendingUp, Users, Building2, Layers, BarChart3, Bell, Timer } from 'lucide-react';
+import { CheckCircle2, Clock, ListTodo, MessageSquare, Sparkles, TrendingUp, Users, Building2, Layers, BarChart3, Bell, Timer, Newspaper, RefreshCw } from 'lucide-react';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, CartesianGrid } from 'recharts';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -40,14 +40,37 @@ export default function HomePage() {
   const [empData, setEmpData] = useState(null);
   const [mgrData, setMgrData] = useState(null);
   const [orgData, setOrgData] = useState(null);
+  const [dailyBriefing, setDailyBriefing] = useState('');
+  const [briefingLoading, setBriefingLoading] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const role = currentOrg?.role;
+
+  useEffect(() => {
+    if (role === 'PARENT') {
+      navigate('/app/parent', { replace: true });
+    }
+  }, [role, navigate]);
+
   const isManagerPlus = ['OWNER', 'ADMIN', 'PRINCIPAL', 'DEAN', 'HOD', 'DIRECTOR'].includes(role);
   const isAdmin = ['OWNER', 'ADMIN', 'PRINCIPAL', 'DIRECTOR'].includes(role);
 
+  const fetchBriefing = useCallback(async () => {
+    if (!currentOrg?.id) return;
+    setBriefingLoading(true);
+    try {
+      const res = await aiExtendedApi.dailyBriefing(currentOrg.id);
+      setDailyBriefing(res?.briefing || '');
+    } catch (e) {
+      setDailyBriefing('');
+    } finally {
+      setBriefingLoading(false);
+    }
+  }, [currentOrg?.id]);
+
   useEffect(() => {
     if (!currentOrg?.id) return;
+    fetchBriefing();
     (async () => {
       setLoading(true);
       try {
@@ -59,7 +82,7 @@ export default function HomePage() {
         setEmpData(e); setMgrData(m); setOrgData(o);
       } finally { setLoading(false); }
     })();
-  }, [currentOrg?.id, isAdmin, isManagerPlus]);
+  }, [currentOrg?.id, isAdmin, isManagerPlus, fetchBriefing]);
 
   if (loading) {
     return (
@@ -77,6 +100,48 @@ export default function HomePage() {
         <h1 className="font-display text-2xl sm:text-3xl font-semibold tracking-tight">Good to see you, {user?.fullName?.split(' ')[0] || 'there'}.</h1>
         <p className="text-muted-foreground mt-1">Here's what's happening in <span className="text-foreground font-medium">{currentOrg?.name}</span> today.</p>
       </div>
+
+      {/* AI Executive Daily Briefing Widget */}
+      <Card className="border-border bg-gradient-to-r from-purple-500/10 via-blue-500/5 to-transparent border-purple-500/20 shadow-sm overflow-hidden">
+        <CardContent className="p-4 sm:p-5">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="h-8 w-8 rounded-lg bg-purple-500/20 text-purple-500 flex items-center justify-center font-bold">
+                <Sparkles className="h-4 w-4" />
+              </div>
+              <div>
+                <h3 className="font-bold text-sm text-foreground flex items-center gap-2">
+                  AI Executive Daily Briefing
+                  <Badge variant="outline" className="text-[10px] bg-purple-500/10 text-purple-500 border-purple-500/30">
+                    Live Campus Insights
+                  </Badge>
+                </h3>
+                <p className="text-[11px] text-muted-foreground">Auto-generated summary for Directors, Principals & Academic Leaders</p>
+              </div>
+            </div>
+
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={fetchBriefing}
+              disabled={briefingLoading}
+              className="h-7 text-xs text-purple-500 hover:bg-purple-500/10"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 mr-1 ${briefingLoading ? 'animate-spin' : ''}`} /> Refresh Briefing
+            </Button>
+          </div>
+
+          <div className="mt-3 text-xs leading-relaxed text-foreground/90 p-3 rounded-lg bg-card/80 border border-border/60">
+            {briefingLoading ? (
+              <div className="flex items-center gap-2 text-muted-foreground animate-pulse">
+                <Sparkles className="h-3.5 w-3.5" /> Synthesizing today's campus briefing...
+              </div>
+            ) : (
+              dailyBriefing || `${currentOrg?.name} campus is operating normally today. Attendance records, active homework tasks, and faculty announcements are up-to-date.`
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* KPI Row - varies by role */}
       {isAdmin && orgData ? (

@@ -150,13 +150,13 @@ class BackendTester:
         # 2. Auth Tests
         self.log("\n### 2. AUTHENTICATION ###", Colors.BLUE)
         
-        # Login with demo user
+        # Login with admin user
         success, _ = self.test(
-            "Login with demo@acme.com",
+            "Login with admin@demo.edu",
             "POST",
             "auth/login",
             200,
-            data={"email": "demo@acme.com", "password": "Demo1234!"},
+            data={"email": "admin@demo.edu", "password": "Admin1234!"},
             save_response='token'
         )
         

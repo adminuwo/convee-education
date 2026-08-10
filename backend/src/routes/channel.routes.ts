@@ -28,31 +28,51 @@ const lastEnsuredMap = new Map<string, number>();
 
 async function ensureTeamAndProjectChannels(orgId: string) {
   const lastRun = lastEnsuredMap.get(orgId) || 0;
-  if (Date.now() - lastRun < 300000) return;
+  if (Date.now() - lastRun < 600000) return; // 10 minutes cache
   lastEnsuredMap.set(orgId, Date.now());
 
   try {
-    const teams = await prisma.team.findMany({
-      where: { department: { orgId }, deletedAt: null },
-      include: { memberships: { where: { isActive: true } } },
-    });
+    const [teams, projects, existingChannels] = await Promise.all([
+      prisma.team.findMany({
+        where: { department: { orgId }, deletedAt: null },
+        include: { memberships: { where: { isActive: true } } },
+      }),
+      prisma.project.findMany({
+        where: { deletedAt: null, team: { department: { orgId } } },
+        include: {
+          memberships: { where: { isActive: true } },
+          team: { include: { memberships: { where: { isActive: true } } } },
+        },
+      }),
+      prisma.channel.findMany({
+        where: { orgId, type: { in: ['TEAM', 'PROJECT'] }, deletedAt: null },
+        select: { id: true, name: true, type: true, projectId: true },
+      }),
+    ]);
+
+    const channelNameMap = new Map(existingChannels.map((c) => [c.name.toLowerCase(), c]));
+    const projectChannelMap = new Map(existingChannels.filter((c) => c.projectId).map((c) => [c.projectId, c]));
 
     for (const t of teams) {
       const chName = `team-${t.name.toLowerCase().replace(/[^a-z0-9]/g, '-')}`;
-      let ch = await prisma.channel.findFirst({
-        where: { orgId, type: 'TEAM', name: chName, deletedAt: null },
-      });
+      let ch = channelNameMap.get(chName);
 
       if (!ch) {
-        ch = await prisma.channel.create({
-          data: {
-            orgId,
-            name: chName,
-            description: `Official channel for team ${t.name}`,
-            type: 'TEAM',
-            createdById: t.managerId || null,
-          },
-        });
+        try {
+          const created = await prisma.channel.create({
+            data: {
+              orgId,
+              name: chName,
+              description: `Official channel for team ${t.name}`,
+              type: 'TEAM',
+              createdById: t.managerId || null,
+            },
+          });
+          ch = created;
+          channelNameMap.set(chName, created as any);
+        } catch (e) {
+          continue;
+        }
       }
 
       const uIds = new Set<string>();
@@ -60,7 +80,7 @@ async function ensureTeamAndProjectChannels(orgId: string) {
       t.memberships.forEach((m) => { if (m.userId) uIds.add(m.userId); });
 
       const memberData = Array.from(uIds).map((uid) => ({
-        channelId: ch.id,
+        channelId: ch!.id,
         userId: uid,
         isAdmin: uid === t.managerId,
       }));
@@ -73,30 +93,26 @@ async function ensureTeamAndProjectChannels(orgId: string) {
       }
     }
 
-    const projects = await prisma.project.findMany({
-      where: { deletedAt: null, team: { department: { orgId } } },
-      include: {
-        memberships: { where: { isActive: true } },
-        team: { include: { memberships: { where: { isActive: true } } } },
-      },
-    });
-
     for (const p of projects) {
-      let ch = await prisma.channel.findFirst({
-        where: { orgId, type: 'PROJECT', projectId: p.id, deletedAt: null },
-      });
+      let ch = projectChannelMap.get(p.id);
 
       if (!ch) {
         const chName = `project-${p.name.toLowerCase().replace(/[^a-z0-9]/g, '-')}`;
-        ch = await prisma.channel.create({
-          data: {
-            orgId,
-            name: chName,
-            description: `Official channel for project ${p.name}`,
-            type: 'PROJECT',
-            projectId: p.id,
-          },
-        });
+        try {
+          const created = await prisma.channel.create({
+            data: {
+              orgId,
+              name: chName,
+              description: `Official channel for project ${p.name}`,
+              type: 'PROJECT',
+              projectId: p.id,
+            },
+          });
+          ch = created;
+          projectChannelMap.set(p.id, created as any);
+        } catch (e) {
+          continue;
+        }
       }
 
       const pUserIds = new Set<string>();
@@ -105,7 +121,7 @@ async function ensureTeamAndProjectChannels(orgId: string) {
       (p.team?.memberships || []).forEach((tm) => { if (tm.userId) pUserIds.add(tm.userId); });
 
       const pMemberData = Array.from(pUserIds).map((uid) => ({
-        channelId: ch.id,
+        channelId: ch!.id,
         userId: uid,
       }));
 

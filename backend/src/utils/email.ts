@@ -21,9 +21,13 @@ export async function sendVerificationEmail(
   token: string
 ): Promise<void> {
   const verifyUrl = `${env.APP_URL}/verify-email?token=${token}`;
-  const resend = getResend();
+  console.log(`\n==================================================`);
+  console.log(`✉️ [VERIFICATION EMAIL GENERATED] Target: ${to}`);
+  console.log(`🔗 Verification Link: ${verifyUrl}`);
+  console.log(`==================================================\n`);
 
-  await resend.emails.send({
+  const resend = getResend();
+  const result = await resend.emails.send({
     from: env.EMAIL_FROM || 'Convee <noreply@convee.app>',
     to,
     subject: 'Verify your Convee account',
@@ -84,6 +88,11 @@ export async function sendVerificationEmail(
 </html>
     `.trim(),
   });
+
+  if (result.error) {
+    console.error('❌ Resend API Error delivering verification email:', result.error);
+    throw new Error(result.error.message || 'Failed to deliver verification email via Resend');
+  }
 }
 
 export async function sendPasswordResetEmail(
@@ -92,9 +101,13 @@ export async function sendPasswordResetEmail(
   token: string
 ): Promise<void> {
   const resetUrl = `${env.APP_URL}/reset-password?token=${token}`;
-  const resend = getResend();
+  console.log(`\n==================================================`);
+  console.log(`✉️ [PASSWORD RESET EMAIL GENERATED] Target: ${to}`);
+  console.log(`🔗 Reset Link: ${resetUrl}`);
+  console.log(`==================================================\n`);
 
-  await resend.emails.send({
+  const resend = getResend();
+  const result = await resend.emails.send({
     from: env.EMAIL_FROM || 'Convee <noreply@convee.app>',
     to,
     subject: 'Reset your Convee password',
@@ -141,4 +154,37 @@ export async function sendPasswordResetEmail(
 </html>
     `.trim(),
   });
+
+  if (result.error) {
+    console.error('❌ Resend API Error delivering password reset email:', result.error);
+    throw new Error(result.error.message || 'Failed to deliver password reset email via Resend');
+  }
+}
+
+export async function verifyEmailDomain(email: string): Promise<{ valid: boolean; reason?: string }> {
+  if (!email || !email.trim()) {
+    return { valid: false, reason: 'Email address cannot be empty' };
+  }
+  const cleanEmail = email.trim().toLowerCase();
+
+  // 1. Syntax Format Check
+  const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+  if (!emailRegex.test(cleanEmail)) {
+    return { valid: false, reason: 'Invalid email address syntax (e.g. user@example.com)' };
+  }
+
+  // 2. DNS MX Record Lookup via DNS over HTTPS
+  const domain = cleanEmail.split('@')[1];
+  try {
+    const res = await fetch(`https://dns.google/resolve?name=${encodeURIComponent(domain)}&type=MX`);
+    const data: any = await res.json();
+
+    if (data.Status === 3 || (data.Status === 0 && (!data.Answer || data.Answer.length === 0))) {
+      return { valid: false, reason: `The email domain @${domain} does not exist or has no active mail server.` };
+    }
+  } catch (err) {
+    // If DNS service network error, fallback to format validation
+  }
+
+  return { valid: true };
 }

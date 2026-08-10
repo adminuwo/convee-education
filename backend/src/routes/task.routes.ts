@@ -30,11 +30,25 @@ router.get('/', async (req, res, next) => {
     if (!m) return res.status(403).json({ error: 'Not a member' });
     const status = req.query.status as string | undefined;
     const assignee = req.query.assignee as string | undefined;
+    const createdById = req.query.createdById as string | undefined;
     const projectId = req.query.projectId as string | undefined;
     const isHomework = req.query.isHomework as string | undefined;
     const where: any = { orgId, deletedAt: null };
     if (status) where.status = status;
     if (projectId) where.projectId = projectId;
+    if (createdById) where.createdById = createdById;
+
+    const roleUpper = (m.role || '').toUpperCase();
+    const titleUpper = (m.title || '').toUpperCase();
+    const isHigherAuthority = ['ADMIN', 'DIRECTOR', 'PRINCIPAL', 'DEAN', 'HOD', 'OWNER'].some(
+      (r) => roleUpper.includes(r) || titleUpper.includes(r)
+    );
+
+    // Standard teachers only see homework tasks they personally created
+    if (isHomework === 'true' && roleUpper === 'TEACHER' && !isHigherAuthority && !assignee && !createdById) {
+      where.createdById = req.user!.id;
+    }
+
     if (assignee === 'me') where.assignees = { some: { userId: req.user!.id } };
     else if (assignee) where.assignees = { some: { userId: assignee } };
     const tasks = await prisma.task.findMany({
@@ -48,7 +62,21 @@ router.get('/', async (req, res, next) => {
       },
       orderBy: [{ dueDate: 'asc' }, { createdAt: 'desc' }],
     });
-    res.json(tasks);
+    const homeworkTaskIds = tasks.filter((t) => (t.metadata as any)?.isHomework).map((t) => t.id);
+    const submissionsMap = new Map();
+    if (homeworkTaskIds.length > 0) {
+      const submissions = await prisma.homeworkSubmission.findMany({
+        where: { taskId: { in: homeworkTaskIds } },
+      });
+      submissions.forEach((s) => submissionsMap.set(s.taskId, s));
+    }
+
+    const tasksWithSubmissions = tasks.map((t) => ({
+      ...t,
+      submission: submissionsMap.get(t.id) || null,
+    }));
+
+    res.json(tasksWithSubmissions);
   } catch (e) { next(e); }
 });
 
@@ -117,7 +145,7 @@ router.post('/', validate(CreateTaskSchema), async (req, res, next) => {
     const creatorName = task.createdBy?.fullName || 'Teacher';
 
     // Notify assignees (students for homework, staff for tasks)
-    for (const a of task.assignees) {
+    if (task.assignees.length > 0) {
       const isHw = Boolean(isHomework);
       const notifTitle = isHw ? `📚 New Homework: ${title}` : 'New task assigned';
       const classStr = targetClassNames.length > 0 ? ` for ${targetClassNames.join(', ')}` : '';
@@ -126,25 +154,28 @@ router.post('/', validate(CreateTaskSchema), async (req, res, next) => {
         : `You were assigned to: ${title}`;
       const linkUrl = isHw ? `/app/homework?taskId=${task.id}` : `/app/tasks?taskId=${task.id}`;
 
-      await prisma.notification.create({
-        data: {
-          userId: a.userId,
-          orgId,
-          type: 'TASK_ASSIGNED',
-          title: notifTitle,
-          body: notifBody,
-          linkUrl,
-          metadata: { taskId: task.id, isHomework: isHw },
-        },
-      });
+      const notifData = task.assignees.map((a) => ({
+        userId: a.userId,
+        orgId,
+        type: 'TASK_ASSIGNED' as const,
+        title: notifTitle,
+        body: notifBody,
+        linkUrl,
+        metadata: { taskId: task.id, isHomework: isHw },
+      }));
+
+      await prisma.notification.createMany({ data: notifData }).catch(() => {});
+
       if (io) {
-        io.to(`user:${a.userId}`).emit('notification:new', {
-          type: 'TASK_ASSIGNED',
-          taskId: task.id,
-          title: notifTitle,
-          body: notifBody,
-          linkUrl,
-        });
+        for (const a of task.assignees) {
+          io.to(`user:${a.userId}`).emit('notification:new', {
+            type: 'TASK_ASSIGNED',
+            taskId: task.id,
+            title: notifTitle,
+            body: notifBody,
+            linkUrl,
+          });
+        }
       }
     }
 

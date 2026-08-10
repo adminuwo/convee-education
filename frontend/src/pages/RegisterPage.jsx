@@ -38,10 +38,10 @@ export default function RegisterPage() {
   const resend = async () => {
     setResendLoading(true);
     try {
-      await authApi.resendVerification(sentTo);
-      toast.success('Verification email resent!');
+      const res = await authApi.resendVerification(sentTo);
+      toast.success(res?.message || 'Verification email resent!');
     } catch (e) {
-      toast.error('Failed to resend email');
+      toast.error(e?.response?.data?.error || 'Failed to resend email');
     } finally { setResendLoading(false); }
   };
 

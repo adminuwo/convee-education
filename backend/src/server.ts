@@ -24,6 +24,9 @@ import fileRoutes from './routes/file.routes';
 import meetingRoutes from './routes/meeting.routes';
 import searchRoutes from './routes/search.routes';
 import rolePermissionsRoutes from './routes/role-permissions.routes';
+import attendanceRoutes from './routes/attendance.routes';
+import homeworkRoutes from './routes/homework.routes';
+import parentRoutes from './routes/parent.routes';
 
 const app: Application = express();
 const server = http.createServer(app);
@@ -71,6 +74,9 @@ app.use('/api/v1/dashboard', dashboardRoutes);
 app.use('/api/v1/files', fileRoutes);
 app.use('/api/v1/meetings', meetingRoutes);
 app.use('/api/v1/search', searchRoutes);
+app.use('/api/v1/attendance', attendanceRoutes);
+app.use('/api/v1/homework', homeworkRoutes);
+app.use('/api/v1/parent', parentRoutes);
 
 app.use('/api', notFound);
 app.use(errorHandler);

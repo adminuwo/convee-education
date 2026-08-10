@@ -25,6 +25,7 @@ enum OrgRole {
   HOD
   TEACHER
   STUDENT
+  PARENT
 }
 
 enum ChannelType {
@@ -204,6 +205,7 @@ model Department {
   memberships  Membership[]
 
   @@index([orgId])
+  @@index([orgId, deletedAt])
 }
 
 model Team {
@@ -221,6 +223,7 @@ model Team {
   projectTeams ProjectTeam[]
 
   @@index([departmentId])
+  @@index([departmentId, deletedAt])
 }
 
 model Project {
@@ -279,6 +282,9 @@ model Membership {
   @@index([userId])
   @@index([orgId])
   @@index([role])
+  @@index([orgId, isActive])
+  @@index([departmentId])
+  @@index([teamId])
 }
 
 // ============ CHAT ============
@@ -305,6 +311,7 @@ model Channel {
 
   @@index([orgId])
   @@index([type])
+  @@index([orgId, deletedAt])
 }
 
 model ChannelMember {
@@ -321,6 +328,7 @@ model ChannelMember {
 
   @@unique([channelId, userId])
   @@index([userId])
+  @@index([channelId])
 }
 
 model Message {
@@ -648,5 +656,64 @@ model RolePermission {
 
   @@unique([orgId, role])
   @@index([orgId])
+}
+
+// ============ ATTENDANCE, HOMEWORK SUBMISSIONS & PARENT LINKS ============
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  EXCUSED
+}
+
+model AttendanceRecord {
+  id           String           @id @default(uuid())
+  orgId        String
+  teamId       String
+  studentId    String
+  date         DateTime
+  status       AttendanceStatus @default(PRESENT)
+  recordedById String
+  notes        String?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  @@unique([teamId, studentId, date])
+  @@index([orgId])
+  @@index([teamId, date])
+  @@index([studentId])
+}
+
+model HomeworkSubmission {
+  id            String   @id @default(uuid())
+  taskId        String
+  studentId     String
+  content       String?
+  attachmentUrl String?
+  gradeScore    Float?
+  gradeMax      Float?   @default(100)
+  rubricScores  Json?
+  feedbackNotes String?
+  submittedAt   DateTime @default(now())
+  gradedAt      DateTime?
+
+  @@unique([taskId, studentId])
+  @@index([taskId])
+  @@index([studentId])
+}
+
+model ParentStudentLink {
+  id            String   @id @default(uuid())
+  orgId         String
+  parentUserId  String
+  studentUserId String
+  relationship  String?  @default("Parent")
+  createdAt     DateTime @default(now())
+
+  @@unique([orgId, parentUserId, studentUserId])
+  @@index([orgId])
+  @@index([parentUserId])
+  @@index([studentUserId])
 }
 

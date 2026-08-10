@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import { authApi } from '@/lib/api';
 import { Sparkles, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
@@ -11,13 +11,17 @@ export default function VerifyEmailPage() {
   const token = params.get('token');
   const [status, setStatus] = useState('loading'); // 'loading' | 'success' | 'error'
   const [message, setMessage] = useState('');
+  const firedRef = useRef(false);
 
   useEffect(() => {
     if (!token) {
       setStatus('error');
-      setMessage('No verification token provided.');
+      setMessage('No verification token provided in link.');
       return;
     }
+    if (firedRef.current) return;
+    firedRef.current = true;
+
     authApi.verifyEmail(token)
       .then((data) => {
         setStatus('success');
