@@ -46,7 +46,8 @@ memory/
 # Environment, Credentials & Mock/Dummy Data
 .env
 .env.*
-!.env.example
+.env.example
+**/.env.example
 *.env
 *.key
 .credentials
