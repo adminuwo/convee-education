@@ -49,8 +49,10 @@ export default function HomePage() {
   useEffect(() => {
     if (role === 'PARENT') {
       navigate('/app/parent', { replace: true });
+    } else if (role === 'ACCOUNTANT' || user?.systemRole === 'ACCOUNTANT' || user?.email?.toLowerCase().includes('accountant')) {
+      navigate('/app/accountant', { replace: true });
     }
-  }, [role, navigate]);
+  }, [role, user, navigate]);
 
   const isManagerPlus = ['OWNER', 'ADMIN', 'PRINCIPAL', 'DEAN', 'HOD', 'DIRECTOR'].includes(role);
   const isAdmin = ['OWNER', 'ADMIN', 'PRINCIPAL', 'DIRECTOR'].includes(role);
@@ -68,11 +70,15 @@ export default function HomePage() {
     }
   }, [currentOrg?.id]);
 
+  const isLoadedRef = React.useRef(false);
+
   useEffect(() => {
     if (!currentOrg?.id) return;
     fetchBriefing();
     (async () => {
-      setLoading(true);
+      if (!isLoadedRef.current) {
+        setLoading(true);
+      }
       try {
         const [e, m, o] = await Promise.all([
           dashboardApi.employee(currentOrg.id).catch(() => null),
@@ -80,7 +86,10 @@ export default function HomePage() {
           isAdmin ? dashboardApi.orgAdmin(currentOrg.id).catch(() => null) : Promise.resolve(null),
         ]);
         setEmpData(e); setMgrData(m); setOrgData(o);
-      } finally { setLoading(false); }
+        isLoadedRef.current = true;
+      } finally {
+        setLoading(false);
+      }
     })();
   }, [currentOrg?.id, isAdmin, isManagerPlus, fetchBriefing]);
 

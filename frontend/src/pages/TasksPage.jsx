@@ -287,6 +287,10 @@ export default function TasksPage() {
       toast.error('Cancelled tasks are fixed and cannot be moved.');
       return;
     }
+    if (activeTask.status === 'COMPLETED') {
+      toast.error('Completed tasks are locked and cannot be moved out of Completed.');
+      return;
+    }
     let targetStatus = null;
     if (STATUSES.includes(over.id) || String(over.id).startsWith('col-')) {
       targetStatus = String(over.id).replace('col-', '');
@@ -295,9 +299,42 @@ export default function TasksPage() {
       if (overTask) targetStatus = overTask.status;
     }
     if (!targetStatus || targetStatus === activeTask.status) return;
-    // optimistic
+
+    if (targetStatus === 'TODO' && ['IN_PROGRESS', 'REVIEW'].includes(activeTask.status)) {
+      toast.error('Tasks in progress or review cannot be moved back to To Do.');
+      return;
+    }
+
+    // Optimistic UI update for Kanban board
     setTasks((prev) => prev.map((t) => (t.id === activeTask.id ? { ...t, status: targetStatus } : t)));
-    try { await taskApi.update(activeTask.id, { status: targetStatus }); } catch (err) { toast.error(err?.response?.data?.error || 'Failed'); load(); }
+
+    // Optimistic UI update for Task Detail Drawer if currently open
+    if (openDetail && openDetail.id === activeTask.id) {
+      setOpenDetail((prev) => {
+        if (!prev) return prev;
+        const updatedAssignees = (prev.assignees || []).map((a) => {
+          if (targetStatus === 'COMPLETED') return { ...a, status: 'COMPLETED' };
+          if (['TODO', 'IN_PROGRESS', 'REVIEW', 'BLOCKED'].includes(targetStatus) && a.status === 'COMPLETED') {
+            return { ...a, status: 'ACCEPTED' };
+          }
+          return a;
+        });
+        return {
+          ...prev,
+          status: targetStatus,
+          completedAt: targetStatus === 'COMPLETED' ? new Date().toISOString() : null,
+          assignees: updatedAssignees,
+        };
+      });
+    }
+
+    try {
+      await taskApi.update(activeTask.id, { status: targetStatus });
+      await load();
+    } catch (err) {
+      toast.error(err?.response?.data?.error || 'Failed');
+      load();
+    }
   };
 
   const daysWithTasks = useMemo(() => {
@@ -499,7 +536,17 @@ function TaskDetail({ task, onClose, onSaved }) {
 
   if (!task) return null;
 
-  const updateStatus = async (s) => { await taskApi.update(task.id, { status: s }); setStatus(s); onSaved?.(); load(); };
+  const updateStatus = async (s) => {
+    try {
+      await taskApi.update(task.id, { status: s });
+      setStatus(s);
+      const updated = await taskApi.get(task.id);
+      if (updated) setDetail(updated);
+      onSaved?.();
+    } catch (e) {
+      toast.error('Failed to update status');
+    }
+  };
   const toggleCheck = async (item) => { await taskApi.toggleChecklist(task.id, item.id, !item.isDone); load(); };
   const submitComment = async () => { if (!comment.trim()) return; await taskApi.comment(task.id, comment); setComment(''); load(); };
   const myAssignee = detail?.assignees?.find((a) => a.userId === user?.id);
@@ -562,6 +609,7 @@ function TaskDetail({ task, onClose, onSaved }) {
 
   const isTaskCancelled = status === 'CANCELLED' || detail?.status === 'CANCELLED';
   const isTaskCompleted = status === 'COMPLETED' || detail?.status === 'COMPLETED';
+  const isTaskInReview = status === 'REVIEW' || detail?.status === 'REVIEW';
   const isLocked = isTaskCancelled || isTaskCompleted;
   const extensionRequests = isLocked ? [] : (detail?.assignees?.filter((a) => a.status === 'EXTENSION_REQUESTED') || []);
   const submittedAssignees = isLocked ? [] : (detail?.assignees?.filter((a) => a.status === 'SUBMITTED') || []);
@@ -576,9 +624,19 @@ function TaskDetail({ task, onClose, onSaved }) {
           </SheetHeader>
           <div className="flex-1 overflow-auto p-4 space-y-4">
             <div className="flex flex-wrap gap-2">
-              <Select value={status} onValueChange={updateStatus} disabled={isTaskCancelled}>
+              <Select value={status} onValueChange={updateStatus} disabled={isLocked}>
                 <SelectTrigger className="w-40 h-8" data-testid="task-status-select"><SelectValue /></SelectTrigger>
-                <SelectContent>{STATUSES.map((s) => <SelectItem key={s} value={s}>{STATUS_CFG[s].label}</SelectItem>)}</SelectContent>
+                <SelectContent>
+                  {STATUSES.map((s) => (
+                    <SelectItem
+                      key={s}
+                      value={s}
+                      disabled={(s === 'TODO' && ['IN_PROGRESS', 'REVIEW'].includes(status)) || (s !== 'COMPLETED' && isTaskCompleted)}
+                    >
+                      {STATUS_CFG[s].label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
               </Select>
               <Badge variant="outline" className={PRIORITY_CFG[detail?.priority]?.color}>{PRIORITY_CFG[detail?.priority]?.label}</Badge>
               {detail?.dueDate && <Badge variant="outline">Due {format(new Date(detail.dueDate), 'PP')}</Badge>}
@@ -658,7 +716,9 @@ function TaskDetail({ task, onClose, onSaved }) {
                   <div key={a.id} className="flex items-center gap-2 rounded-full border border-border px-2 py-1">
                     <Avatar className="h-5 w-5"><AvatarImage src={a.user?.avatarUrl} /><AvatarFallback className="text-[10px] bg-primary/10 text-primary">{initials(a.user?.fullName)}</AvatarFallback></Avatar>
                     <span className="text-sm">{a.user?.fullName}</span>
-                    <Badge variant="outline" className={`text-[9px] ${a.status === 'EXTENSION_REQUESTED' ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' : a.status === 'SUBMITTED' ? 'bg-blue-500/20 text-blue-300 border-blue-500/30' : ''}`}>{a.status}</Badge>
+                    <Badge variant="outline" className={`text-[9px] ${a.status === 'EXTENSION_REQUESTED' ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' : a.status === 'SUBMITTED' ? 'bg-blue-500/20 text-blue-300 border-blue-500/30' : ''}`}>
+                      {(!isTaskCompleted && a.status === 'COMPLETED') ? 'ACCEPTED' : a.status}
+                    </Badge>
                   </div>
                 ))}
               </div>
@@ -676,36 +736,43 @@ function TaskDetail({ task, onClose, onSaved }) {
                 </Badge>
               </div>
             ) : myAssignee ? (
-              <div className="flex flex-wrap gap-2 pt-1 border-t border-border">
+              <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-border">
                 {myAssignee.status === 'PENDING' && (
                   <>
                     <Button size="sm" onClick={() => respond('ACCEPTED')}>Accept Task</Button>
                     <Button size="sm" variant="outline" onClick={() => respond('REJECTED')}>Reject</Button>
                   </>
                 )}
-                {myAssignee.status !== 'COMPLETED' && (
+                {myAssignee.status !== 'COMPLETED' && !isTaskCompleted && (
                   <Button size="sm" variant="outline" className="text-amber-400 border-amber-500/30 hover:bg-amber-500/10" onClick={() => setExtModalOpen(true)}>
                     <Clock className="h-3.5 w-3.5 mr-1" /> Request Extension
                   </Button>
                 )}
-                {myAssignee.status !== 'SUBMITTED' && myAssignee.status !== 'COMPLETED' && (
-                  <Button size="sm" onClick={() => setSubmitModalOpen(true)}>
-                    <Send className="h-3.5 w-3.5 mr-1" /> Submit Work
-                  </Button>
-                )}
-                {myAssignee.status === 'SUBMITTED' && (
+                {myAssignee.status === 'SUBMITTED' || (isTaskInReview && !canManageExtension) ? (
                   <Badge variant="secondary" className="px-3 py-1.5 bg-blue-500/20 text-blue-300 border border-blue-500/30 font-medium">
-                    <FileCheck className="h-3.5 w-3.5 mr-1" /> Work Submitted (Pending Review)
+                    <FileCheck className="h-3.5 w-3.5 mr-1" /> Work Submitted (Under Review)
                   </Badge>
-                )}
-                {myAssignee.status === 'COMPLETED' ? (
+                ) : isTaskCompleted ? (
                   <Badge className="px-3 py-1.5 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-medium text-xs">
                     <Check className="h-3.5 w-3.5 mr-1 inline-block" /> Completed
                   </Badge>
+                ) : isTaskInReview && canManageExtension ? (
+                  <>
+                    <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => updateStatus('COMPLETED')}>
+                      <Check className="h-3.5 w-3.5 mr-1" /> Approve & Complete
+                    </Button>
+                    <Button size="sm" variant="outline" className="text-amber-400 border-amber-500/30" onClick={() => updateStatus('IN_PROGRESS')}>
+                      <RotateCcw className="h-3.5 w-3.5 mr-1" /> Request Changes
+                    </Button>
+                  </>
                 ) : canManageExtension ? (
-                  <Button size="sm" variant="outline" onClick={() => updateStatus('COMPLETED')}>Mark Complete</Button>
+                  <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => updateStatus('COMPLETED')}>
+                    <Check className="h-3.5 w-3.5 mr-1" /> Mark Complete
+                  </Button>
                 ) : (
-                  <Button size="sm" variant="outline" onClick={() => setSubmitModalOpen(true)}>Submit for Review</Button>
+                  <Button size="sm" className="bg-indigo-600 hover:bg-indigo-700 text-white" onClick={() => setSubmitModalOpen(true)}>
+                    <Send className="h-3.5 w-3.5 mr-1" /> Submit Work for Review
+                  </Button>
                 )}
               </div>
             ) : (

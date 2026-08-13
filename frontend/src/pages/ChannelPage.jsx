@@ -29,35 +29,98 @@ function initials(n) { return (n || '?').split(' ').map((x) => x[0]).slice(0, 2)
 
 function formatMessageContent(content) {
   if (!content) return '';
-  const parts = content.split(/(@[a-zA-Z0-9._-]+)/g);
-  return parts.map((part, idx) => {
-    if (part.startsWith('@')) {
-      const tagLower = part.toLowerCase();
-      const isSpecial = ['@all', '@channel', '@here', '@team', '@project', '@ai', '@aidraft'].includes(tagLower);
+  const lines = content.split('\n');
+  return lines.map((rawLine, lIdx) => {
+    let line = rawLine;
+
+    // Heading 3: ### Title
+    if (line.startsWith('### ')) {
+      const headingText = line.slice(4).trim().replace(/\*\*/g, '');
       return (
-        <span
-          key={idx}
-          className={`inline-flex items-center px-1.5 py-0.5 mx-0.5 rounded text-xs font-semibold border ${
-            isSpecial
-              ? 'bg-amber-500/15 border-amber-500/30 text-amber-400'
-              : 'bg-primary/15 border-primary/30 text-primary'
-          }`}
-        >
-          {part}
-        </span>
+        <div key={lIdx} className="font-bold text-xs uppercase tracking-wider text-primary mt-3 mb-1 flex items-center gap-1.5 border-b border-primary/20 pb-0.5">
+          <Sparkles className="h-3.5 w-3.5 text-primary shrink-0" />
+          <span>{headingText}</span>
+        </div>
       );
     }
-    return part;
+
+    // Heading 2: ## Title
+    if (line.startsWith('## ')) {
+      const headingText = line.slice(3).trim().replace(/\*\*/g, '');
+      return (
+        <div key={lIdx} className="font-bold text-sm text-foreground mt-3 mb-1 border-b border-border pb-1">
+          {headingText}
+        </div>
+      );
+    }
+
+    // Heading 1: # Title
+    if (line.startsWith('# ')) {
+      const headingText = line.slice(2).trim().replace(/\*\*/g, '');
+      return (
+        <div key={lIdx} className="font-extrabold text-base text-foreground mt-3 mb-1 border-b border-border pb-1">
+          {headingText}
+        </div>
+      );
+    }
+
+    // Citation tag: [Source Document: filename]
+    const citationMatch = line.match(/\[?Source Document:\s*([^\]\n]+)\]?/i);
+    if (citationMatch) {
+      const docName = citationMatch[1].trim();
+      return (
+        <div key={lIdx} className="mt-2.5 flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-blue-500/10 border border-blue-500/25 text-xs text-blue-400 font-medium shadow-xs">
+          <BookOpen className="h-4 w-4 text-blue-400 shrink-0" />
+          <span>Answered using Class Study Material: <strong className="font-semibold text-blue-300">{docName}</strong></span>
+        </div>
+      );
+    }
+
+    const parts = line.split(/(\*\*[^*]+\*\*|\*[^*]+\*|@[a-zA-Z0-9._-]+)/g);
+    const lineElements = parts.map((part, pIdx) => {
+      if (part.startsWith('**') && part.endsWith('**') && part.length > 4) {
+        return <strong key={pIdx} className="font-bold text-foreground">{part.slice(2, -2)}</strong>;
+      }
+      if (part.startsWith('*') && part.endsWith('*') && part.length > 2 && !part.startsWith('**')) {
+        return <em key={pIdx} className="italic text-muted-foreground">{part.slice(1, -1)}</em>;
+      }
+      if (part.startsWith('@')) {
+        const tagLower = part.toLowerCase();
+        const isSpecial = ['@all', '@channel', '@here', '@project', '@ai', '@aidraft'].includes(tagLower);
+        return (
+          <span
+            key={pIdx}
+            className={`inline-flex items-center px-1.5 py-0.5 mx-0.5 rounded text-xs font-semibold border ${
+              isSpecial
+                ? 'bg-amber-500/15 border-amber-500/30 text-amber-400'
+                : 'bg-primary/15 border-primary/30 text-primary'
+            }`}
+          >
+            {part}
+          </span>
+        );
+      }
+      return part;
+    });
+
+    return (
+      <React.Fragment key={lIdx}>
+        {lineElements}
+        {lIdx < lines.length - 1 && <br />}
+      </React.Fragment>
+    );
   });
 }
 
 // ... inside ChannelPage component ...
 // systemTags update below
 
-function MessageRow({ m, currentUserId, onReact, onEdit, onDelete, onPin, onReply, isThread }) {
+function MessageRow({ m, currentUserId, currentUserRole, onReact, onEdit, onDelete, onPin, onReply, isThread }) {
   const [showActions, setShowActions] = useState(false);
   const isAI = m.type === 'AI' || m.sender?.email === 'ai@system';
   const isMe = m.senderId === currentUserId;
+  const isFaculty = ['DIRECTOR', 'PRINCIPAL', 'DEAN', 'HOD', 'TEACHER'].includes(currentUserRole);
+  const canDelete = isMe || (isFaculty && (isAI || m.sender?.role === 'STUDENT' || m.sender?.systemRole === 'STUDENT' || ['DIRECTOR', 'PRINCIPAL'].includes(currentUserRole)));
   const reactionsGrouped = useMemo(() => {
     const g = {};
     (m.reactions || []).forEach((r) => {
@@ -118,12 +181,8 @@ function MessageRow({ m, currentUserId, onReact, onEdit, onDelete, onPin, onRepl
           </Popover>
           {!isThread && <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onReply(m)}><Reply className="h-3.5 w-3.5" /></Button>}
           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onPin(m)}><Pin className="h-3.5 w-3.5" /></Button>
-          {isMe && (
-            <>
-              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onEdit(m)}><Pencil className="h-3.5 w-3.5" /></Button>
-              <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => onDelete(m)}><Trash2 className="h-3.5 w-3.5" /></Button>
-            </>
-          )}
+          {isMe && <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onEdit(m)}><Pencil className="h-3.5 w-3.5" /></Button>}
+          {canDelete && <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => onDelete(m)} title="Delete message"><Trash2 className="h-3.5 w-3.5" /></Button>}
         </div>
       )}
     </div>
@@ -156,6 +215,7 @@ export default function ChannelPage() {
   const [orgProjects, setOrgProjects] = useState([]);
   const [mentionOpen, setMentionOpen] = useState(false);
   const [mentionFilter, setMentionFilter] = useState('');
+  const [selectedIndex, setSelectedIndex] = useState(0);
   const [deleteMsgModal, setDeleteMsgModal] = useState({ open: false, msg: null });
   const [deleteChanModal, setDeleteChanModal] = useState(false);
   const [studyFiles, setStudyFiles] = useState([]);
@@ -232,6 +292,7 @@ export default function ChannelPage() {
     if (lastAt !== -1 && !/\s/.test(textBefore.slice(lastAt + 1))) {
       setMentionFilter(textBefore.slice(lastAt + 1));
       setMentionOpen(true);
+      setSelectedIndex(0);
     } else {
       setMentionOpen(false);
     }
@@ -242,12 +303,13 @@ export default function ChannelPage() {
     const prefix = lastAt !== -1 ? text.slice(0, lastAt) : text;
     setText(`${prefix}@${tagText} `);
     setMentionOpen(false);
+    setSelectedIndex(0);
+    setTimeout(() => textareaRef.current?.focus(), 0);
   };
 
   const mentionSuggestions = useMemo(() => {
     const systemTags = [
       { tag: 'all', label: 'Notify everyone in channel', category: 'System' },
-      { tag: 'team', label: 'Notify all teams in org', category: 'System' },
       { tag: 'project', label: 'Notify project members', category: 'System' },
       { tag: 'AI', label: 'Ask AI Assistant (posts to chat)', category: 'AI' },
       { tag: 'AIDraft', label: 'Generate AI draft in input (does not post)', category: 'AI' },
@@ -265,12 +327,40 @@ export default function ChannelPage() {
       category: 'Project',
     }));
 
-    const memberTags = (orgMembers || []).map((m) => ({
-      tag: m.user?.fullName?.toLowerCase().replace(/\s+/g, '') || m.user?.email?.split('@')[0] || 'user',
-      label: m.user?.fullName || m.user?.email,
-      category: m.role || 'Member',
-      avatarUrl: m.user?.avatarUrl,
-    }));
+    const isClassChannel = Boolean(channel?.teamId || channel?.departmentId || channel?.name?.toLowerCase().includes('grade') || channel?.name?.toLowerCase().includes('sec') || channel?.name?.toLowerCase().includes('team'));
+    const allowedClassRoles = ['TEACHER', 'HOD', 'DEAN', 'PRINCIPAL', 'DIRECTOR', 'STUDENT'];
+
+    const filteredMembers = (orgMembers || []).filter((m) => {
+      // In class channels, exclude non-academic roles (e.g. PARENT, ACCOUNTANT)
+      if (isClassChannel) {
+        if (!allowedClassRoles.includes(m.role)) return false;
+        if (channel?.teamId && m.role === 'STUDENT' && m.teamId && m.teamId !== channel.teamId) {
+          return false;
+        }
+      }
+      return true;
+    });
+
+    const memberTags = filteredMembers.flatMap((m) => {
+      const memId = m.title?.match(/\[(.*?)\]/)?.[1] || m.title?.match(/([A-Z]{3}-\d{4}-\d{3,4})/i)?.[1] || null;
+      const tags = [
+        {
+          tag: m.user?.fullName?.toLowerCase().replace(/\s+/g, '') || m.user?.email?.split('@')[0] || 'user',
+          label: `${m.user?.fullName || m.user?.email}${memId ? ` [${memId}]` : ''}`,
+          category: m.role || 'Member',
+          avatarUrl: m.user?.avatarUrl,
+        },
+      ];
+      if (memId) {
+        tags.push({
+          tag: memId.toLowerCase(),
+          label: `${m.user?.fullName || m.user?.email} (${memId})`,
+          category: m.role === 'STUDENT' ? 'Student ID' : 'Faculty ID',
+          avatarUrl: m.user?.avatarUrl,
+        });
+      }
+      return tags;
+    });
 
     const all = [...systemTags, ...teamTags, ...projectTags, ...memberTags];
     if (!mentionFilter) return all;
@@ -279,7 +369,9 @@ export default function ChannelPage() {
         s.tag.toLowerCase().includes(mentionFilter.toLowerCase()) ||
         s.label.toLowerCase().includes(mentionFilter.toLowerCase())
     );
-  }, [orgMembers, orgTeams, orgProjects, mentionFilter]);
+  }, [orgMembers, orgTeams, orgProjects, mentionFilter, channel]);
+
+  const visibleSuggestions = mentionSuggestions.slice(0, 8);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -310,6 +402,9 @@ export default function ChannelPage() {
 
     const onNew = (m) => {
       if (m.channelId === channelId) {
+        if (m.type === 'AI' || m.sender?.email === 'ai@system') {
+          setAiLoading(false);
+        }
         channelApi.markRead(channelId).catch(() => {});
         if (m.parentId) {
           if (threadFor?.id === m.parentId) {
@@ -328,7 +423,10 @@ export default function ChannelPage() {
     };
 
     const onUpdated = (m) => setMessages((prev) => prev.map((x) => x.id === m.id ? { ...x, ...m } : x));
-    const onDeleted = ({ id }) => setMessages((prev) => prev.map((x) => x.id === id ? { ...x, isDeleted: true } : x));
+    const onDeleted = ({ id }) => {
+      setMessages((prev) => prev.map((x) => (x.id === id ? { ...x, isDeleted: true, content: '[deleted]' } : x)));
+      setThreadMessages((prev) => prev.map((x) => (x.id === id ? { ...x, isDeleted: true, content: '[deleted]' } : x)));
+    };
     const onReactAdded = (r) => setMessages((prev) => prev.map((m) => m.id === r.messageId ? { ...m, reactions: [...(m.reactions || []).filter((x) => x.id !== r.id), r] } : m));
     const onReactRemoved = ({ messageId, userId, emoji }) => setMessages((prev) => prev.map((m) => m.id === messageId ? { ...m, reactions: (m.reactions || []).filter((r) => !(r.userId === userId && r.emoji === emoji)) } : m));
     const onTypingStart = ({ channelId: c, userId }) => { if (c === channelId) setTyping((t) => ({ ...t, [userId]: Date.now() })); };
@@ -421,21 +519,9 @@ export default function ChannelPage() {
         setTimeout(() => virtuosoRef.current?.scrollToIndex({ index: 'LAST', behavior: 'smooth' }), 50);
       }
 
-      // If mentions @AI (and not @aidraft), trigger AI reply in chat
+      // If mentions @AI (and not @aidraft), show AI thinking state while backend generates response
       if (/@ai\b/i.test(content)) {
         setAiLoading(true);
-        try {
-          const resp = await aiApi.chat(content.replace(/@ai/gi, '').trim() || 'Please help.', `channel-${channelId}`);
-          const aiMsg = await channelApi.sendMessage(channelId, { content: resp.response, type: 'AI', metadata: { isAI: true } });
-          if (aiMsg && aiMsg.id) {
-            setMessages((prev) => {
-              if (prev.some((x) => x.id === aiMsg.id)) return prev;
-              return [...prev, aiMsg];
-            });
-            setTimeout(() => virtuosoRef.current?.scrollToIndex({ index: 'LAST', behavior: 'smooth' }), 50);
-          }
-        } catch (e) { toast.error('AI failed to respond'); }
-        finally { setAiLoading(false); }
       }
     } catch (e) { toast.error(e?.response?.data?.error || 'Failed to send'); setText(content); }
   };
@@ -450,11 +536,15 @@ export default function ChannelPage() {
 
   const confirmDeleteMessage = async () => {
     if (!deleteMsgModal.msg) return;
+    const targetId = deleteMsgModal.msg.id;
     try {
-      await channelApi.deleteMessage(channelId, deleteMsgModal.msg.id);
+      await channelApi.deleteMessage(channelId, targetId);
+      setMessages((prev) => prev.map((x) => (x.id === targetId ? { ...x, isDeleted: true, content: '[deleted]' } : x)));
+      setThreadMessages((prev) => prev.map((x) => (x.id === targetId ? { ...x, isDeleted: true, content: '[deleted]' } : x)));
       toast.success('Message deleted');
-    } catch {
-      toast.error('Failed to delete message');
+      setDeleteMsgModal({ open: false, msg: null });
+    } catch (e) {
+      toast.error(e?.response?.data?.error || 'Failed to delete message');
     }
   };
 
@@ -667,7 +757,7 @@ export default function ChannelPage() {
             initialTopMostItemIndex={messages.length > 0 ? messages.length - 1 : 0}
             followOutput="auto"
             itemContent={(i, m) => (
-              <MessageRow key={m.id || i} m={m} currentUserId={user?.id} onReact={doReact} onEdit={(mm) => setEditing(mm)} onDelete={doDelete} onPin={doPin} onReply={openThread} />
+              <MessageRow key={m.id || i} m={m} currentUserId={user?.id} currentUserRole={currentOrg?.role} onReact={doReact} onEdit={(mm) => setEditing(mm)} onDelete={doDelete} onPin={doPin} onReply={openThread} />
             )}
           />
         )}
@@ -688,38 +778,50 @@ export default function ChannelPage() {
         </div>
       ) : (
         <div className="border-t border-border p-3 relative" data-testid="chat-composer">
-          {mentionOpen && mentionSuggestions.length > 0 && (
+          {mentionOpen && visibleSuggestions.length > 0 && (
             <div className="absolute bottom-full left-3 right-3 mb-2 max-h-52 overflow-y-auto rounded-lg border border-border bg-popover p-1.5 shadow-xl z-50 animate-in fade-in slide-in-from-bottom-2">
-              <div className="px-2 py-1 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider border-b border-border/60 mb-1 flex items-center gap-1.5">
-                <AtSign className="h-3.5 w-3.5 text-primary" /> Tag user, team, or project
+              <div className="px-2 py-1 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider border-b border-border/60 mb-1 flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <AtSign className="h-3.5 w-3.5 text-primary" /> Tag user, team, or project
+                </div>
+                <span className="text-[10px] text-muted-foreground font-normal">Use ↑↓ keys, Enter to select</span>
               </div>
-              {mentionSuggestions.slice(0, 8).map((item) => (
-                <button
-                  key={item.tag}
-                  type="button"
-                  onClick={() => insertTag(item.tag)}
-                  className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-xs hover:bg-accent text-left transition-colors group"
-                >
-                  <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-primary font-medium text-xs border border-primary/20 shrink-0">
-                    {item.avatarUrl ? (
-                      <img src={item.avatarUrl} alt={item.label} className="h-full w-full rounded-full object-cover" />
-                    ) : item.category === 'System' ? (
-                      <AtSign className="h-3.5 w-3.5" />
-                    ) : item.category === 'AI' ? (
-                      <Sparkles className="h-3.5 w-3.5" />
-                    ) : (
-                      initials(item.label)
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold text-foreground group-hover:text-primary transition-colors">@{item.tag}</span>
-                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 font-normal text-muted-foreground">{item.category}</Badge>
+              {visibleSuggestions.map((item, idx) => {
+                const isSelected = idx === selectedIndex;
+                return (
+                  <button
+                    key={item.tag}
+                    type="button"
+                    onClick={() => insertTag(item.tag)}
+                    onMouseEnter={() => setSelectedIndex(idx)}
+                    className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-xs text-left transition-colors group ${
+                      isSelected ? 'bg-primary/15 text-primary font-medium border-l-2 border-primary' : 'hover:bg-accent text-foreground'
+                    }`}
+                  >
+                    <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-primary font-medium text-xs border border-primary/20 shrink-0">
+                      {item.avatarUrl ? (
+                        <img src={item.avatarUrl} alt={item.label} className="h-full w-full rounded-full object-cover" />
+                      ) : item.category === 'System' ? (
+                        <AtSign className="h-3.5 w-3.5" />
+                      ) : item.category === 'AI' ? (
+                        <Sparkles className="h-3.5 w-3.5" />
+                      ) : (
+                        initials(item.label)
+                      )}
                     </div>
-                    <div className="text-[11px] text-muted-foreground truncate">{item.label}</div>
-                  </div>
-                </button>
-              ))}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-foreground group-hover:text-primary transition-colors">@{item.tag}</span>
+                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 font-normal text-muted-foreground">{item.category}</Badge>
+                      </div>
+                      <div className="text-[11px] text-muted-foreground truncate">{item.label}</div>
+                    </div>
+                    {isSelected && (
+                      <span className="text-[10px] text-primary/80 font-mono bg-primary/10 px-1.5 py-0.5 rounded shrink-0">Enter ↵</span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
           )}
 
@@ -730,43 +832,75 @@ export default function ChannelPage() {
               placeholder={channel?.type === 'DIRECT' ? `Message ${dmPartner?.fullName || 'user'}…` : `Message #${channel?.name} — type @ to tag users, team, or project`}
               value={text}
               onChange={handleInputChange}
-              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); setMentionOpen(false); send(); } }}
-            data-testid="chat-input"
-          />
-          <div className="flex items-center justify-between px-2 py-1.5 border-t border-border">
-            <div className="text-xs text-muted-foreground">Enter to send · Shift+Enter for newline</div>
-            <div className="flex items-center gap-1">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={doGenDraft}
-                disabled={drafting}
-                className="gap-1.5 text-xs text-primary hover:bg-primary/10"
-                data-testid="chat-ai-draft-btn"
-              >
-                {drafting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
-                {drafting ? 'Drafting…' : 'AI Draft'}
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setText((prev) => (prev.endsWith('@') ? prev : prev ? `${prev} @` : '@'));
-                  setMentionFilter('');
-                  setMentionOpen(true);
-                  textareaRef.current?.focus();
-                }}
-                className="text-xs gap-1 text-muted-foreground hover:text-foreground"
-                title="Tag members, teams, or AI"
-              >
-                <AtSign className="h-3.5 w-3.5" /> @tag
-              </Button>
-              <Button size="sm" onClick={send} disabled={!text.trim()} data-testid="chat-send-btn"><Send className="h-4 w-4 mr-1" /> Send</Button>
+              onKeyDown={(e) => {
+                if (mentionOpen && visibleSuggestions.length > 0) {
+                  if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    setSelectedIndex((prev) => (prev + 1) % visibleSuggestions.length);
+                    return;
+                  }
+                  if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    setSelectedIndex((prev) => (prev - 1 + visibleSuggestions.length) % visibleSuggestions.length);
+                    return;
+                  }
+                  if (e.key === 'Enter' || e.key === 'Tab') {
+                    e.preventDefault();
+                    const selectedItem = visibleSuggestions[selectedIndex] || visibleSuggestions[0];
+                    if (selectedItem) {
+                      insertTag(selectedItem.tag);
+                    }
+                    return;
+                  }
+                  if (e.key === 'Escape') {
+                    e.preventDefault();
+                    setMentionOpen(false);
+                    return;
+                  }
+                }
+
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  setMentionOpen(false);
+                  send();
+                }
+              }}
+              data-testid="chat-input"
+            />
+            <div className="flex items-center justify-between px-2 py-1.5 border-t border-border/60">
+              <div className="text-xs text-muted-foreground">Enter to send · Shift+Enter for newline</div>
+              <div className="flex items-center gap-1">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={doGenDraft}
+                  disabled={drafting}
+                  className="gap-1.5 text-xs text-primary hover:bg-primary/10"
+                  data-testid="chat-ai-draft-btn"
+                >
+                  {drafting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
+                  {drafting ? 'Drafting…' : 'AI Draft'}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setText((prev) => (prev.endsWith('@') ? prev : prev ? `${prev} @` : '@'));
+                    setMentionFilter('');
+                    setMentionOpen(true);
+                    textareaRef.current?.focus();
+                  }}
+                  className="text-xs gap-1 text-muted-foreground hover:text-foreground"
+                  title="Tag members, teams, or AI"
+                >
+                  <AtSign className="h-3.5 w-3.5" /> @tag
+                </Button>
+                <Button size="sm" onClick={send} disabled={!text.trim()} data-testid="chat-send-btn"><Send className="h-4 w-4 mr-1" /> Send</Button>
+              </div>
             </div>
           </div>
         </div>
-      </div>
       )}
 
       {/* Class Study Materials Drawer */}
@@ -871,10 +1005,10 @@ export default function ChannelPage() {
         <SheetContent className="w-full sm:max-w-lg flex flex-col p-0">
           <SheetHeader className="p-4 border-b border-border"><SheetTitle>Thread</SheetTitle></SheetHeader>
           <div className="flex-1 overflow-auto">
-            {threadFor && <MessageRow m={threadFor} currentUserId={user?.id} onReact={doReact} onEdit={() => {}} onDelete={doDelete} onPin={doPin} onReply={() => {}} isThread />}
+            {threadFor && <MessageRow m={threadFor} currentUserId={user?.id} currentUserRole={currentOrg?.role} onReact={doReact} onEdit={() => {}} onDelete={doDelete} onPin={doPin} onReply={() => {}} isThread />}
             <div className="h-px bg-border my-2" />
             {threadMessages.map((tm) => (
-              <MessageRow key={tm.id} m={tm} currentUserId={user?.id} onReact={doReact} onEdit={() => {}} onDelete={doDelete} onPin={doPin} onReply={() => {}} isThread />
+              <MessageRow key={tm.id} m={tm} currentUserId={user?.id} currentUserRole={currentOrg?.role} onReact={doReact} onEdit={() => {}} onDelete={doDelete} onPin={doPin} onReply={() => {}} isThread />
             ))}
           </div>
           <div className="border-t border-border p-3">

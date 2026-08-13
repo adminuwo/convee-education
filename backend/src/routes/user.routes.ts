@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import prisma from '../db/prisma';
 import { authenticate } from '../middleware/auth';
+import { hashPassword, verifyPassword } from '../utils/password';
 
 const router = Router();
 router.use(authenticate);
@@ -52,6 +53,36 @@ router.patch('/me', async (req, res, next) => {
       },
     });
     res.json({ id: updated.id, email: updated.email, fullName: updated.fullName, avatarUrl: updated.avatarUrl, bio: updated.bio, timezone: updated.timezone, status: updated.status });
+  } catch (e) { next(e); }
+});
+
+router.post('/me/password', async (req, res, next) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (!newPassword || newPassword.length < 6) {
+      return res.status(400).json({ error: 'New password must be at least 6 characters long.' });
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: req.user!.id } });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    if (user.passwordHash) {
+      if (!currentPassword) {
+        return res.status(400).json({ error: 'Current password is required.' });
+      }
+      const ok = await verifyPassword(currentPassword, user.passwordHash);
+      if (!ok) {
+        return res.status(401).json({ error: 'Incorrect current password.' });
+      }
+    }
+
+    const passwordHash = await hashPassword(newPassword);
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash, isVerified: true },
+    });
+
+    res.json({ success: true, message: user.passwordHash ? 'Password changed successfully!' : 'Password created successfully! You can now sign in using your password or Director ID.' });
   } catch (e) { next(e); }
 });
 

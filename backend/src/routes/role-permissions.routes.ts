@@ -106,8 +106,10 @@ router.get('/:orgId/role-permissions', async (req, res, next) => {
     const org = await prisma.organization.findUnique({ where: { id: orgId }, select: { ownerId: true } });
     const isOwner = org?.ownerId === req.user!.id || ['DIRECTOR', 'ADMIN'].includes(membership.role);
 
+    const visibleRoles = resultRoles.filter((r) => r.role.toUpperCase() !== 'ACCOUNTANT');
+
     res.json({
-      roles: resultRoles,
+      roles: visibleRoles,
       allPermissions: ALL_PERMISSIONS,
       isOwner,
     });

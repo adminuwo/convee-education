@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
-import { Sparkles, ShieldCheck, Zap, Users, Mail, ArrowLeft, RefreshCw, GraduationCap, UserCheck, Info, KeyRound, Building2 } from 'lucide-react';
+import { Sparkles, ShieldCheck, Zap, Users, Mail, ArrowLeft, RefreshCw, GraduationCap, UserCheck, Info, KeyRound, Building2, IndianRupee } from 'lucide-react';
 import { authApi } from '@/lib/api';
 
 export default function LoginPage({ initialPortal = 'faculty' }) {
@@ -321,12 +321,13 @@ export default function LoginPage({ initialPortal = 'faculty' }) {
           <CardContent className="space-y-4">
             <form onSubmit={submit} className="space-y-4">
               <div>
-                <Label htmlFor="email">
-                  {portalMode === 'student' ? 'Student ID / Admission No' : portalMode === 'parent' ? 'Parent ID' : 'Faculty Email'}
+                <Label htmlFor="username">
+                  {portalMode === 'student' ? 'Student ID / Admission No' : portalMode === 'parent' ? 'Parent ID' : 'Work Email or Faculty / Staff ID'}
                 </Label>
                 <Input
-                  id="email"
-                  type={portalMode === 'faculty' ? 'email' : 'text'}
+                  id="username"
+                  name="username"
+                  type="text"
                   required
                   autoFocus
                   value={email}
@@ -336,7 +337,7 @@ export default function LoginPage({ initialPortal = 'faculty' }) {
                       ? 'e.g. STU-2026-ALEX'
                       : portalMode === 'parent'
                       ? 'e.g. PAR-2026-ALEX'
-                      : 'director@demo.edu'
+                      : 'e.g. director@demo.edu or PRN-2026-3674'
                   }
                   data-testid="login-email-input"
                 />
@@ -407,7 +408,7 @@ export default function LoginPage({ initialPortal = 'faculty' }) {
               {portalMode === 'student' ? (
                 <button
                   type="button"
-                  onClick={() => handleQuickLogin('STU-2026-ALEX', 'Demo1234!', 'student')}
+                  onClick={() => handleQuickLogin('STU-2026-100001', 'Demo1234!', 'student')}
                   disabled={loading}
                   className="w-full rounded-md border border-emerald-500/30 bg-emerald-500/10 p-2.5 text-xs text-left hover:bg-emerald-500/20 transition-all cursor-pointer flex items-center justify-between"
                   data-testid="student-demo-btn"
@@ -416,7 +417,7 @@ export default function LoginPage({ initialPortal = 'faculty' }) {
                     <GraduationCap className="h-4 w-4 text-emerald-500" />
                     <div>
                       <div className="font-semibold text-foreground">Alex Rivera (Student)</div>
-                      <div className="text-[10px] text-muted-foreground">Grade 10 Sec A · Student ID: STU-2026-ALEX</div>
+                      <div className="text-[10px] text-muted-foreground">Grade 10 Sec A · Student ID: STU-2026-100001</div>
                     </div>
                   </div>
                   <span className="text-[11px] text-emerald-500 font-semibold">Log in →</span>
@@ -424,7 +425,7 @@ export default function LoginPage({ initialPortal = 'faculty' }) {
               ) : portalMode === 'parent' ? (
                 <button
                   type="button"
-                  onClick={() => handleQuickLogin('PAR-2026-ALEX', 'Demo1234!', 'parent')}
+                  onClick={() => handleQuickLogin('PAR-2026-100001', 'Demo1234!', 'parent')}
                   disabled={loading}
                   className="w-full rounded-md border border-purple-500/30 bg-purple-500/10 p-2.5 text-xs text-left hover:bg-purple-500/20 transition-all cursor-pointer flex items-center justify-between"
                   data-testid="parent-demo-btn"
@@ -433,7 +434,7 @@ export default function LoginPage({ initialPortal = 'faculty' }) {
                     <UserCheck className="h-4 w-4 text-purple-500" />
                     <div>
                       <div className="font-semibold text-foreground">Carlos Rivera (Parent)</div>
-                      <div className="text-[10px] text-muted-foreground">Parent of Alex Rivera · Parent ID: PAR-2026-ALEX</div>
+                      <div className="text-[10px] text-muted-foreground">Parent of Alex Rivera · Parent ID: PAR-2026-100001</div>
                     </div>
                   </div>
                   <span className="text-[11px] text-purple-500 font-semibold">Log in →</span>
@@ -458,6 +459,21 @@ export default function LoginPage({ initialPortal = 'faculty' }) {
                   >
                     <div className="font-semibold text-foreground text-[11px]">Principal</div>
                     <div className="text-[10px] text-muted-foreground truncate">principal@demo.edu</div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleQuickLogin('accountant@demo.edu', 'Demo1234!', 'faculty')}
+                    disabled={loading}
+                    className="rounded-md border border-teal-500/30 bg-teal-500/10 p-2 text-xs text-left hover:border-teal-500 hover:bg-teal-500/20 transition-all cursor-pointer col-span-2 flex items-center justify-between"
+                  >
+                    <div>
+                      <div className="font-semibold text-foreground text-[11px] flex items-center gap-1">
+                        <IndianRupee className="w-3 h-3 text-teal-400" /> Accountant Staff (Finance & AI Only)
+                      </div>
+                      <div className="text-[10px] text-muted-foreground truncate">accountant@demo.edu</div>
+                    </div>
+                    <span className="text-[10px] text-teal-400 font-semibold">Log in →</span>
                   </button>
                 </div>
               )}

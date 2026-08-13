@@ -79,11 +79,19 @@ async function ensureTeamAndProjectChannels(orgId: string) {
       if (t.managerId && t.managerId !== 'unassigned') uIds.add(t.managerId);
       t.memberships.forEach((m) => { if (m.userId) uIds.add(m.userId); });
 
-      const memberData = Array.from(uIds).map((uid) => ({
-        channelId: ch!.id,
-        userId: uid,
-        isAdmin: uid === t.managerId,
-      }));
+      const validUsers = await prisma.user.findMany({
+        where: { id: { in: Array.from(uIds) } },
+        select: { id: true },
+      });
+      const validUserSet = new Set(validUsers.map((u) => u.id));
+
+      const memberData = Array.from(uIds)
+        .filter((uid) => validUserSet.has(uid))
+        .map((uid) => ({
+          channelId: ch!.id,
+          userId: uid,
+          isAdmin: uid === t.managerId,
+        }));
 
       if (memberData.length > 0) {
         await prisma.channelMember.createMany({
@@ -120,10 +128,18 @@ async function ensureTeamAndProjectChannels(orgId: string) {
       if (p.team?.managerId && p.team.managerId !== 'unassigned') pUserIds.add(p.team.managerId);
       (p.team?.memberships || []).forEach((tm) => { if (tm.userId) pUserIds.add(tm.userId); });
 
-      const pMemberData = Array.from(pUserIds).map((uid) => ({
-        channelId: ch!.id,
-        userId: uid,
-      }));
+      const validPUsers = await prisma.user.findMany({
+        where: { id: { in: Array.from(pUserIds) } },
+        select: { id: true },
+      });
+      const validPUserSet = new Set(validPUsers.map((u) => u.id));
+
+      const pMemberData = Array.from(pUserIds)
+        .filter((uid) => validPUserSet.has(uid))
+        .map((uid) => ({
+          channelId: ch!.id,
+          userId: uid,
+        }));
 
       if (pMemberData.length > 0) {
         await prisma.channelMember.createMany({
@@ -706,6 +722,12 @@ router.post('/:channelId/messages', async (req, res, next) => {
       }
     }
 
+    // AI Moderation Safety Filter: Block inappropriate content before posting
+    const INAPPROPRIATE_PATTERN = /\b(fuck|bitch|bastard|asshole|dick|pussy|shit|cunt|whore|slut|nigger|faggot|kys|stfu)\b/i;
+    if (content && INAPPROPRIATE_PATTERN.test(content)) {
+      return res.status(400).json({ error: 'Message blocked by AI Moderation: Contains inappropriate content.' });
+    }
+
     const msg = await prisma.message.create({
       data: {
         channelId: channel.id,
@@ -757,8 +779,10 @@ ${studyMaterialsSummary}
 
 YOUR MISSION:
 1. Answer student and teacher questions directly using the class study materials listed above whenever applicable.
-2. If asked about study notes, topics, or formulas, cite the specific class material by name.
-3. Be professional, step-by-step, encouraging, and clear.`;
+2. If your answer uses information from the uploaded class study materials, YOU MUST append a citation tag at the very end of your response in this exact format:
+   [Source Document: Filename]
+3. Write cleanly without using raw Markdown header symbols like ### or ##. Use bold text, bullet points, or numbered lists for readability.
+4. Be professional, step-by-step, encouraging, and clear.`;
 
           const aiResp = await callLLM(`channel-${channel.id}`, systemPrompt, promptText);
 
@@ -767,7 +791,7 @@ YOUR MISSION:
               data: {
                 channelId: channel.id,
                 senderId: req.user!.id,
-                content: `🤖 **AI Class Assistant**:\n${aiResp.text}`,
+                content: aiResp.text,
                 type: 'AI',
                 parentId: parentId || null,
               },
@@ -838,9 +862,33 @@ router.patch('/:channelId/messages/:messageId', async (req, res, next) => {
 
 router.delete('/:channelId/messages/:messageId', async (req, res, next) => {
   try {
-    const msg = await prisma.message.findUnique({ where: { id: req.params.messageId } });
+    const msg = await prisma.message.findUnique({
+      where: { id: req.params.messageId },
+      include: { sender: { include: { memberships: true } } },
+    });
     if (!msg) return res.status(404).json({ error: 'Message not found' });
-    if (msg.senderId !== req.user!.id) return res.status(403).json({ error: 'Not your message' });
+
+    const channel = await prisma.channel.findUnique({ where: { id: req.params.channelId } });
+    const currentMember = channel
+      ? await prisma.membership.findFirst({
+          where: { userId: req.user!.id, orgId: channel.orgId, isActive: true },
+        })
+      : null;
+
+    const isSender = msg.senderId === req.user!.id;
+    const isAI = msg.type === 'AI' || msg.sender?.email === 'ai@system';
+    const senderRole = msg.sender?.memberships?.find((m) => m.orgId === channel?.orgId)?.role;
+    const isStudentMsg = senderRole === 'STUDENT' || !senderRole;
+    const isFaculty = currentMember && ['DIRECTOR', 'PRINCIPAL', 'DEAN', 'HOD', 'TEACHER'].includes(currentMember.role);
+
+    const canDelete =
+      isSender ||
+      (isFaculty && (isStudentMsg || isAI || currentMember.role === 'DIRECTOR' || currentMember.role === 'PRINCIPAL'));
+
+    if (!canDelete) {
+      return res.status(403).json({ error: 'You do not have permission to delete this message' });
+    }
+
     const updated = await prisma.message.update({ where: { id: msg.id }, data: { isDeleted: true, content: '[deleted]' } });
     const io = req.app.locals.io;
     if (io) {

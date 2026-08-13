@@ -210,7 +210,13 @@ router.patch('/:taskId', async (req, res, next) => {
     const m = await prisma.membership.findFirst({ where: { userId: req.user!.id, orgId: task.orgId, isActive: true } });
     if (!m) return res.status(403).json({ error: 'Forbidden' });
     if (task.status === 'CANCELLED' && req.body.status && req.body.status !== 'CANCELLED') {
-      return res.status(400).json({ error: 'Cancelled tasks are locked and cannot be reopened or moved.' });
+      return res.status(400).json({ error: 'Cancelled tasks are locked and cannot be moved.' });
+    }
+    if (task.status === 'COMPLETED' && req.body.status && req.body.status !== 'COMPLETED') {
+      return res.status(400).json({ error: 'Completed tasks are locked and cannot be moved out of Completed.' });
+    }
+    if (req.body.status === 'TODO' && ['IN_PROGRESS', 'REVIEW'].includes(task.status)) {
+      return res.status(400).json({ error: 'Tasks in progress or review cannot be moved back to To Do.' });
     }
     const data: any = {};
     ['title', 'description', 'status', 'priority', 'projectId'].forEach((k) => {
@@ -222,6 +228,12 @@ router.patch('/:taskId', async (req, res, next) => {
       await prisma.taskAssignee.updateMany({
         where: { taskId: task.id },
         data: { status: 'COMPLETED' },
+      }).catch(() => {});
+    } else if (req.body.status && ['TODO', 'IN_PROGRESS', 'REVIEW', 'BLOCKED'].includes(req.body.status)) {
+      data.completedAt = null;
+      await prisma.taskAssignee.updateMany({
+        where: { taskId: task.id, status: 'COMPLETED' },
+        data: { status: 'ACCEPTED' },
       }).catch(() => {});
     }
     if (req.body.status === 'CANCELLED') {

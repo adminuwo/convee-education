@@ -14,6 +14,7 @@ datasource db {
 enum SystemRole {
   SUPER_ADMIN
   USER
+  ACCOUNTANT
 }
 
 enum OrgRole {
@@ -26,6 +27,7 @@ enum OrgRole {
   TEACHER
   STUDENT
   PARENT
+  ACCOUNTANT
 }
 
 enum ChannelType {
@@ -716,4 +718,127 @@ model ParentStudentLink {
   @@index([parentUserId])
   @@index([studentUserId])
 }
+
+// ============ FINANCIAL MODELS (TALLY & BUSY SYNC) ============
+
+model StudentFeeLedger {
+  id              String    @id @default(uuid())
+  orgId           String
+  studentId       String?
+  studentRollNo   String?
+  studentName     String
+  feeHeader       String
+  academicYear    String    @default("2026-2027")
+  totalAmount     Float
+  paidAmount      Float     @default(0)
+  pendingBalance  Float
+  dueDate         DateTime?
+  status          String    @default("PENDING") // PAID, PENDING, OVERDUE, PARTIAL
+  receiptNo       String?
+  tallyVoucherId  String?
+  paymentMethod   String?   @default("BANK_TRANSFER")
+  notes           String?
+  tallySyncStatus String    @default("SYNCED_MASTER") // SYNCED_MASTER, STAGED_FOR_TALLY
+  syncedAt        DateTime  @default(now())
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([orgId])
+  @@index([studentId])
+  @@index([studentRollNo])
+  @@index([status])
+}
+
+model PayrollRecord {
+  id             String    @id @default(uuid())
+  orgId          String
+  userId         String?
+  employeeId     String?
+  employeeName   String
+  designation    String?
+  month          String
+  year           Int       @default(2026)
+  basicPay       Float
+  allowances     Float     @default(0)
+  deductions     Float     @default(0)
+  netSalary      Float
+  status         String    @default("DISBURSED") // DISBURSED, PENDING, PROCESSING
+  tallyVoucherId String?
+  payslipUrl     String?
+  disbursedAt    DateTime? @default(now())
+  syncedAt       DateTime  @default(now())
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([orgId])
+  @@index([userId])
+  @@index([employeeId])
+  @@index([month, year])
+}
+
+// ============ TIMETABLE & SUBSTITUTE TEACHER MANAGEMENT ============
+
+model TimetableSlot {
+  id                 String   @id @default(uuid())
+  orgId              String
+  departmentId       String?
+  teamId             String?  // Class/Section ID
+  className          String   // e.g. "Class 10-A", "Computer Science 3rd Year"
+  dayOfWeek          String   // MONDAY, TUESDAY, WEDNESDAY, THURSDAY, FRIDAY, SATURDAY
+  periodNumber       Int      // 1 to 8
+  startTime          String   // e.g. "09:00 AM"
+  endTime            String   // e.g. "09:45 AM"
+  subjectName        String   // e.g. "Physics", "Data Structures"
+  roomNumber         String?  // e.g. "Room 302", "Lab 4"
+  primaryTeacherId   String?
+  primaryTeacherName String
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([orgId])
+  @@index([departmentId])
+  @@index([teamId])
+  @@index([primaryTeacherId])
+  @@index([dayOfWeek, periodNumber])
+}
+
+model TeacherAbsence {
+  id            String   @id @default(uuid())
+  orgId         String
+  teacherUserId String
+  teacherName   String
+  departmentId  String?
+  date          DateTime
+  reason        String?
+  status        String   @default("ABSENT") // ABSENT, ON_LEAVE
+  createdAt     DateTime @default(now())
+
+  @@index([orgId])
+  @@index([teacherUserId])
+  @@index([date])
+}
+
+model ProxyAssignment {
+  id                   String   @id @default(uuid())
+  orgId                String
+  slotId               String
+  date                 DateTime
+  originalTeacherId    String?
+  originalTeacherName  String
+  substituteTeacherId  String
+  substituteTeacherName String
+  assignedByUserId     String
+  assignedByRole       String   // HOD, DEAN, PRINCIPAL
+  status               String   @default("ASSIGNED") // ASSIGNED, COMPLETED, CANCELLED
+  notes                String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@index([orgId])
+  @@index([slotId])
+  @@index([date])
+  @@index([substituteTeacherId])
+}
+
+
 

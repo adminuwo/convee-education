@@ -7,7 +7,7 @@ import { authenticate, attachOrg } from '../middleware/auth';
 import { requireRole } from '../middleware/rbac';
 import { validate } from '../middleware/validate';
 import { hashPassword } from '../utils/password';
-import { isEmailConfigured, sendVerificationEmail, verifyEmailDomain } from '../utils/email';
+import { isEmailConfigured, sendVerificationEmail, verifyEmailDomain, sendInviteCredentialsEmail } from '../utils/email';
 
 const router = Router();
 router.use(authenticate);
@@ -70,6 +70,37 @@ router.get('/:orgId', async (req, res, next) => {
       },
     });
     res.json({ ...org, myRole: membership.role });
+  } catch (e) { next(e); }
+});
+
+router.patch('/:orgId', async (req, res, next) => {
+  try {
+    const orgId = req.params.orgId as string;
+    const membership = await prisma.membership.findFirst({
+      where: { userId: req.user!.id, orgId, isActive: true },
+    });
+    if (!membership || !['ADMIN', 'DIRECTOR', 'PRINCIPAL', 'DEAN'].includes(membership.role)) {
+      return res.status(403).json({ error: 'Only Directors or Admins can update organization settings' });
+    }
+    const { name, description, logoUrl } = req.body;
+    if (name !== undefined && !name.trim()) {
+      return res.status(400).json({ error: 'Organization name cannot be empty' });
+    }
+    const org = await prisma.organization.update({
+      where: { id: orgId },
+      data: {
+        ...(name !== undefined ? { name: name.trim() } : {}),
+        ...(description !== undefined ? { description } : {}),
+        ...(logoUrl !== undefined ? { logoUrl } : {}),
+      },
+    });
+
+    const io = req.app.locals.io;
+    if (io) {
+      io.to(`org:${orgId}`).emit('org:updated', org);
+    }
+
+    res.json({ success: true, org });
   } catch (e) { next(e); }
 });
 
@@ -893,7 +924,7 @@ router.post('/invitations/:membershipId/respond', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// Invite (creates user if not exists & sends in-app notification with accept/decline)
+// Invite member (auto-generates unique ID, bcrypt initial password, activates membership & sends credentials)
 router.post('/:orgId/invite', inviteLimiter, async (req, res, next) => {
   try {
     const orgId = req.params.orgId as string;
@@ -902,7 +933,7 @@ router.post('/:orgId/invite', inviteLimiter, async (req, res, next) => {
     const { email, fullName, role, departmentId, teamId } = req.body;
     if (!email) return res.status(400).json({ error: 'Email required' });
 
-    const targetRole = role || 'EMPLOYEE';
+    const targetRole = role || 'TEACHER';
     const inviterRank = ROLE_RANKS[m.role] ?? -2;
     const targetRoleRank = ROLE_RANKS[targetRole] ?? -2;
 
@@ -910,52 +941,210 @@ router.post('/:orgId/invite', inviteLimiter, async (req, res, next) => {
       return res.status(403).json({ error: 'You cannot invite someone with a role equal to or higher than your own rank.' });
     }
 
-    let user = await prisma.user.findUnique({ where: { email } });
-    if (!user) {
-      user = await prisma.user.create({
-        data: { email, fullName: fullName || email?.split('@')?.[0] || 'User', isVerified: false, passwordHash: null },
+    // Single Principal Check: Only 1 Principal allowed per institution
+    if (targetRole === 'PRINCIPAL') {
+      const existingPrincipal = await prisma.membership.findFirst({
+        where: { orgId, role: 'PRINCIPAL' },
       });
-    }
-    const existing = await prisma.membership.findFirst({ where: { userId: user.id, orgId } });
-    if (existing) {
-      if (existing.isActive) {
-        return res.status(409).json({ error: 'This user is already registered with your organization.' });
-      } else {
-        return res.status(409).json({ error: 'An invitation has already been sent to this user. They have not accepted it yet.' });
+      if (existingPrincipal) {
+        return res.status(409).json({ error: 'This institution already has an assigned Principal. An institution can only have one Principal at a time.' });
       }
     }
-    const mem = await prisma.membership.create({
-      data: { userId: user.id, orgId, role: targetRole as any, departmentId, teamId, isActive: false },
-    });
 
-    const inviter = await prisma.user.findUnique({ where: { id: req.user!.id } });
     const org = await prisma.organization.findUnique({ where: { id: orgId } });
+    if (!org) return res.status(404).json({ error: 'Organization not found' });
 
-    const notif = await prisma.notification.create({
-      data: {
-        userId: user.id,
-        orgId,
-        type: 'APPROVAL_REQUEST',
-        title: `Invitation to join ${org?.name || 'Organization'}`,
-        body: `${inviter?.fullName || 'An admin'} invited you to join ${org?.name || 'an organization'} as ${targetRole}.`,
-        linkUrl: `/app/home?inviteId=${mem.id}`,
-        metadata: {
-          inviteId: mem.id,
-          orgId: req.params.orgId,
-          orgName: org?.name || 'Organization',
-          role: targetRole,
-          inviterName: inviter?.fullName || 'An admin',
-          action: 'ORG_INVITATION',
-        },
-      },
+    // Generate Role Prefix & Unique Faculty / User ID
+    const prefixMap: Record<string, string> = {
+      DIRECTOR: 'DIR',
+      PRINCIPAL: 'PRN',
+      DEAN: 'DEN',
+      HOD: 'HOD',
+      TEACHER: 'FAC',
+      ACCOUNTANT: 'ACC',
+      STUDENT: 'STU',
+      PARENT: 'PAR',
+    };
+    const prefix = prefixMap[targetRole] || 'FAC';
+    const uniqueSeq = Math.floor(1000 + Math.random() * 9000);
+    const uniqueId = `${prefix}-2026-${uniqueSeq}`;
+
+    // Auto-generate initial password & bcrypt hash
+    const generatedPassword = `Convee#${Math.floor(100000 + Math.random() * 900000)}`;
+    const passwordHash = await hashPassword(generatedPassword);
+
+    const existingUser = await prisma.user.findUnique({
+      where: { email },
+      include: { memberships: true },
     });
 
-    const io = req.app.locals.io;
-    if (io) {
-      io.to(`user:${user.id}`).emit('notification:new', notif);
+    if (existingUser) {
+      // 1. Check if user is already a member of THIS organization
+      const inThisOrg = existingUser.memberships.find((m) => m.orgId === orgId && m.isActive);
+      if (inThisOrg) {
+        return res.status(409).json({ error: 'This user is already registered with your organization.' });
+      }
+
+      // 2. Check if user is already a member of a DIFFERENT organization
+      const inOtherOrg = existingUser.memberships.find((m) => m.orgId !== orgId && m.isActive);
+      if (inOtherOrg) {
+        return res.status(409).json({ error: 'This email is already a part of a different organization.' });
+      }
     }
 
-    res.status(201).json({ membership: mem, user });
+    let user;
+    if (!existingUser) {
+      user = await prisma.user.create({
+        data: {
+          email,
+          fullName: fullName || email.split('@')[0] || 'User',
+          isVerified: true,
+          passwordHash,
+        },
+      });
+    } else {
+      user = await prisma.user.update({
+        where: { id: existingUser.id },
+        data: {
+          fullName: fullName || existingUser.fullName,
+          passwordHash,
+          isVerified: true,
+        },
+      });
+    }
+
+    const existingMembership = existingUser?.memberships?.find((m) => m.orgId === orgId);
+    let mem;
+    if (existingMembership) {
+      mem = await prisma.membership.update({
+        where: { id: existingMembership.id },
+        data: {
+          isActive: true,
+          role: targetRole as any,
+          title: `${targetRole} [${uniqueId}]`,
+          departmentId: departmentId || existingMembership.departmentId,
+          teamId: teamId || existingMembership.teamId,
+        },
+      });
+    } else {
+      mem = await prisma.membership.create({
+        data: {
+          userId: user.id,
+          orgId,
+          role: targetRole as any,
+          title: `${targetRole} [${uniqueId}]`,
+          departmentId,
+          teamId,
+          isActive: true,
+        },
+      });
+    }
+
+    // Add to General Channel
+    const genChannel = await prisma.channel.findFirst({
+      where: { orgId, name: 'general', deletedAt: null },
+    });
+    if (genChannel) {
+      await prisma.channelMember.upsert({
+        where: { channelId_userId: { channelId: genChannel.id, userId: user.id } },
+        create: { channelId: genChannel.id, userId: user.id },
+        update: {},
+      }).catch(() => {});
+    }
+
+    // Deliver email credentials
+    await sendInviteCredentialsEmail(
+      email,
+      fullName || user.fullName,
+      org.name,
+      targetRole,
+      uniqueId,
+      generatedPassword
+    ).catch((err) => console.error('Failed to send invite email:', err));
+
+    res.status(201).json({
+      membership: mem,
+      user,
+      generatedId: uniqueId,
+      message: `Member created successfully! Login ID and password sent to ${email}.`,
+    });
+  } catch (e) { next(e); }
+});
+
+// List pending invitations for an org
+router.get('/:orgId/pending-invitations', async (req, res, next) => {
+  try {
+    const orgId = req.params.orgId as string;
+    const m = await prisma.membership.findFirst({ where: { userId: req.user!.id, orgId, isActive: true } });
+    if (!m || !['ADMIN', 'DIRECTOR', 'PRINCIPAL', 'DEAN', 'HOD'].includes(m.role)) {
+      return res.status(403).json({ error: 'Insufficient permissions' });
+    }
+
+    const pending = await prisma.membership.findMany({
+      where: { orgId, isActive: false },
+      include: {
+        user: { select: { id: true, email: true, fullName: true, avatarUrl: true } },
+        department: true,
+        team: true,
+      },
+      orderBy: { joinedAt: 'desc' },
+    });
+
+    res.json(pending);
+  } catch (e) { next(e); }
+});
+
+// Revoke an invitation (deletes membership & deletes unverified user account if placeholder)
+router.delete('/:orgId/invitations/:membershipId', async (req, res, next) => {
+  try {
+    const { orgId, membershipId } = req.params;
+    const m = await prisma.membership.findFirst({ where: { userId: req.user!.id, orgId, isActive: true } });
+    if (!m || !['ADMIN', 'DIRECTOR', 'PRINCIPAL', 'DEAN', 'HOD'].includes(m.role)) {
+      return res.status(403).json({ error: 'Insufficient permissions' });
+    }
+
+    const targetMem = await prisma.membership.findUnique({
+      where: { id: membershipId },
+      include: { user: { include: { memberships: true } } },
+    });
+
+    if (!targetMem || targetMem.orgId !== orgId) {
+      return res.status(404).json({ error: 'Invitation not found' });
+    }
+
+    const invitedUser = targetMem.user;
+
+    // Delete related notifications
+    await prisma.notification.deleteMany({
+      where: {
+        userId: invitedUser.id,
+        orgId,
+      },
+    }).catch(() => {});
+
+    // Delete membership
+    await prisma.membership.delete({
+      where: { id: membershipId },
+    });
+
+    let userDeleted = false;
+
+    // If user has no password set AND has no other memberships in any organization,
+    // delete the user account completely from database!
+    if (invitedUser && !invitedUser.passwordHash && invitedUser.memberships.length <= 1) {
+      await prisma.user.delete({
+        where: { id: invitedUser.id },
+      }).catch(() => {});
+      userDeleted = true;
+    }
+
+    res.json({
+      success: true,
+      userDeleted,
+      message: userDeleted
+        ? 'Invitation revoked and account placeholder removed from database.'
+        : 'Invitation revoked successfully.',
+    });
   } catch (e) { next(e); }
 });
 // Request workspace ownership transfer (Step 1: Check Target is Admin -> Step 2: Email Verification -> Notify)
@@ -1163,6 +1352,7 @@ const ROLE_RANKS: Record<string, number> = {
   DEAN: 4,
   HOD: 4,
   TEACHER: 2,
+  ACCOUNTANT: 2,
   STUDENT: 1,
 };
 
@@ -1178,6 +1368,16 @@ router.patch('/:orgId/members/:membershipId', async (req, res, next) => {
     const validRoles = ['TEACHER', 'HOD', 'DEAN', 'PRINCIPAL', 'ADMIN'];
     if (!role || !validRoles.includes(role)) {
       return res.status(400).json({ error: 'Invalid role. STUDENT, OWNER, or DIRECTOR roles cannot be assigned directly.' });
+    }
+
+    // Single Principal Check: Only 1 Principal allowed per institution
+    if (role === 'PRINCIPAL') {
+      const existingPrincipal = await prisma.membership.findFirst({
+        where: { orgId: req.params.orgId, role: 'PRINCIPAL', id: { not: req.params.membershipId } },
+      });
+      if (existingPrincipal) {
+        return res.status(409).json({ error: 'This institution already has an assigned Principal. An institution can only have one Principal at a time.' });
+      }
     }
 
     const target = await prisma.membership.findUnique({ where: { id: req.params.membershipId } });
@@ -1212,9 +1412,23 @@ router.patch('/:orgId/members/:membershipId', async (req, res, next) => {
       return res.status(403).json({ error: 'You cannot assign a role equal to or higher than your own rank.' });
     }
 
+    const prefixMap: Record<string, string> = {
+      DIRECTOR: 'DIR',
+      PRINCIPAL: 'PRN',
+      DEAN: 'DEN',
+      HOD: 'HOD',
+      TEACHER: 'FAC',
+      ACCOUNTANT: 'ACC',
+      STUDENT: 'STU',
+      PARENT: 'PAR',
+    };
+    const prefix = prefixMap[role] || 'FAC';
+    const seqMatch = target.title?.match(/\d{4}/)?.[0] || Math.floor(1000 + Math.random() * 9000);
+    const updatedTitle = `${role} [${prefix}-2026-${seqMatch}]`;
+
     const updated = await prisma.membership.update({
       where: { id: req.params.membershipId },
-      data: { role: role as any },
+      data: { role: role as any, title: updatedTitle },
       include: { user: { select: { id: true, email: true, fullName: true, avatarUrl: true, status: true, lastSeenAt: true } } },
     });
 
@@ -1235,7 +1449,9 @@ router.delete('/:orgId/members/:membershipId', async (req, res, next) => {
       return res.status(403).json({ error: 'Insufficient permissions' });
     }
     const target = await prisma.membership.findUnique({ where: { id: req.params.membershipId } });
-    if (!target) return res.status(404).json({ error: 'Member not found' });
+    if (!target) {
+      return res.json({ ok: true, message: 'Member already removed' });
+    }
     if (target.userId === req.user!.id) return res.status(400).json({ error: 'Cannot remove yourself' });
 
     const org = await prisma.organization.findUnique({ where: { id: req.params.orgId } });
@@ -1250,8 +1466,47 @@ router.delete('/:orgId/members/:membershipId', async (req, res, next) => {
       return res.status(403).json({ error: 'You can only remove members with a role below your rank.' });
     }
 
+    const targetUserId = target.userId;
+
+    // If removing a STUDENT, clean up linked parent accounts & links
+    if (target.role === 'STUDENT') {
+      const parentLinks = await prisma.parentStudentLink.findMany({
+        where: { studentUserId: targetUserId, orgId: req.params.orgId },
+      });
+
+      const parentUserIds = parentLinks.map((l) => l.parentUserId);
+
+      // Remove parent-student link records
+      await prisma.parentStudentLink.deleteMany({
+        where: { studentUserId: targetUserId, orgId: req.params.orgId },
+      }).catch(() => {});
+
+      // For each parent, if they have no other children linked in the system, remove their membership & user account
+      for (const pUserId of parentUserIds) {
+        const remainingLinks = await prisma.parentStudentLink.count({ where: { parentUserId: pUserId } });
+        if (remainingLinks === 0) {
+          const parentMems = await prisma.membership.findMany({ where: { userId: pUserId, orgId: req.params.orgId } });
+          for (const pm of parentMems) {
+            await prisma.membership.delete({ where: { id: pm.id } }).catch(() => {});
+          }
+
+          const parentRemainingMems = await prisma.membership.count({ where: { userId: pUserId } });
+          if (parentRemainingMems === 0) {
+            await prisma.user.delete({ where: { id: pUserId } }).catch(() => {});
+          }
+        }
+      }
+    }
+
     await prisma.membership.delete({ where: { id: req.params.membershipId } });
-    res.json({ ok: true, message: 'Member removed' });
+
+    // If user has no other organization memberships, remove User record completely from DB
+    const remainingMemberships = await prisma.membership.count({ where: { userId: targetUserId } });
+    if (remainingMemberships === 0) {
+      await prisma.user.delete({ where: { id: targetUserId } }).catch(() => {});
+    }
+
+    res.json({ ok: true, message: 'Member and associated links removed successfully from database' });
   } catch (e) { next(e); }
 });
 

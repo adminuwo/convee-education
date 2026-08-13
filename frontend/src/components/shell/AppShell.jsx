@@ -6,6 +6,7 @@ import { CommandPalette } from './CommandPalette';
 import { useAuth } from '@/contexts/AuthContext';
 import { OrgDataProvider } from '@/contexts/OrgDataContext';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
+import OrgRenameModal from '@/components/org/OrgRenameModal';
 
 export default function AppShell() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -13,6 +14,19 @@ export default function AppShell() {
   const { currentOrg } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+
+  const isDefaultOrgName = Boolean(
+    currentOrg?.name &&
+    (currentOrg.name.includes("'s Workspace") || currentOrg.name.includes("'s Organization")) &&
+    ['DIRECTOR', 'ADMIN', 'PRINCIPAL', 'DEAN'].includes(currentOrg.role)
+  );
+  const [showSetupModal, setShowSetupModal] = useState(false);
+
+  useEffect(() => {
+    if (isDefaultOrgName) {
+      setShowSetupModal(true);
+    }
+  }, [isDefaultOrgName, currentOrg?.id]);
 
   useEffect(() => {
     function onKey(e) {
@@ -48,26 +62,27 @@ export default function AppShell() {
   return (
     <OrgDataProvider>
       <div className="flex h-screen w-full overflow-hidden bg-background text-foreground" data-testid="app-shell">
-      {/* Desktop sidebar */}
-      <aside className="hidden md:flex md:w-[280px] flex-shrink-0 border-r border-border bg-[hsl(var(--sidebar))]">
-        <Sidebar />
-      </aside>
-      {/* Mobile sidebar */}
-      <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
-        <SheetContent side="left" className="w-[280px] p-0 bg-[hsl(var(--sidebar))]">
-          <Sidebar onNavigate={() => setSidebarOpen(false)} />
-        </SheetContent>
-      </Sheet>
+        {/* Desktop sidebar */}
+        <aside className="hidden md:flex md:w-[280px] flex-shrink-0 border-r border-border bg-[hsl(var(--sidebar))]">
+          <Sidebar />
+        </aside>
+        {/* Mobile sidebar */}
+        <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
+          <SheetContent side="left" className="w-[280px] p-0 bg-[hsl(var(--sidebar))]">
+            <Sidebar onNavigate={() => setSidebarOpen(false)} />
+          </SheetContent>
+        </Sheet>
 
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <TopBar onMenuClick={() => setSidebarOpen(true)} onSearchClick={() => setCmdOpen(true)} />
-        <main className="flex-1 overflow-auto bg-background">
-          <Outlet />
-        </main>
+        <div className="flex flex-1 flex-col overflow-hidden">
+          <TopBar onMenuClick={() => setSidebarOpen(true)} onSearchClick={() => setCmdOpen(true)} />
+          <main className="flex-1 overflow-auto bg-background">
+            <Outlet />
+          </main>
+        </div>
+
+        <CommandPalette open={cmdOpen} setOpen={setCmdOpen} />
+        <OrgRenameModal open={showSetupModal} onOpenChange={setShowSetupModal} isFirstTimeSetup={true} />
       </div>
-
-      <CommandPalette open={cmdOpen} setOpen={setCmdOpen} />
-    </div>
-  </OrgDataProvider>
-);
+    </OrgDataProvider>
+  );
 }

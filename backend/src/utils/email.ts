@@ -188,3 +188,83 @@ export async function verifyEmailDomain(email: string): Promise<{ valid: boolean
 
   return { valid: true };
 }
+
+export async function sendInviteCredentialsEmail(
+  to: string,
+  fullName: string,
+  orgName: string,
+  role: string,
+  loginId: string,
+  initialPassword: string
+): Promise<void> {
+  const loginUrl = `${env.APP_URL}/login`;
+  console.log(`\n==================================================`);
+  console.log(`✉️ [INVITATION CREDENTIALS EMAIL GENERATED] Target: ${to}`);
+  console.log(`🏫 Institution: ${orgName} | Role: ${role}`);
+  console.log(`🆔 Login ID: ${loginId} | Email: ${to}`);
+  console.log(`🔑 Initial Password: ${initialPassword}`);
+  console.log(`==================================================\n`);
+
+  if (!isEmailConfigured()) return;
+
+  const resend = getResend();
+  const result = await resend.emails.send({
+    from: env.EMAIL_FROM || 'Convee <noreply@convee.app>',
+    to,
+    subject: `Your Login Credentials for ${orgName} - Convee Education`,
+    html: `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8" /></head>
+<body style="margin:0;padding:0;background:#0f0f1a;font-family:'Inter',Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0f0f1a;padding:40px 20px;">
+    <tr>
+      <td align="center">
+        <table width="560" cellpadding="0" cellspacing="0" style="background:linear-gradient(135deg,#1a1a2e,#16213e);border:1px solid rgba(139,92,246,0.2);border-radius:16px;overflow:hidden;">
+          <tr>
+            <td style="background:linear-gradient(135deg,#7c3aed,#4f46e5);padding:32px 40px;text-align:center;">
+              <h1 style="margin:0;color:#fff;font-size:28px;font-weight:700;">Convee Education</h1>
+              <p style="margin:8px 0 0;color:rgba(255,255,255,0.8);font-size:14px;">Welcome to ${orgName}</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:40px;">
+              <h2 style="margin:0 0 16px;color:#e2e8f0;font-size:20px;font-weight:600;">Welcome, ${fullName}! 👋</h2>
+              <p style="margin:0 0 24px;color:#94a3b8;font-size:15px;line-height:1.6;">
+                You have been registered as <strong>${role}</strong> at <strong>${orgName}</strong>. Below are your unique login credentials:
+              </p>
+              
+              <div style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:20px;margin:24px 0;">
+                <p style="margin:0 0 12px;color:#cbd5e1;font-size:14px;"><strong>Faculty / Login ID:</strong> <span style="font-family:monospace;color:#a78bfa;font-size:16px;font-weight:bold;">${loginId}</span></p>
+                <p style="margin:0 0 12px;color:#cbd5e1;font-size:14px;"><strong>Work Email:</strong> <span style="font-family:monospace;color:#e2e8f0;">${to}</span></p>
+                <p style="margin:0;color:#cbd5e1;font-size:14px;"><strong>Initial Password:</strong> <span style="font-family:monospace;color:#34d399;font-size:16px;font-weight:bold;">${initialPassword}</span></p>
+              </div>
+
+              <div style="text-align:center;margin:32px 0;">
+                <a href="${loginUrl}" style="display:inline-block;background:linear-gradient(135deg,#7c3aed,#4f46e5);color:#fff;text-decoration:none;padding:14px 36px;border-radius:10px;font-size:16px;font-weight:600;">
+                  Sign In to Convee
+                </a>
+              </div>
+              <p style="margin:16px 0 0;color:#64748b;font-size:12px;text-align:center;">
+                Note: You can change your password anytime after logging in via your Profile settings.
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:20px 40px;border-top:1px solid rgba(255,255,255,0.05);text-align:center;">
+              <p style="margin:0;color:#334155;font-size:12px;">© ${new Date().getFullYear()} Convee. All rights reserved.</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+    `.trim(),
+  });
+
+  if (result.error) {
+    console.error('❌ Resend API Error delivering invitation credentials email:', result.error);
+  }
+}

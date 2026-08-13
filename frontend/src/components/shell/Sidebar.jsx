@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useNavigate, useLocation, useParams } from 'react-router-dom';
-import { Home, Hash, ListTodo, Sparkles, Calendar, FolderOpen, BarChart3, Shield, ShieldCheck, Settings, Plus, ChevronDown, ChevronRight, Lock, Volume2, Users, MoreHorizontal, Building2, Check, GraduationCap, FolderGit2, BookOpen, Key, UserCheck } from 'lucide-react';
+import { Home, Hash, ListTodo, Sparkles, Calendar, FolderOpen, BarChart3, Shield, ShieldCheck, Settings, Plus, ChevronDown, ChevronRight, Lock, Volume2, Users, MoreHorizontal, Building2, Check, GraduationCap, FolderGit2, BookOpen, Key, UserCheck, IndianRupee, Wallet, Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -17,12 +17,17 @@ import { channelApi, orgApi } from '@/lib/api';
 import { connectSocket, getSocket } from '@/lib/socket';
 import { toast } from 'sonner';
 import { Sun, Moon, LogOut, User as UserIcon } from 'lucide-react';
+import OrgRenameModal from '@/components/org/OrgRenameModal';
 
 const PRIMARY_NAV = [
   { key: 'home', label: 'Home', icon: Home, path: '/app/home' },
   { key: 'tasks', label: 'Tasks', icon: ListTodo, path: '/app/tasks' },
   { key: 'homework', label: 'Homework', icon: BookOpen, path: '/app/homework' },
+  { key: 'timetable', label: 'Timetable & Substitutes', icon: Calendar, path: '/app/timetable' },
+  { key: 'my-payslips', label: 'My Payslips', icon: Wallet, path: '/app/my-payslips' },
+  { key: 'fee-status', label: 'Student Fee Status', icon: IndianRupee, path: '/app/fee-status' },
   { key: 'parent', label: 'Parent Portal', icon: UserCheck, path: '/app/parent' },
+  { key: 'accountant', label: 'Financial Sync (Tally)', icon: IndianRupee, path: '/app/accountant' },
   { key: 'ai', label: 'AI Assistant', icon: Sparkles, path: '/app/ai' },
   { key: 'meetings', label: 'Meetings', icon: Calendar, path: '/app/meetings' },
   { key: 'files', label: 'Files', icon: FolderOpen, path: '/app/files' },
@@ -57,6 +62,7 @@ export function Sidebar({ onNavigate }) {
   const [newCh, setNewCh] = useState({ open: false, name: '', type: 'PUBLIC' });
   const [newOrg, setNewOrg] = useState({ open: false, name: '' });
   const [newDm, setNewDm] = useState({ open: false, targetUserId: '' });
+  const [renameModalOpen, setRenameModalOpen] = useState(false);
 
   const isAdmin = currentOrg && ['ADMIN', 'PRINCIPAL', 'DEAN', 'HOD', 'TEACHER', 'DIRECTOR'].includes(currentOrg.role);
   const isManagerPlus = isAdmin;
@@ -96,18 +102,36 @@ export function Sidebar({ onNavigate }) {
     };
 
     const handleMessageNew = (msg) => {
+      if (!msg) return;
+      const targetChannelId = msg.channelId || msg.channel?.id;
       setChannels((prev) => {
-        const exists = prev.some((c) => c.id === msg.channelId);
+        const exists = prev.some((c) => c.id === targetChannelId);
         if (!exists) {
           refreshOrgData();
           return prev;
         }
         return prev.map((c) => {
-          if (c.id === msg.channelId) {
-            const isCurrentActive = currentChannelId === msg.channelId;
-            const isFromOther = msg.senderId !== user?.id;
-            const unreadCount = (isFromOther && !isCurrentActive) ? (c.unreadCount || 0) + 1 : 0;
+          if (c.id === targetChannelId) {
+            const isCurrentActive = currentChannelId === targetChannelId;
+            const unreadCount = !isCurrentActive ? (c.unreadCount || 0) + 1 : 0;
             return { ...c, unreadCount };
+          }
+          return c;
+        });
+      });
+    };
+
+    const handleUnreadUpdate = ({ channelId: cid }) => {
+      setChannels((prev) => {
+        const exists = prev.some((c) => c.id === cid);
+        if (!exists) {
+          refreshOrgData();
+          return prev;
+        }
+        return prev.map((c) => {
+          if (c.id === cid) {
+            const isCurrentActive = currentChannelId === cid;
+            return { ...c, unreadCount: !isCurrentActive ? (c.unreadCount || 0) + 1 : 0 };
           }
           return c;
         });
@@ -137,20 +161,24 @@ export function Sidebar({ onNavigate }) {
     };
 
     s.on('channel:created', handleChannelCreated);
+    s.on('channel:updated', handleChannelCreated);
     s.on('channel:deleted', handleChannelDeleted);
     s.on('project:created', handleProjectUpdated);
     s.on('project:updated', handleProjectUpdated);
     s.on('message:new', handleMessageNew);
+    s.on('unread:update', handleUnreadUpdate);
     s.on('user:presence', handlePresence);
     s.on('department:updated', handleDeptOrMemberUpdate);
     s.on('membership:updated', handleDeptOrMemberUpdate);
 
     return () => {
       s.off('channel:created', handleChannelCreated);
+      s.off('channel:updated', handleChannelCreated);
       s.off('channel:deleted', handleChannelDeleted);
       s.off('project:created', handleProjectUpdated);
       s.off('project:updated', handleProjectUpdated);
       s.off('message:new', handleMessageNew);
+      s.off('unread:update', handleUnreadUpdate);
       s.off('user:presence', handlePresence);
       s.off('department:updated', handleDeptOrMemberUpdate);
       s.off('membership:updated', handleDeptOrMemberUpdate);
@@ -181,12 +209,19 @@ export function Sidebar({ onNavigate }) {
 
   const isStudent = currentOrg?.role === 'STUDENT';
   const isParent = currentOrg?.role === 'PARENT';
+  const isAccountant = currentOrg?.role === 'ACCOUNTANT' || user?.systemRole === 'ACCOUNTANT' || user?.email?.toLowerCase().includes('accountant');
+  const isLeadershipOrDept = ['DIRECTOR', 'OWNER', 'PRINCIPAL', 'ADMIN', 'DEAN', 'HOD'].includes(currentOrg?.role);
   const navItems = PRIMARY_NAV.filter((it) => {
+    if (isAccountant) {
+      return ['accountant', 'ai'].includes(it.key);
+    }
     if (isParent) {
       return ['parent', 'homework', 'ai', 'meetings'].includes(it.key);
     }
     if (it.key === 'parent') return false;
-    if (isStudent && (it.key === 'analytics' || it.key === 'tasks')) return false;
+    if (it.key === 'accountant') return false;
+    if (it.key === 'fee-status' && !isLeadershipOrDept) return false;
+    if (isStudent && (it.key === 'analytics' || it.key === 'tasks' || it.key === 'my-payslips' || it.key === 'fee-status')) return false;
     return true;
   });
 
@@ -350,7 +385,7 @@ export function Sidebar({ onNavigate }) {
   return (
     <div className="flex h-full w-full flex-col">
       {/* Workspace switcher */}
-      <div className="border-b border-[hsl(var(--sidebar-border))] p-3">
+      <div className="h-14 flex items-center border-b border-[hsl(var(--sidebar-border))] px-3">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
@@ -376,10 +411,14 @@ export function Sidebar({ onNavigate }) {
                 <Badge variant="secondary" className="ml-2 text-[10px]">{m.role}</Badge>
               </DropdownMenuItem>
             ))}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => setNewOrg({ open: true, name: '' })} data-testid="new-workspace-btn">
-              <Plus className="h-4 w-4 mr-2" /> New workspace
-            </DropdownMenuItem>
+            {['DIRECTOR', 'ADMIN', 'PRINCIPAL', 'DEAN'].includes(currentOrg?.role) && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setRenameModalOpen(true)}>
+                  <Pencil className="h-4 w-4 mr-2" /> Rename Institution
+                </DropdownMenuItem>
+              </>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
@@ -403,7 +442,7 @@ export function Sidebar({ onNavigate }) {
                 {it.label}
               </button>
             ))}
-            {isFullAccessRole ? (
+            {!isAccountant && isFullAccessRole ? (
               <>
                 <button
                   onClick={() => go('/app/admin')}
@@ -428,7 +467,7 @@ export function Sidebar({ onNavigate }) {
                   <Key className="h-4 w-4 text-amber-400" /> Student ID Generator
                 </button>
               </>
-            ) : ['DEAN', 'HOD'].includes(currentOrg?.role) ? (
+            ) : (!isAccountant && ['DEAN', 'HOD'].includes(currentOrg?.role)) ? (
               <button
                 onClick={() => go('/app/department')}
                 className={`w-full flex items-center gap-2.5 rounded-md px-2 py-1.5 text-sm transition-colors ${
@@ -441,7 +480,7 @@ export function Sidebar({ onNavigate }) {
                 <Building2 className="h-4 w-4" /> Department
               </button>
             ) : null}
-            {['TEACHER', 'HOD', 'DEAN', 'PRINCIPAL', 'ADMIN', 'DIRECTOR', 'OWNER'].includes(currentOrg?.role) && currentOrg?.role !== 'STUDENT' && (
+            {!isAccountant && ['TEACHER', 'HOD', 'DEAN', 'PRINCIPAL', 'ADMIN', 'DIRECTOR', 'OWNER'].includes(currentOrg?.role) && currentOrg?.role !== 'STUDENT' && (
               <button
                 onClick={() => go('/app/classroom')}
                 className={`w-full flex items-center gap-2.5 rounded-md px-2 py-1.5 text-sm transition-colors ${
@@ -454,7 +493,7 @@ export function Sidebar({ onNavigate }) {
                 <GraduationCap className="h-4 w-4 text-emerald-500" /> Classroom
               </button>
             )}
-            {isOwner && (
+            {!isAccountant && isOwner && (
               <button
                 onClick={() => go('/app/role-permissions')}
                 className={`w-full flex items-center gap-2.5 rounded-md px-2 py-1.5 text-sm transition-colors ${
@@ -467,7 +506,7 @@ export function Sidebar({ onNavigate }) {
                 <ShieldCheck className="h-4 w-4 text-amber-500" /> Role Permissions
               </button>
             )}
-            {user?.systemRole === 'SUPER_ADMIN' && (
+            {!isAccountant && user?.systemRole === 'SUPER_ADMIN' && (
               <button
                 onClick={() => go('/app/super-admin')}
                 className={`w-full flex items-center gap-2.5 rounded-md px-2 py-1.5 text-sm transition-colors ${
@@ -481,7 +520,7 @@ export function Sidebar({ onNavigate }) {
               </button>
             )}
           </div>          {/* Classes / School Wings group */}
-          {!isParent && (
+          {!isAccountant && !isParent && (
             <div className="mt-4">
               <div className="flex items-center gap-1 px-2 py-1">
                 <button onClick={() => setOpenGroups({ ...openGroups, classes: !openGroups.classes })} className="flex items-center gap-1 text-xs font-medium uppercase text-muted-foreground tracking-wide hover:text-foreground">
@@ -652,7 +691,7 @@ export function Sidebar({ onNavigate }) {
           )}
 
           {/* Projects group */}
-          {!isParent && (
+          {!isAccountant && !isParent && (
             <div className="mt-4">
               <div className="flex items-center gap-1 px-2 py-1">
                 <button onClick={() => setOpenGroups({ ...openGroups, projects: !openGroups.projects })} className="flex items-center gap-1 text-xs font-medium uppercase text-muted-foreground tracking-wide hover:text-foreground">
@@ -710,149 +749,160 @@ export function Sidebar({ onNavigate }) {
           )}
 
           {/* Channels group */}
-          <div className="mt-4">
-            <div className="flex items-center gap-1 px-2 py-1">
-              <button onClick={() => setOpenGroups({ ...openGroups, channels: !openGroups.channels })} className="flex items-center gap-1 text-xs font-medium uppercase text-muted-foreground tracking-wide hover:text-foreground">
-                {openGroups.channels ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-                <span>Announcements & Channels</span>
-              </button>
-              {!isParent && (
+          {!isAccountant && (
+            <div className="mt-4">
+              <div className="flex items-center gap-1 px-2 py-1">
+                <button onClick={() => setOpenGroups({ ...openGroups, channels: !openGroups.channels })} className="flex items-center gap-1 text-xs font-medium uppercase text-muted-foreground tracking-wide hover:text-foreground">
+                  {openGroups.channels ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                  <span>Announcements & Channels</span>
+                </button>
+                {!isParent && (
+                  <button
+                    onClick={() => { refreshOrgData(); setNewCh({ open: true, name: '', type: 'PUBLIC', memberIds: [] }); }}
+                    className="h-5 w-5 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-black/10 dark:hover:bg-white/10 transition-all shrink-0 ml-1"
+                    title="Create Channel"
+                    data-testid="new-channel-btn"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+              {openGroups.channels && (
+                <div className="mt-1 space-y-0.5">
+                  {loadingChannels ? (
+                    <div className="space-y-1.5 px-2 py-1">
+                      <div className="h-4 w-3/4 rounded bg-muted/30 animate-pulse" />
+                      <div className="h-4 w-1/2 rounded bg-muted/30 animate-pulse" />
+                    </div>
+                  ) : (
+                    <>
+                      {standardChannels.map((c) => {
+                        const hasUnread = (c.unreadCount || 0) > 0;
+                        const isSelected = currentChannelId === c.id;
+                        return (
+                          <button
+                            key={c.id}
+                            onClick={() => handleSelectChannel(c.id)}
+                            className={`w-full flex items-center justify-between rounded-md px-2 py-1 text-sm transition-colors ${
+                              isSelected
+                                ? 'bg-[hsl(var(--sidebar-active-bg))] text-[hsl(var(--sidebar-active))] font-medium'
+                                : hasUnread
+                                ? 'font-bold text-foreground hover:bg-black/5 dark:hover:bg-white/5'
+                                : 'text-[hsl(var(--sidebar-foreground))] hover:bg-black/5 dark:hover:bg-white/5'
+                            }`}
+                            data-testid={`channel-item-${c.name}`}
+                          >
+                            <div className="flex items-center gap-2 truncate min-w-0">
+                              {c.type === 'PRIVATE' ? <Lock className="h-3.5 w-3.5 shrink-0" /> : c.type === 'ANNOUNCEMENT' ? <Volume2 className="h-3.5 w-3.5 shrink-0" /> : <Hash className="h-3.5 w-3.5 shrink-0" />}
+                              <span className="truncate">{c.name}</span>
+                            </div>
+                            {hasUnread && (
+                              <Badge variant="default" className="ml-1 h-5 min-w-[20px] px-1.5 text-[10px] flex items-center justify-center font-bold bg-primary text-primary-foreground rounded-full animate-in zoom-in-75 shrink-0">
+                                {c.unreadCount > 99 ? '99+' : c.unreadCount}
+                              </Badge>
+                            )}
+                          </button>
+                        );
+                      })}
+                      {standardChannels.length === 0 && <div className="px-2 py-1 text-xs text-muted-foreground">No channels yet</div>}
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* DMs */}
+          {!isAccountant && (
+            <div className="mt-4">
+              <div className="flex items-center gap-1 px-2 py-1">
+                <button onClick={() => setOpenGroups({ ...openGroups, dms: !openGroups.dms })} className="flex items-center gap-1 text-xs font-medium uppercase text-muted-foreground tracking-wide hover:text-foreground">
+                  {openGroups.dms ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                  <span>Direct messages</span>
+                </button>
                 <button
-                  onClick={() => { refreshOrgData(); setNewCh({ open: true, name: '', type: 'PUBLIC', memberIds: [] }); }}
+                  onClick={() => { refreshOrgData(); setNewDm({ open: true, targetUserId: '' }); }}
                   className="h-5 w-5 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-black/10 dark:hover:bg-white/10 transition-all shrink-0 ml-1"
-                  title="Create Channel"
-                  data-testid="new-channel-btn"
+                  title="New Direct Message"
+                  data-testid="new-dm-btn"
                 >
                   <Plus className="h-3.5 w-3.5" />
                 </button>
+              </div>
+              {openGroups.dms && (
+                <div className="mt-1 space-y-0.5">
+                  {loadingChannels ? (
+                    <div className="space-y-1.5 px-2 py-1">
+                      <div className="h-4 w-2/3 rounded bg-muted/30 animate-pulse" />
+                    </div>
+                  ) : (
+                    <>
+                      {chDMs.map((c) => {
+                        const dmUser = getDMUser(c);
+                        const displayName = dmUser?.fullName || c.name;
+                        const hasUnread = (c.unreadCount || 0) > 0;
+                        const isSelected = currentChannelId === c.id;
+                        return (
+                          <button
+                            key={c.id}
+                            onClick={() => handleSelectChannel(c.id)}
+                            className={`w-full flex items-center justify-between rounded-md px-2 py-1 text-sm transition-colors ${
+                              isSelected
+                                ? 'bg-[hsl(var(--sidebar-active-bg))] text-[hsl(var(--sidebar-active))] font-medium'
+                                : hasUnread
+                                ? 'font-bold text-foreground hover:bg-black/5 dark:hover:bg-white/5'
+                                : 'hover:bg-black/5 dark:hover:bg-white/5 text-[hsl(var(--sidebar-foreground))]'
+                            }`}
+                            data-testid={`dm-item-${c.id}`}
+                          >
+                            <div className="flex items-center gap-2 truncate min-w-0">
+                              <div className="relative flex items-center justify-center shrink-0">
+                                <Avatar className="h-4 w-4">
+                                  <AvatarImage src={dmUser?.avatarUrl} />
+                                  <AvatarFallback className="text-[9px]">{initials(displayName)}</AvatarFallback>
+                                </Avatar>
+                                <span className={`absolute -bottom-0.5 -right-0.5 h-1.5 w-1.5 rounded-full ${dmUser?.status === 'online' ? 'bg-emerald-500' : 'bg-muted-foreground/40'}`} />
+                              </div>
+                              <span className="truncate">{displayName}</span>
+                            </div>
+                            {hasUnread && (
+                              <Badge variant="default" className="ml-1 h-5 min-w-[20px] px-1.5 text-[10px] flex items-center justify-center font-bold bg-primary text-primary-foreground rounded-full animate-in zoom-in-75 shrink-0">
+                                {c.unreadCount > 99 ? '99+' : c.unreadCount}
+                              </Badge>
+                            )}
+                          </button>
+                        );
+                      })}
+                      {chDMs.length === 0 && <div className="px-2 py-1 text-xs text-muted-foreground">No direct messages</div>}
+                    </>
+                  )}
+                </div>
               )}
             </div>
-            {openGroups.channels && (
-              <div className="mt-1 space-y-0.5">
-                {loadingChannels ? (
-                  <div className="space-y-1.5 px-2 py-1">
-                    <div className="h-4 w-3/4 rounded bg-muted/30 animate-pulse" />
-                    <div className="h-4 w-1/2 rounded bg-muted/30 animate-pulse" />
-                  </div>
-                ) : (
-                  <>
-                    {standardChannels.map((c) => {
-                      const hasUnread = (c.unreadCount || 0) > 0;
-                      const isSelected = currentChannelId === c.id;
-                      return (
-                        <button
-                          key={c.id}
-                          onClick={() => handleSelectChannel(c.id)}
-                          className={`w-full flex items-center justify-between rounded-md px-2 py-1 text-sm transition-colors ${
-                            isSelected
-                              ? 'bg-[hsl(var(--sidebar-active-bg))] text-[hsl(var(--sidebar-active))] font-medium'
-                              : hasUnread
-                              ? 'font-bold text-foreground hover:bg-black/5 dark:hover:bg-white/5'
-                              : 'text-[hsl(var(--sidebar-foreground))] hover:bg-black/5 dark:hover:bg-white/5'
-                          }`}
-                          data-testid={`channel-item-${c.name}`}
-                        >
-                          <div className="flex items-center gap-2 truncate min-w-0">
-                            {c.type === 'PRIVATE' ? <Lock className="h-3.5 w-3.5 shrink-0" /> : c.type === 'ANNOUNCEMENT' ? <Volume2 className="h-3.5 w-3.5 shrink-0" /> : <Hash className="h-3.5 w-3.5 shrink-0" />}
-                            <span className="truncate">{c.name}</span>
-                          </div>
-                          {hasUnread && (
-                            <Badge variant="default" className="ml-1 h-5 min-w-[20px] px-1.5 text-[10px] flex items-center justify-center font-bold bg-primary text-primary-foreground rounded-full animate-in zoom-in-75 shrink-0">
-                              {c.unreadCount > 99 ? '99+' : c.unreadCount}
-                            </Badge>
-                          )}
-                        </button>
-                      );
-                    })}
-                    {standardChannels.length === 0 && <div className="px-2 py-1 text-xs text-muted-foreground">No channels yet</div>}
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* DMs */}
-          <div className="mt-4">
-            <div className="flex items-center gap-1 px-2 py-1">
-              <button onClick={() => setOpenGroups({ ...openGroups, dms: !openGroups.dms })} className="flex items-center gap-1 text-xs font-medium uppercase text-muted-foreground tracking-wide hover:text-foreground">
-                {openGroups.dms ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-                <span>Direct messages</span>
-              </button>
-              <button
-                onClick={() => { refreshOrgData(); setNewDm({ open: true, targetUserId: '' }); }}
-                className="h-5 w-5 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-black/10 dark:hover:bg-white/10 transition-all shrink-0 ml-1"
-                title="New Direct Message"
-                data-testid="new-dm-btn"
-              >
-                <Plus className="h-3.5 w-3.5" />
-              </button>
-            </div>
-            {openGroups.dms && (
-              <div className="mt-1 space-y-0.5">
-                {loadingChannels ? (
-                  <div className="space-y-1.5 px-2 py-1">
-                    <div className="h-4 w-2/3 rounded bg-muted/30 animate-pulse" />
-                  </div>
-                ) : (
-                  <>
-                    {chDMs.map((c) => {
-                      const dmUser = getDMUser(c);
-                      const displayName = dmUser?.fullName || c.name;
-                      const hasUnread = (c.unreadCount || 0) > 0;
-                      const isSelected = currentChannelId === c.id;
-                      return (
-                        <button
-                          key={c.id}
-                          onClick={() => handleSelectChannel(c.id)}
-                          className={`w-full flex items-center justify-between rounded-md px-2 py-1 text-sm transition-colors ${
-                            isSelected
-                              ? 'bg-[hsl(var(--sidebar-active-bg))] text-[hsl(var(--sidebar-active))] font-medium'
-                              : hasUnread
-                              ? 'font-bold text-foreground hover:bg-black/5 dark:hover:bg-white/5'
-                              : 'hover:bg-black/5 dark:hover:bg-white/5 text-[hsl(var(--sidebar-foreground))]'
-                          }`}
-                          data-testid={`dm-item-${c.id}`}
-                        >
-                          <div className="flex items-center gap-2 truncate min-w-0">
-                            <div className="relative flex items-center justify-center shrink-0">
-                              <Avatar className="h-4 w-4">
-                                <AvatarImage src={dmUser?.avatarUrl} />
-                                <AvatarFallback className="text-[9px]">{initials(displayName)}</AvatarFallback>
-                              </Avatar>
-                              <span className={`absolute -bottom-0.5 -right-0.5 h-1.5 w-1.5 rounded-full ${dmUser?.status === 'online' ? 'bg-emerald-500' : 'bg-muted-foreground/40'}`} />
-                            </div>
-                            <span className="truncate">{displayName}</span>
-                          </div>
-                          {hasUnread && (
-                            <Badge variant="default" className="ml-1 h-5 min-w-[20px] px-1.5 text-[10px] flex items-center justify-center font-bold bg-primary text-primary-foreground rounded-full animate-in zoom-in-75 shrink-0">
-                              {c.unreadCount > 99 ? '99+' : c.unreadCount}
-                            </Badge>
-                          )}
-                        </button>
-                      );
-                    })}
-                    {chDMs.length === 0 && <div className="px-2 py-1 text-xs text-muted-foreground">No direct messages</div>}
-                  </>
-                )}
-              </div>
-            )}
-          </div>
+          )}
         </div>
       </ScrollArea>
 
       {/* User footer */}
-      <div className="border-t border-[hsl(var(--sidebar-border))] p-3">
-        <div className="flex items-center gap-2">
+      <div className="border-t border-[hsl(var(--sidebar-border))] p-2.5">
+        <div className="flex items-center gap-1.5 min-w-0">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className="flex items-center gap-2 flex-1 rounded-md p-1 hover:bg-black/5 dark:hover:bg-white/5" data-testid="user-menu">
-                <Avatar className="h-8 w-8">
+              <button className="flex items-center gap-2 flex-1 min-w-0 rounded-md p-1 hover:bg-black/5 dark:hover:bg-white/5 overflow-hidden" data-testid="user-menu">
+                <Avatar className="h-8 w-8 shrink-0">
                   <AvatarImage src={user?.avatarUrl} />
                   <AvatarFallback className="text-xs bg-primary/10 text-primary">{initials(user?.fullName)}</AvatarFallback>
                 </Avatar>
                 <div className="flex-1 min-w-0 text-left">
-                  <div className="text-sm font-medium truncate">{user?.fullName}</div>
-                  <div className="text-xs text-muted-foreground truncate">{user?.email}</div>
+                  <div className="flex items-center justify-between gap-1 min-w-0">
+                    <span className="text-xs font-semibold truncate text-foreground min-w-0">{user?.fullName}</span>
+                    {(currentOrg?.userUniqueId || currentOrg?.directorId || user?.directorId || (user?.memberships?.find((m) => m.orgId === currentOrg?.id)?.title?.match(/\[(.*?)\]/)?.[1])) && (
+                      <Badge variant="secondary" className="font-mono text-[9px] px-1 py-0 h-3.5 font-bold shrink-0 bg-primary/10 text-primary border border-primary/20">
+                        {currentOrg?.userUniqueId || currentOrg?.directorId || user?.directorId || (user?.memberships?.find((m) => m.orgId === currentOrg?.id)?.title?.match(/\[(.*?)\]/)?.[1])}
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="text-[11px] text-muted-foreground truncate">{user?.email}</div>
                 </div>
               </button>
             </DropdownMenuTrigger>
@@ -863,8 +913,8 @@ export function Sidebar({ onNavigate }) {
               <DropdownMenuItem onClick={logout} className="text-destructive"><LogOut className="h-4 w-4 mr-2" /> Sign out</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          <Button variant="ghost" size="icon" onClick={toggle} data-testid="theme-toggle" className="h-8 w-8">
-            {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+          <Button variant="ghost" size="icon" onClick={toggle} data-testid="theme-toggle" className="h-7 w-7 shrink-0">
+            {theme === 'dark' ? <Sun className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" /> : <Moon className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />}
           </Button>
         </div>
       </div>
@@ -976,21 +1026,7 @@ export function Sidebar({ onNavigate }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* New Org Dialog */}
-      <Dialog open={newOrg.open} onOpenChange={(o) => setNewOrg({ ...newOrg, open: o })}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Create organization</DialogTitle></DialogHeader>
-          <div className="space-y-3">
-            <Label>Name</Label>
-            <Input value={newOrg.name} onChange={(e) => setNewOrg({ ...newOrg, name: e.target.value })} placeholder="My Organization" data-testid="new-org-name" />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setNewOrg({ ...newOrg, open: false })}>Cancel</Button>
-            <Button onClick={createOrg} disabled={!newOrg.name} data-testid="create-org-submit">Create</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <OrgRenameModal open={renameModalOpen} onOpenChange={setRenameModalOpen} />
     </div>
   );
 }

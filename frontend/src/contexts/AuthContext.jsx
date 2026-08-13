@@ -16,6 +16,7 @@ export function AuthProvider({ children }) {
       setUser({
         id: me.id, email: me.email, fullName: me.fullName, avatarUrl: me.avatarUrl,
         systemRole: me.systemRole, bio: me.bio, timezone: me.timezone, status: me.status,
+        hasPassword: me.hasPassword,
       });
       setMemberships(me.memberships || []);
       const savedOrgId = getCurrentOrgId();
@@ -30,6 +31,8 @@ export function AuthProvider({ children }) {
           ownerId: cur.organization.ownerId,
           departmentId: cur.departmentId,
           teamId: cur.teamId,
+          directorId: cur.directorId || (cur.role === 'DIRECTOR' ? 'DIR-2026-1001' : null),
+          userUniqueId: cur.userUniqueId || cur.directorId || (cur.title?.match(/\[(.*?)\]/)?.[1]) || null,
         });
         setCurrentOrgId(cur.orgId);
       }

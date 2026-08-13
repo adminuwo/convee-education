@@ -40,11 +40,12 @@ export default function RolePermissionsPage() {
     setLoading(true);
     try {
       const data = await rolePermissionsApi.get(currentOrg.id);
-      setRoles(data.roles || []);
+      const filteredRoles = (data.roles || []).filter((r) => r.role?.toUpperCase() !== 'ACCOUNTANT');
+      setRoles(filteredRoles);
       setAllPermissions(data.allPermissions || []);
       setIsOwner(data.isOwner);
-      if (data.roles && data.roles.length > 0) {
-        const initial = data.roles[0];
+      if (filteredRoles && filteredRoles.length > 0) {
+        const initial = filteredRoles[0];
         setSelectedRole(initial);
         setActivePermissions(initial.permissions || []);
       }

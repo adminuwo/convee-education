@@ -82,8 +82,11 @@ export const orgApi = {
   list: () => api.get('/orgs').then((r) => r.data),
   create: (data) => api.post('/orgs', data).then((r) => r.data),
   get: (id) => api.get(`/orgs/${id}`).then((r) => r.data),
+  update: (id, data) => api.patch(`/orgs/${id}`, data).then((r) => r.data),
   members: (id) => api.get(`/orgs/${id}/members`).then((r) => r.data),
   invite: (id, data) => api.post(`/orgs/${id}/invite`, data).then((r) => r.data),
+  getPendingInvitations: (id) => api.get(`/orgs/${id}/pending-invitations`).then((r) => r.data),
+  revokeInvitation: (id, membershipId) => api.delete(`/orgs/${id}/invitations/${membershipId}`).then((r) => r.data),
   respondInvite: (membershipId, action) => api.post(`/orgs/invitations/${membershipId}/respond`, { action }).then((r) => r.data),
   departments: (id) => api.get(`/orgs/${id}/departments`).then((r) => r.data),
   createDept: (id, data) => api.post(`/orgs/${id}/departments`, data).then((r) => r.data),
@@ -167,6 +170,7 @@ export const userApi = {
   list: (params = {}) => api.get('/users', { params }).then((r) => r.data),
   get: (id) => api.get(`/users/${id}`).then((r) => r.data),
   updateMe: (data) => api.patch('/users/me', data).then((r) => r.data),
+  setPassword: (data) => api.post('/users/me/password', data).then((r) => r.data),
 };
 
 export const notifApi = {
@@ -241,4 +245,29 @@ export const aiExtendedApi = {
   generateQuiz: (data) => api.post('/ai/generate-quiz', data).then((r) => r.data),
   dailyBriefing: (orgId) => api.post('/ai/daily-briefing', { orgId }).then((r) => r.data),
 };
+
+export const financeApi = {
+  getOverview: () => api.get('/finance/overview').then((r) => r.data),
+  getFees: (params) => api.get('/finance/fees', { params }).then((r) => r.data),
+  createFee: (data) => api.post('/finance/fees', data).then((r) => r.data),
+  updateFee: (id, data) => api.put(`/finance/fees/${id}`, data).then((r) => r.data),
+  getParentFees: () => api.get('/finance/fees/parent').then((r) => r.data),
+  getPayroll: () => api.get('/finance/payroll').then((r) => r.data),
+  createPayroll: (data) => api.post('/finance/payroll', data).then((r) => r.data),
+  getFacultySalary: () => api.get('/finance/salary/faculty').then((r) => r.data),
+  getMyPayslips: () => api.get('/finance/my-payslips').then((r) => r.data),
+  getTallyCompanies: () => api.get('/finance/tally/companies').then((r) => r.data),
+  syncTally: (data) => api.post('/finance/sync/tally', data).then((r) => r.data),
+};
+
+export const timetableApi = {
+  getSlots: (params) => api.get('/timetable/slots', { params }).then((r) => r.data),
+  getFreeTeachers: (params) => api.get('/timetable/free-teachers', { params }).then((r) => r.data),
+  getAbsences: (params) => api.get('/timetable/absences', { params }).then((r) => r.data),
+  reportAbsence: (data) => api.post('/timetable/absences', data).then((r) => r.data),
+  assignProxy: (data) => api.post('/timetable/proxy/assign', data).then((r) => r.data),
+  createSlot: (data) => api.post('/timetable/slots', data).then((r) => r.data),
+  deleteSlot: (id) => api.delete(`/timetable/slots/${id}`).then((r) => r.data),
+};
+
 

@@ -27,6 +27,8 @@ import rolePermissionsRoutes from './routes/role-permissions.routes';
 import attendanceRoutes from './routes/attendance.routes';
 import homeworkRoutes from './routes/homework.routes';
 import parentRoutes from './routes/parent.routes';
+import financeRoutes from './routes/finance.routes';
+import timetableRoutes from './routes/timetable.routes';
 
 const app: Application = express();
 const server = http.createServer(app);
@@ -42,8 +44,8 @@ app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 app.use(morgan('tiny'));
 
-// Rate limit
-const limiter = rateLimit({ windowMs: 60 * 1000, max: 500, standardHeaders: true, legacyHeaders: false });
+// Rate limit (5000 requests/min for local dev)
+const limiter = rateLimit({ windowMs: 60 * 1000, max: 5000, standardHeaders: true, legacyHeaders: false });
 app.use('/api', limiter);
 
 // Health
@@ -77,6 +79,8 @@ app.use('/api/v1/search', searchRoutes);
 app.use('/api/v1/attendance', attendanceRoutes);
 app.use('/api/v1/homework', homeworkRoutes);
 app.use('/api/v1/parent', parentRoutes);
+app.use('/api/v1/finance', financeRoutes);
+app.use('/api/v1/timetable', timetableRoutes);
 
 app.use('/api', notFound);
 app.use(errorHandler);
@@ -89,5 +93,28 @@ server.listen(env.PORT, '0.0.0.0', () => {
   logger.info(`🚀 Backend listening on 0.0.0.0:${env.PORT}`);
   logger.info(`📖 API Docs at /api/docs`);
 });
+
+// Graceful shutdown — ensures port is released before nodemon restarts
+// This prevents the recurring "EADDRINUSE: address already in use" error
+const gracefulShutdown = (signal: string) => {
+  logger.info(`[${signal}] Graceful shutdown initiated — closing HTTP server...`);
+  server.close((err) => {
+    if (err) {
+      logger.error('Error during server close:', err);
+      process.exit(1);
+    }
+    logger.info('HTTP server closed. Port released.');
+    process.exit(0);
+  });
+
+  // Force exit after 3 seconds if connections don't drain
+  setTimeout(() => {
+    logger.warn('Forcing shutdown after timeout.');
+    process.exit(0);
+  }, 3000).unref();
+};
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 export default app;

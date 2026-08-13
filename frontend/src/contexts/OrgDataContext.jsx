@@ -80,7 +80,9 @@ export function OrgDataProvider({ children }) {
     };
   }, [orgId, fetchAllOrgData]);
 
-  const value = {
+  const refreshOrgData = useCallback(() => fetchAllOrgData(true), [fetchAllOrgData]);
+
+  const value = React.useMemo(() => ({
     departments,
     setDepartments,
     projects,
@@ -90,8 +92,8 @@ export function OrgDataProvider({ children }) {
     members,
     setMembers,
     loading,
-    refreshOrgData: () => fetchAllOrgData(true),
-  };
+    refreshOrgData,
+  }), [departments, projects, channels, members, loading, refreshOrgData]);
 
   return (
     <OrgDataContext.Provider value={value}>

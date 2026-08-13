@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { parentApi, channelApi } from '@/lib/api';
+import { parentApi, channelApi, financeApi } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { UserCheck, CalendarCheck, BookOpen, MessageSquare, AlertTriangle, CheckCircle, Clock, Award, Shield, Sparkles, GraduationCap, Building } from 'lucide-react';
+import { UserCheck, CalendarCheck, BookOpen, MessageSquare, AlertTriangle, CheckCircle, Clock, Award, Shield, Sparkles, GraduationCap, Building, IndianRupee, CreditCard, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
 
@@ -20,6 +20,7 @@ export default function ParentPortalPage() {
   const [childrenList, setChildrenList] = useState([]);
   const [selectedStudentId, setSelectedStudentId] = useState('');
   const [report, setReport] = useState(null);
+  const [feeData, setFeeData] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -42,6 +43,12 @@ export default function ParentPortalPage() {
           setSelectedStudentId(firstId);
           const r = await parentApi.getChildReport(firstId, currentOrg?.id);
           setReport(r);
+        }
+
+        // Fetch parent fees via financeApi
+        const fData = await financeApi.getParentFees().catch(() => null);
+        if (fData) {
+          setFeeData(fData);
         }
       } catch (e) {
         toast.error('Failed to load parent portal data');
@@ -253,6 +260,80 @@ export default function ParentPortalPage() {
               </CardContent>
             </Card>
           </div>
+
+          {/* School Fees & Outstanding Dues Card */}
+          <Card className="border border-blue-500/30 bg-slate-900/60 shadow-sm">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-base font-bold flex items-center gap-2 text-foreground">
+                    <IndianRupee className="h-4 w-4 text-emerald-400" /> School Fees & Payment Statement
+                  </CardTitle>
+                  <CardDescription className="text-xs">
+                    Synced from Institution Accounting Ledgers (Tally Prime / Busy Sync)
+                  </CardDescription>
+                </div>
+                {feeData?.summary?.totalPending > 0 && (
+                  <Badge variant="outline" className="bg-amber-500/10 text-amber-400 border-amber-500/30 text-xs font-bold">
+                    Pending Dues: ₹{feeData.summary.totalPending.toLocaleString('en-IN')}
+                  </Badge>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {feeData?.fees && feeData.fees.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {feeData.fees.map((fee) => (
+                    <div key={fee.id} className="p-3.5 rounded-xl border border-border bg-card space-y-2">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <div className="text-xs font-mono text-muted-foreground">{fee.studentRollNo} • {fee.academicYear}</div>
+                          <div className="text-sm font-bold text-foreground">{fee.feeHeader}</div>
+                        </div>
+                        <span className={`px-2 py-0.5 text-[11px] font-semibold rounded-full border ${
+                          fee.status === 'PAID'
+                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                            : fee.status === 'PARTIAL'
+                            ? 'bg-blue-500/10 text-blue-400 border-blue-500/30'
+                            : 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                        }`}>
+                          {fee.status}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between text-xs pt-1 border-t border-border/40">
+                        <div>
+                          <span className="text-muted-foreground">Total Fee: </span>
+                          <strong className="text-foreground">₹{fee.totalAmount.toLocaleString('en-IN')}</strong>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Paid: </span>
+                          <strong className="text-emerald-400">₹{fee.paidAmount.toLocaleString('en-IN')}</strong>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Balance: </span>
+                          <strong className="text-amber-400">₹{fee.pendingBalance.toLocaleString('en-IN')}</strong>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-1">
+                        <span>Receipt: <code className="text-xs text-foreground font-mono">{fee.receiptNo}</code></span>
+                        {fee.status !== 'PAID' && (
+                          <Button size="sm" className="h-6 text-[11px] bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-0">
+                            <CreditCard className="w-3 h-3 mr-1" /> Pay Now
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-xs text-muted-foreground py-4 text-center">
+                  No active fee records found for your linked student.
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
           {/* Graded Homework & Rubric Scores Section */}
           <Card className="border-border shadow-sm">

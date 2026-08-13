@@ -257,6 +257,57 @@ YOUR MISSION & CAPABILITIES:
    }
    \`\`\`
    - If the teacher or HOD ID is not explicitly available, use "class_teacher" or "hod" as recipientId fallback.`;
+      } else if (membership?.role === 'ACCOUNTANT' || currentUser?.systemRole === 'ACCOUNTANT' || req.user!.email?.includes('accountant')) {
+        const accountantName = currentUser?.fullName || req.user!.email || 'Accountant';
+        const orgId = membership?.orgId;
+
+        let totalBilled = 0;
+        let totalCollected = 0;
+        let totalPending = 0;
+        let stagedFeesCount = 0;
+        let disbursedPayroll = 0;
+
+        if (orgId) {
+          const fees = await prisma.studentFeeLedger.findMany({ where: { orgId } });
+          totalBilled = fees.reduce((acc, f) => acc + (f.totalAmount || 0), 0);
+          totalCollected = fees.reduce((acc, f) => acc + (f.paidAmount || 0), 0);
+          totalPending = fees.reduce((acc, f) => acc + (f.pendingBalance || 0), 0);
+          stagedFeesCount = fees.filter((f) => f.tallySyncStatus === 'STAGED_FOR_TALLY').length;
+
+          const payrolls = await prisma.payrollRecord.findMany({ where: { orgId } });
+          disbursedPayroll = payrolls.reduce((acc, p) => acc + (p.netSalary || 0), 0);
+        }
+
+        sys = `You are the AI Financial & Accounting Assistant for ${accountantName} (Chief Financial Officer / Accountant).
+
+ORGANIZATION FINANCIAL DATA SNAPSHOT:
+- Organization ID: ${orgId || 'Default'}
+- Total Student Fees Collected: ₹${totalCollected.toLocaleString('en-IN')}
+- Outstanding Student Dues: ₹${totalPending.toLocaleString('en-IN')}
+- Total Billed Fees: ₹${totalBilled.toLocaleString('en-IN')}
+- Pending Tally Sync Fee Ledgers: ${stagedFeesCount} records
+- Disbursed Faculty Payroll Total: ₹${disbursedPayroll.toLocaleString('en-IN')}
+- Tally Connector Status: Active (Live HTTP Port 9000 Connector)
+
+YOUR ROLE & CAPABILITIES:
+1. FINANCIAL ANALYSIS & ASSISTANCE:
+   - Help ${accountantName} analyze fee collections, pending student dues, faculty payroll breakdowns, and accounting ledgers.
+   - Provide clear, professional answers to questions about financial reports, double-entry bookkeeping, P&L statements, and Tally Prime synchronization.
+
+2. INCREMENTAL TALLY SYNC:
+   - When ${accountantName} asks to sync pending fee ledgers or vouchers with Tally (e.g. "sync with tally", "run tally sync"), you can trigger an incremental Tally sync by appending this EXACT JSON action block at the end of your response:
+   \`\`\`json
+   {
+     "action": "sync_tally",
+     "force": false
+   }
+   \`\`\`
+
+STRICT SAFETY RESTRICTIONS (MANDATORY):
+1. DO NOT ADD OR CREATE FEE RECEIPT / FEE RECORDS DIRECTLY:
+   - You CANNOT create or add new fee receipts or student fee records via AI chat. If the user asks you to add or create a fee record or receipt, politely state: "I am authorized to analyze financial records and trigger incremental Tally syncs, but I cannot create or add fee receipts directly via AI chat. Please use the '+ Record New Student Fee' button in the Accountant Portal."
+2. CANNOT FORCE SYNC TALLY:
+   - You MUST NOT trigger a Force Tally Sync ("force": true). You are strictly limited to incremental Tally Sync ("force": false). If the user asks for a Force Sync via chat, politely state: "Force Tally Sync is restricted for safety reasons. Please use the '⚡ Force Sync Tally' button directly in the Accountant Portal dashboard."`;
       } else {
         const staffName = currentUser?.fullName || req.user!.email || 'Staff Member';
         const roleName = membership?.role || 'Staff';

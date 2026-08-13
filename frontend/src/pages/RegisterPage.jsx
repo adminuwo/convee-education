@@ -53,10 +53,10 @@ export default function RegisterPage() {
         Convee
       </div>
       <div className="relative z-10 max-w-md">
-        <h1 className="font-display text-4xl xl:text-5xl font-semibold tracking-tight leading-tight text-balance">Start collaborating in minutes.</h1>
-        <p className="mt-4 text-base text-muted-foreground">Create your workspace, invite your team, and let AI take the load off the busywork.</p>
+        <h1 className="font-display text-4xl xl:text-5xl font-semibold tracking-tight leading-tight text-balance">Digital Campus Collaboration & Portal.</h1>
+        <p className="mt-4 text-base text-muted-foreground">Set up your institution, manage classes, faculty, timetable, payroll, and student directories.</p>
       </div>
-      <div className="relative z-10 text-xs text-muted-foreground">Free trial · No credit card required</div>
+      <div className="relative z-10 text-xs text-muted-foreground">Convee Education Platform · Institutional Portal</div>
     </div>
   );
 
@@ -111,17 +111,13 @@ export default function RegisterPage() {
         <Card className="w-full max-w-md">
           <CardHeader>
             <CardTitle className="font-display text-2xl">Create your account</CardTitle>
-            <p className="text-sm text-muted-foreground">You'll be the owner of your new workspace.</p>
+            <p className="text-sm text-muted-foreground">You will be the Director of your institution.</p>
           </CardHeader>
           <CardContent>
             <form onSubmit={submit} className="space-y-4">
               <div>
                 <Label htmlFor="fullName">Full name</Label>
-                <Input id="fullName" required value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} placeholder="Jane Doe" data-testid="register-name-input" />
-              </div>
-              <div>
-                <Label htmlFor="orgName">Organization name (optional)</Label>
-                <Input id="orgName" value={form.orgName} onChange={(e) => setForm({ ...form, orgName: e.target.value })} placeholder="Acme Inc." data-testid="register-org-input" />
+                <Input id="fullName" required value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} placeholder="Dr. Jane Doe" data-testid="register-name-input" />
               </div>
               <div>
                 <Label htmlFor="email">Work email</Label>

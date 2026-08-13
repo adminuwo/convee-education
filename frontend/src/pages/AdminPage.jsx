@@ -12,11 +12,12 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { Building2, Users, Layers, Plus, Mail, Trash2, Crown, ChevronRight, GraduationCap, UserCheck, Filter, Key, HeartHandshake } from 'lucide-react';
+import { Building2, Users, Layers, Plus, Mail, Trash2, Crown, ChevronRight, GraduationCap, UserCheck, Filter, Key, HeartHandshake, Pencil, Clock, Copy, CheckCircle2 } from 'lucide-react';
 import { connectSocket, getSocket } from '@/lib/socket';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
 import StudentIDGenerator from '@/components/admin/StudentIDGenerator';
+import OrgRenameModal from '@/components/org/OrgRenameModal';
 
 function initials(n) { return (n || '?').split(' ').map((x) => x[0]).slice(0, 2).join('').toUpperCase(); }
 
@@ -49,6 +50,7 @@ export default function AdminPage() {
   const [memberSubTab, setMemberSubTab] = useState('faculty');
   const [studentWingFilter, setStudentWingFilter] = useState('ALL');
   const [studentClassFilter, setStudentClassFilter] = useState('ALL');
+  const [renameModalOpen, setRenameModalOpen] = useState(false);
 
   const facultyMembers = useMemo(() => {
     return members.filter(
@@ -93,27 +95,15 @@ export default function AdminPage() {
     refreshOrgData();
   }, [refreshOrgData]);
 
-  useEffect(() => {
-    load();
-    let s = getSocket() || connectSocket();
-    if (!s) return;
-
-    const handleUpdate = () => {
-      load();
-      if (typeof refresh === 'function') refresh();
-    };
-
-    s.on('department:updated', handleUpdate);
-    s.on('membership:updated', handleUpdate);
-
-    return () => {
-      s.off('department:updated', handleUpdate);
-      s.off('membership:updated', handleUpdate);
-    };
-  }, [load, refresh]);
-
   const submitInvite = async () => {
-    try { await orgApi.invite(currentOrg.id, invite); toast.success('Invited'); setInvite({ open: false, email: '', fullName: '', role: 'STUDENT' }); load(); } catch (e) { toast.error(e?.response?.data?.error || 'Failed'); }
+    try {
+      const res = await orgApi.invite(currentOrg.id, invite);
+      toast.success(`Member invited successfully! Login ID (${res.generatedId}) and password sent to ${invite.email}`);
+      setInvite({ open: false, email: '', fullName: '', role: 'TEACHER' });
+      load();
+    } catch (e) {
+      toast.error(e?.response?.data?.error || 'Failed to create member');
+    }
   };
   const submitDept = async () => { try { await orgApi.createDept(currentOrg.id, { name: newDept.name }); toast.success('Department created'); setNewDept({ open: false, name: '' }); load(); } catch (e) { toast.error(e?.response?.data?.error || 'Failed'); } };
   const submitTeam = async () => {
@@ -298,9 +288,18 @@ export default function AdminPage() {
 
   return (
     <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="p-4 sm:p-6 lg:p-8 space-y-4" data-testid="admin-page">
-      <div>
-        <h1 className="font-display text-2xl font-semibold">Admin</h1>
-        <p className="text-muted-foreground">Manage members, departments, teams, and projects</p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h1 className="font-display text-2xl font-semibold flex items-center gap-2">
+            Admin
+            {isCurrentUserOwner && (
+              <Button variant="outline" size="sm" onClick={() => setRenameModalOpen(true)} className="h-8 gap-1.5 text-xs">
+                <Pencil className="h-3.5 w-3.5" /> Rename Institution
+              </Button>
+            )}
+          </h1>
+          <p className="text-muted-foreground">Manage members, departments, teams, and projects for {currentOrg?.name}</p>
+        </div>
       </div>
 
       <Tabs value={activeTab} onValueChange={(v) => setSearchParams({ tab: v })}>
@@ -407,18 +406,39 @@ export default function AdminPage() {
                                     {initials(m.user?.fullName || m.user?.email)}
                                   </AvatarFallback>
                                 </Avatar>
-                                <span className="font-medium">{m.user?.fullName || m.user?.email || 'Unnamed'}</span>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-medium">{m.user?.fullName || m.user?.email || 'Unnamed'}</span>
+                                  {(m.title?.match(/\[(.*?)\]/)?.[1] || m.title?.match(/([A-Z]{3}-\d{4}-\d{3,4})/i)?.[1]) && (
+                                    <Badge variant="outline" className="font-mono text-[10px] px-1.5 py-0 h-4 font-bold bg-primary/10 text-primary border-primary/20">
+                                      {m.title?.match(/\[(.*?)\]/)?.[1] || m.title?.match(/([A-Z]{3}-\d{4}-\d{3,4})/i)?.[1]}
+                                    </Badge>
+                                  )}
+                                </div>
                               </div>
                             </td>
                             <td className="px-4 py-2.5 text-muted-foreground">{m.user?.email}</td>
                             <td className="px-4 py-2.5">
-                              {canEdit ? (
+                              {m.role === 'DIRECTOR' ? (
+                                <Badge
+                                  variant="secondary"
+                                  className="text-[10px] uppercase font-bold tracking-wide bg-amber-500/10 text-amber-500 border border-amber-500/30 font-extrabold"
+                                >
+                                  DIRECTOR
+                                </Badge>
+                              ) : (m.role === 'ACCOUNTANT' || m.user?.systemRole === 'ACCOUNTANT') ? (
+                                <Badge
+                                  variant="secondary"
+                                  className="text-[10px] uppercase font-bold tracking-wide bg-teal-500/10 text-teal-400 border border-teal-500/30 font-extrabold"
+                                >
+                                  ACCOUNTANT
+                                </Badge>
+                              ) : canEdit ? (
                                 <Select value={m.role} onValueChange={(r) => handleRoleChange(m.id, r)}>
                                   <SelectTrigger className="h-7 w-32 text-xs">
                                     <SelectValue />
                                   </SelectTrigger>
                                   <SelectContent>
-                                    {assignableRoles.map((r) => (
+                                    {Array.from(new Set([m.role, ...assignableRoles])).map((r) => (
                                       <SelectItem key={r} value={r}>{r}</SelectItem>
                                     ))}
                                   </SelectContent>
@@ -426,10 +446,7 @@ export default function AdminPage() {
                               ) : (
                                 <Badge
                                   variant="secondary"
-                                  className={`text-[10px] uppercase font-bold tracking-wide ${m.role === 'DIRECTOR'
-                                      ? 'bg-amber-500/10 text-amber-500 border border-amber-500/30 font-extrabold'
-                                      : ''
-                                    }`}
+                                  className="text-[10px] uppercase font-bold tracking-wide bg-blue-500/10 text-blue-400 border border-blue-500/20 font-extrabold"
                                 >
                                   {m.role}
                                 </Badge>
@@ -487,7 +504,14 @@ export default function AdminPage() {
                                     {initials(m.user?.fullName || m.user?.email)}
                                   </AvatarFallback>
                                 </Avatar>
-                                <span className="font-medium">{m.user?.fullName || m.user?.email || 'Parent / Guardian'}</span>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-medium">{m.user?.fullName || m.user?.email || 'Parent / Guardian'}</span>
+                                  {(m.title?.match(/\[(.*?)\]/)?.[1] || m.title?.match(/([A-Z]{3}-\d{4}-\d{3,4})/i)?.[1]) && (
+                                    <Badge variant="outline" className="font-mono text-[10px] px-1.5 py-0 h-4 font-bold bg-purple-500/10 text-purple-400 border-purple-500/20">
+                                      {m.title?.match(/\[(.*?)\]/)?.[1] || m.title?.match(/([A-Z]{3}-\d{4}-\d{3,4})/i)?.[1]}
+                                    </Badge>
+                                  )}
+                                </div>
                               </div>
                             </td>
                             <td className="px-4 py-2.5 text-muted-foreground">{m.user?.email}</td>
@@ -594,7 +618,14 @@ export default function AdminPage() {
                                     {initials(m.user?.fullName || m.user?.email)}
                                   </AvatarFallback>
                                 </Avatar>
-                                <span className="font-medium">{m.user?.fullName || m.user?.email || 'Unnamed Student'}</span>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-medium">{m.user?.fullName || m.user?.email || 'Unnamed Student'}</span>
+                                  {(m.title?.match(/\[(.*?)\]/)?.[1] || m.title?.match(/([A-Z]{3}-\d{4}-\d{3,4})/i)?.[1]) && (
+                                    <Badge variant="outline" className="font-mono text-[10px] px-1.5 py-0 h-4 font-bold bg-emerald-500/10 text-emerald-500 border-emerald-500/20">
+                                      {m.title?.match(/\[(.*?)\]/)?.[1] || m.title?.match(/([A-Z]{3}-\d{4}-\d{3,4})/i)?.[1]}
+                                    </Badge>
+                                  )}
+                                </div>
                               </div>
                             </td>
                             <td className="px-4 py-2.5 text-muted-foreground">{m.user?.email}</td>
@@ -798,7 +829,17 @@ export default function AdminPage() {
           <div className="space-y-3">
             <div><Label>Email</Label><Input value={invite.email} onChange={(e) => setInvite({ ...invite, email: e.target.value })} placeholder="person@company.com" /></div>
             <div><Label>Full name</Label><Input value={invite.fullName} onChange={(e) => setInvite({ ...invite, fullName: e.target.value })} placeholder="Jane Doe" /></div>
-            <div><Label>Role</Label><Select value={invite.role} onValueChange={(v) => setInvite({ ...invite, role: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{(assignableRoles.length > 0 ? assignableRoles : ['TEACHER']).map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}</SelectContent></Select></div>
+            <div>
+              <Label>Role</Label>
+              <Select value={invite.role} onValueChange={(v) => setInvite({ ...invite, role: v })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {['TEACHER', 'HOD', 'DEAN', 'PRINCIPAL', 'ADMIN', 'ACCOUNTANT'].map((r) => (
+                    <SelectItem key={r} value={r}>{r}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
           <DialogFooter><Button variant="outline" onClick={() => setInvite({ ...invite, open: false })}>Cancel</Button><Button onClick={submitInvite} disabled={!invite.email}>Invite</Button></DialogFooter>
         </DialogContent>
@@ -1065,6 +1106,7 @@ export default function AdminPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <OrgRenameModal open={renameModalOpen} onOpenChange={setRenameModalOpen} />
     </motion.div>
   );
 }

@@ -39,7 +39,11 @@ uploads/
 **/uploads/*
 !**/uploads/.gitkeep
 
-# Environment & Credentials
+# Documentation & Internal Memory
+memory/
+**/memory/
+
+# Environment, Credentials & Mock/Dummy Data
 .env
 .env.*
 !.env.example
@@ -48,9 +52,13 @@ uploads/
 .credentials
 credentials.json
 *token.json*
-memory/test_credentials.md
 DUMMY_DATA.txt
 dummy_data.txt
+*dummy*
+*mock*
+*mock_data*
+mock_data/
+**/mock_data/
 
 # Databases
 *.db
@@ -102,4 +110,15 @@ agent_artifacts/
 *.png
 *.jpg
 *.jpeg
+
+# Test & Mock Data Scripts
+backend/src/scripts/
+**/scripts/
+backend_test.py
+test_all_endpoints.py
+inspect-db.ts
+Tally_Data_Import.xml
+test-*.ts
+*.test.py
+
 
