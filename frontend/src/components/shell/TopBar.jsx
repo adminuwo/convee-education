@@ -210,7 +210,7 @@ export function TopBar({ onMenuClick, onSearchClick }) {
   const isOwner = currentOrg?.role === 'DIRECTOR';
 
   return (
-    <header className="sticky top-0 z-30 flex h-14 flex-shrink-0 items-center justify-between gap-3 border-b border-border bg-background/80 backdrop-blur-md px-3 sm:px-5 transition-colors shadow-2xs">
+    <header className="sticky top-0 z-10 flex h-14 flex-shrink-0 items-center justify-between gap-3 border-b border-border bg-background/80 backdrop-blur-md px-3 sm:px-5 transition-colors shadow-2xs">
       {/* Left: Mobile Menu & Mobile Workspace Branding */}
       <div className="flex items-center gap-2">
         <Button variant="ghost" size="icon" className="md:hidden text-foreground" onClick={onMenuClick} data-testid="mobile-menu-btn">

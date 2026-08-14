@@ -1,3 +1,4 @@
+// Reload server with clean Student ID format & empty email display fix
 import express, { Application } from 'express';
 import http from 'http';
 import cors from 'cors';
@@ -29,6 +30,7 @@ import homeworkRoutes from './routes/homework.routes';
 import parentRoutes from './routes/parent.routes';
 import financeRoutes from './routes/finance.routes';
 import timetableRoutes from './routes/timetable.routes';
+import promotionRoutes from './routes/promotion.routes';
 
 const app: Application = express();
 const server = http.createServer(app);
@@ -81,6 +83,7 @@ app.use('/api/v1/homework', homeworkRoutes);
 app.use('/api/v1/parent', parentRoutes);
 app.use('/api/v1/finance', financeRoutes);
 app.use('/api/v1/timetable', timetableRoutes);
+app.use('/api/v1/orgs/:orgId/promotion', promotionRoutes);
 
 app.use('/api', notFound);
 app.use(errorHandler);

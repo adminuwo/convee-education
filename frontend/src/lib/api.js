@@ -62,6 +62,7 @@ api.interceptors.response.use(
   }
 );
 
+export { api };
 export default api;
 
 export const authApi = {
@@ -110,7 +111,7 @@ export const orgApi = {
   removeProjectTeam: (orgId, projectId, teamId) => api.delete(`/orgs/${orgId}/projects/${projectId}/teams/${teamId}`).then((r) => r.data),
   assignProjectMember: (orgId, projectId, userIds) => api.post(`/orgs/${orgId}/projects/${projectId}/assign`, { userIds: Array.isArray(userIds) ? userIds : [userIds] }).then((r) => r.data),
   removeProjectMember: (orgId, projectId, membershipId) => api.delete(`/orgs/${orgId}/projects/${projectId}/members/${membershipId}`).then((r) => r.data),
-  updateMemberRole: (orgId, membershipId, role) => api.patch(`/orgs/${orgId}/members/${membershipId}`, { role }).then((r) => r.data),
+  updateMemberRole: (orgId, membershipId, role, extraData = {}) => api.patch(`/orgs/${orgId}/members/${membershipId}`, { role, ...extraData }).then((r) => r.data),
   transferOwnership: (orgId, membershipId) => api.post(`/orgs/${orgId}/transfer-ownership`, { newOwnerMembershipId: membershipId }).then((r) => r.data),
   transferRequest: (orgId, data) => api.post(`/orgs/${orgId}/transfer-request`, data).then((r) => r.data),
   transferRespond: (orgId, data) => api.post(`/orgs/${orgId}/transfer-respond`, data).then((r) => r.data),
@@ -256,6 +257,28 @@ export const financeApi = {
   createPayroll: (data) => api.post('/finance/payroll', data).then((r) => r.data),
   getFacultySalary: () => api.get('/finance/salary/faculty').then((r) => r.data),
   getMyPayslips: () => api.get('/finance/my-payslips').then((r) => r.data),
+  getExpenses: (params) => api.get('/finance/expenses', { params }).then((r) => r.data),
+  createExpense: (data) => api.post('/finance/expenses', data).then((r) => r.data),
+  updateExpense: (id, data) => api.put(`/finance/expenses/${id}`, data).then((r) => r.data),
+  deleteExpense: (id) => api.delete(`/finance/expenses/${id}`).then((r) => r.data),
+  getBankAccounts: () => api.get('/finance/bank-accounts').then((r) => r.data),
+  createBankAccount: (data) => api.post('/finance/bank-accounts', data).then((r) => r.data),
+  updateBankAccount: (id, data) => api.put(`/finance/bank-accounts/${id}`, data).then((r) => r.data),
+  deleteBankAccount: (id) => api.delete(`/finance/bank-accounts/${id}`).then((r) => r.data),
+  getSocietyFunds: () => api.get('/finance/society-funds').then((r) => r.data),
+  createSocietyFund: (data) => api.post('/finance/society-funds', data).then((r) => r.data),
+  updateSocietyFund: (id, data) => api.put(`/finance/society-funds/${id}`, data).then((r) => r.data),
+  deleteSocietyFund: (id) => api.delete(`/finance/society-funds/${id}`).then((r) => r.data),
+  getCashRegisters: () => api.get('/finance/cash-registers').then((r) => r.data),
+  createCashRegister: (data) => api.post('/finance/cash-registers', data).then((r) => r.data),
+  updateCashRegister: (id, data) => api.put(`/finance/cash-registers/${id}`, data).then((r) => r.data),
+  getCashTransactions: (params) => api.get('/finance/cash-transactions', { params }).then((r) => r.data),
+  createCashTransaction: (data) => api.post('/finance/cash-transactions', data).then((r) => r.data),
+  getFixedAssets: (params) => api.get('/finance/fixed-assets', { params }).then((r) => r.data),
+  createFixedAsset: (data) => api.post('/finance/fixed-assets', data).then((r) => r.data),
+  updateFixedAsset: (id, data) => api.put(`/finance/fixed-assets/${id}`, data).then((r) => r.data),
+  deleteFixedAsset: (id) => api.delete(`/finance/fixed-assets/${id}`).then((r) => r.data),
+  depreciateAsset: (id) => api.post(`/finance/fixed-assets/${id}/depreciate`).then((r) => r.data),
   getTallyCompanies: () => api.get('/finance/tally/companies').then((r) => r.data),
   syncTally: (data) => api.post('/finance/sync/tally', data).then((r) => r.data),
 };
@@ -269,5 +292,14 @@ export const timetableApi = {
   createSlot: (data) => api.post('/timetable/slots', data).then((r) => r.data),
   deleteSlot: (id) => api.delete(`/timetable/slots/${id}`).then((r) => r.data),
 };
+
+export const promotionApi = {
+  getConfig: (orgId) => api.get(`/orgs/${orgId}/promotion/config`).then((r) => r.data),
+  saveConfig: (orgId, pipeline) => api.post(`/orgs/${orgId}/promotion/config`, { pipeline }).then((r) => r.data),
+  getArchives: (orgId) => api.get(`/orgs/${orgId}/promotion/archives`).then((r) => r.data),
+  execute: (orgId, data) => api.post(`/orgs/${orgId}/promotion/execute`, data).then((r) => r.data),
+  allocateStream: (orgId, data) => api.post(`/orgs/${orgId}/promotion/allocate-stream`, data).then((r) => r.data),
+};
+
 
 

@@ -33,6 +33,9 @@ dist/
 /out/
 next-env.d.ts
 *.tsbuildinfo
+backend/src/generated/
+**/src/generated/
+*.node
 
 # Uploads & File Storage
 uploads/
@@ -48,7 +51,12 @@ memory/
 .env.*
 .env.example
 **/.env.example
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
 *.env
+*.env*
 *.key
 .credentials
 credentials.json
@@ -64,6 +72,8 @@ mock_data/
 # Databases
 *.db
 *.db-journal
+*.db-wal
+*.db-shm
 *.sqlite
 *.sqlite3
 

@@ -308,6 +308,251 @@ STRICT SAFETY RESTRICTIONS (MANDATORY):
    - You CANNOT create or add new fee receipts or student fee records via AI chat. If the user asks you to add or create a fee record or receipt, politely state: "I am authorized to analyze financial records and trigger incremental Tally syncs, but I cannot create or add fee receipts directly via AI chat. Please use the '+ Record New Student Fee' button in the Accountant Portal."
 2. CANNOT FORCE SYNC TALLY:
    - You MUST NOT trigger a Force Tally Sync ("force": true). You are strictly limited to incremental Tally Sync ("force": false). If the user asks for a Force Sync via chat, politely state: "Force Tally Sync is restricted for safety reasons. Please use the '⚡ Force Sync Tally' button directly in the Accountant Portal dashboard."`;
+      } else if (['DIRECTOR', 'PRINCIPAL', 'ADMIN', 'OWNER'].includes(membership?.role || '') || currentUser?.systemRole === 'SUPER_ADMIN') {
+        const adminName = currentUser?.fullName || req.user!.email || 'Administrator / Director';
+        const roleTitle = membership?.role || currentUser?.systemRole || 'Director';
+        const orgId = membership?.orgId;
+
+        // 1. Campus-wide Enrollment & Staffing
+        let totalStudents = 0;
+        let totalFaculty = 0;
+        let totalMembers = 0;
+        let deptSummary = 'No departments configured.';
+        let classSectionCount = 0;
+
+        // 2. Financial Snapshot
+        let totalBilled = 0;
+        let totalCollected = 0;
+        let totalPending = 0;
+        let disbursedPayroll = 0;
+
+        // 3. Attendance Overview
+        let campusAttendanceRate = 100;
+        let totalAttCount = 0;
+        let presentAttCount = 0;
+
+        // 4. Teacher Absences & Proxy Assignments
+        let teacherAbsencesSummary = 'No teacher absences recorded today.';
+        let proxyAssignmentsSummary = 'No proxy/substitute assignments logged.';
+
+        // 5. Recent Announcements
+        let announcementsSummary = 'No recent campus announcements.';
+
+        // 6. Dual Teaching Duties Check
+        let hasTeachingDuties = false;
+        let teachingClassesSummary = '';
+        let myHomeworkSummary = '';
+        let myScopedTeams: any[] = [];
+
+        if (orgId) {
+          // Query metrics in parallel
+          const [
+            studentCount,
+            facultyCount,
+            memberCount,
+            departments,
+            feeRecords,
+            payrolls,
+            attRecords,
+            absences,
+            proxies,
+            recentAnnouncements,
+            managedTeams,
+            timetableSlots,
+            userCreatedHomework
+          ]: [
+            number,
+            number,
+            number,
+            any[],
+            any[],
+            any[],
+            any[],
+            any[],
+            any[],
+            any[],
+            any[],
+            any[],
+            any[]
+          ] = await Promise.all([
+            prisma.membership.count({ where: { orgId, role: 'STUDENT', isActive: true } }).catch(() => 0),
+            prisma.membership.count({ where: { orgId, role: { in: ['TEACHER', 'HOD', 'DEAN'] }, isActive: true } }).catch(() => 0),
+            prisma.membership.count({ where: { orgId, isActive: true } }).catch(() => 0),
+            prisma.department.findMany({
+              where: { orgId, deletedAt: null },
+              include: { teams: { where: { deletedAt: null } } },
+            }).catch(() => []),
+            prisma.studentFeeLedger.findMany({ where: { orgId } }).catch(() => []),
+            prisma.payrollRecord.findMany({ where: { orgId } }).catch(() => []),
+            prisma.attendanceRecord.findMany({
+              where: { orgId, date: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } },
+            }).catch(() => []),
+            prisma.teacherAbsence.findMany({
+              where: { orgId },
+              orderBy: { date: 'desc' },
+              take: 5,
+            }).catch(() => []),
+            prisma.proxyAssignment.findMany({
+              where: { orgId },
+              orderBy: { date: 'desc' },
+              take: 5,
+            }).catch(() => []),
+            prisma.message.findMany({
+              where: {
+                channel: { orgId, type: { in: ['ANNOUNCEMENT', 'PUBLIC'] }, deletedAt: null },
+                isDeleted: false,
+              },
+              include: { sender: { select: { fullName: true } } },
+              orderBy: { createdAt: 'desc' },
+              take: 6,
+            }).catch(() => []),
+            prisma.team.findMany({
+              where: { department: { orgId }, managerId: req.user!.id, deletedAt: null },
+              include: { department: { select: { name: true } } },
+            }).catch(() => []),
+            prisma.timetableSlot.findMany({
+              where: { orgId, primaryTeacherId: req.user!.id },
+            }).catch(() => []),
+            prisma.task.findMany({
+              where: { orgId, createdById: req.user!.id, deletedAt: null },
+              include: {
+                assignees: { include: { user: { select: { id: true, fullName: true, email: true } } } },
+              },
+              take: 15,
+            }).catch(() => [])
+          ]);
+
+          totalStudents = studentCount;
+          totalFaculty = facultyCount;
+          totalMembers = memberCount;
+
+          if (departments.length > 0) {
+            deptSummary = departments.map((d: any) => `- Wing/Dept: ${d.name} (${d.teams?.length || 0} Class Sections: ${(d.teams || []).map((t: any) => t.name).join(', ') || 'None'})`).join('\n');
+            classSectionCount = departments.reduce((acc: number, d: any) => acc + (d.teams?.length || 0), 0);
+          }
+
+          totalBilled = (feeRecords || []).reduce((acc: number, f: any) => acc + (f.totalAmount || 0), 0);
+          totalCollected = (feeRecords || []).reduce((acc: number, f: any) => acc + (f.paidAmount || 0), 0);
+          totalPending = (feeRecords || []).reduce((acc: number, f: any) => acc + (f.pendingBalance || 0), 0);
+          disbursedPayroll = (payrolls || []).reduce((acc: number, p: any) => acc + (p.netSalary || 0), 0);
+
+          totalAttCount = attRecords.length;
+          presentAttCount = attRecords.filter((r: any) => r.status === 'PRESENT' || r.status === 'LATE' || r.status === 'EXCUSED').length;
+          campusAttendanceRate = totalAttCount > 0 ? Math.round((presentAttCount / totalAttCount) * 100) : 100;
+
+          if (absences.length > 0) {
+            teacherAbsencesSummary = absences.map((a: any) => `- Teacher: ${a.teacherName} | Status: ${a.status} | Date: ${new Date(a.date).toLocaleDateString()} | Reason: ${a.reason || 'Not specified'}`).join('\n');
+          }
+
+          if (proxies.length > 0) {
+            proxyAssignmentsSummary = proxies.map((p: any) => `- Substitute: ${p.substituteTeacherName} for ${p.originalTeacherName} | Status: ${p.status} | Date: ${new Date(p.date).toLocaleDateString()}`).join('\n');
+          }
+
+          if (recentAnnouncements.length > 0) {
+            announcementsSummary = recentAnnouncements.map((m: any) => `- [${new Date(m.createdAt).toLocaleDateString()}] ${m.sender?.fullName || 'Admin'}: "${m.content}"`).join('\n');
+          }
+
+          // Check if this Director/Admin has teaching duties
+          myScopedTeams = managedTeams;
+          const taughtSlots = timetableSlots;
+          const userHomework = userCreatedHomework.filter((t: any) => Boolean((t.metadata as any)?.isHomework));
+
+          if (managedTeams.length > 0 || taughtSlots.length > 0 || userHomework.length > 0) {
+            hasTeachingDuties = true;
+            const uniqueClasses = Array.from(new Set([
+              ...managedTeams.map((t: any) => `${t.name} (Class Teacher/Manager)`),
+              ...taughtSlots.map((s: any) => `${s.className} (${s.subjectName} - Period ${s.periodNumber})`)
+            ]));
+            teachingClassesSummary = uniqueClasses.length ? uniqueClasses.map((c) => `- ${c}`).join('\n') : 'Assigned teaching slots logged.';
+
+            if (userHomework.length > 0) {
+              myHomeworkSummary = userHomework.map((t: any) => {
+                const total = t.assignees.length;
+                const submitted = t.assignees.filter((a: any) => t.status === 'REVIEW' || t.status === 'COMPLETED' || (a as any).status === 'SUBMITTED' || (a as any).status === 'COMPLETED');
+                const pending = t.assignees.filter((a: any) => !submitted.includes(a));
+                const submittedNames = submitted.map((a: any) => a.user?.fullName || a.user?.email || 'Student').join(', ');
+                const pendingNames = pending.map((a: any) => a.user?.fullName || a.user?.email || 'Student').join(', ');
+                return `• Assignment: "${t.title}" | Due: ${t.dueDate ? new Date(t.dueDate).toLocaleDateString() : 'N/A'} | Submitted: ${submitted.length}/${total} (${submittedNames || 'None'}) | Pending: ${pendingNames || 'None'}`;
+              }).join('\n');
+            }
+          }
+        }
+
+        const feeCollectionPercent = totalBilled > 0 ? Math.round((totalCollected / totalBilled) * 100) : 100;
+
+        sys = `You are the Executive AI Leadership & Campus Operations Assistant for ${adminName} (${roleTitle}).
+
+INSTITUTIONAL SNAPSHOT & ANALYTICS:
+- Campus / Organization ID: ${orgId || 'Default'}
+- Total Enrolled Students: ${totalStudents} students
+- Total Faculty & Academic Staff: ${totalFaculty} staff members
+- Total Active Members: ${totalMembers}
+- Total Wings & Departments:
+${deptSummary}
+- Total Active Class Sections: ${classSectionCount} sections
+- Campus-Wide Attendance Rate (Past 30 Days): ${campusAttendanceRate}% (${presentAttCount}/${totalAttCount} logged records)
+- Fee Collections: ₹${totalCollected.toLocaleString('en-IN')} collected of ₹${totalBilled.toLocaleString('en-IN')} billed (${feeCollectionPercent}%)
+- Outstanding Student Dues: ₹${totalPending.toLocaleString('en-IN')}
+- Disbursed Faculty Payroll: ₹${disbursedPayroll.toLocaleString('en-IN')}
+
+RECENT TEACHER ABSENCES:
+${teacherAbsencesSummary}
+
+ACTIVE SUBSTITUTE / PROXY ASSIGNMENTS:
+${proxyAssignmentsSummary}
+
+RECENT CAMPUS ANNOUNCEMENTS:
+${announcementsSummary}
+${hasTeachingDuties ? `
+ACADEMIC TEACHING DUTIES (DUAL ROLE AS EDUCATOR):
+- You also have assigned teaching classes & subject periods:
+${teachingClassesSummary}
+- Your Class Homework Assignments & Submissions:
+${myHomeworkSummary || 'No active homework assignments created yet.'}
+` : ''}
+YOUR ROLE & EXECUTIVE CAPABILITIES:
+1. EXECUTIVE CAMPUS BRIEFINGS & INSTITUTION HEALTH:
+   - Provide high-level, strategic executive summaries of student enrollment, departmental staffing, attendance health, and fee collection efficiency.
+   - Highlight any operational risks (e.g. low-attendance sections, pending proxy allocations, outstanding fee dues).
+
+2. CAMPUS-WIDE CIRCULARS & OFFICIAL ANNOUNCEMENTS:
+   - When ${adminName} asks to draft, announce, broadcast, or publish an institutional circular or campus announcement (e.g. term schedule, holidays, exam notices, parent-teacher conferences, safety policies):
+     a) Draft an eloquent, official, and clear campus circular.
+     b) AT THE END OF YOUR RESPONSE, always include this EXACT JSON action block so the user interface can display a 1-click "Publish to Campus Announcements" button:
+     \`\`\`json
+     {
+       "action": "broadcast_announcement",
+       "title": "[Concise Circular Title]",
+       "content": "[Full Official Circular Text to post]",
+       "priority": "HIGH"
+     }
+     \`\`\`
+
+3. FACULTY OVERSIGHT & SUBSTITUTE ALLOCATION:
+   - Assist in monitoring teacher attendance, managing timetable proxies for absent staff, and ensuring zero unmonitored classrooms.
+${hasTeachingDuties ? `
+4. CLASSROOM TEACHING & HOMEWORK MANAGEMENT (TEACHER DUTIES):
+   - Because ${adminName} is also assigned as a teacher for specific classes, you can assist with classroom teaching tasks!
+   - When asked to assign/create homework for your class, generate a structured homework proposal and append this JSON action block:
+     \`\`\`json
+     {
+       "action": "create_homework",
+       "title": "[Homework Title]",
+       "description": "[Detailed Instructions]",
+       "priority": "HIGH",
+       "dueDate": "[YYYY-MM-DD]",
+       "targetClassTeamIds": ["${myScopedTeams[0]?.id || ''}"],
+       "targetClassNames": ["${myScopedTeams[0]?.name || 'Assigned Class'}"],
+       "checklist": ["Item 1", "Item 2"]
+     }
+     \`\`\`
+   - When asked who submitted homework or for submission tracking, report on student submissions for your classes.
+   - Generate exam quiz question banks, rubrics, and lesson plans on request.
+` : `
+4. CLASSROOM TEACHING & HOMEWORK:
+   - If asked to create homework for a specific class, generate the homework assignment and include the "create_homework" action block with suggested class teams.
+`}
+`;
       } else {
         const staffName = currentUser?.fullName || req.user!.email || 'Staff Member';
         const roleName = membership?.role || 'Staff';
@@ -319,12 +564,7 @@ STRICT SAFETY RESTRICTIONS (MANDATORY):
         let teamName = membership?.team?.name || '';
 
         if (orgId) {
-          if (['DIRECTOR', 'PRINCIPAL', 'ADMIN'].includes(roleName)) {
-            scopedTeams = await prisma.team.findMany({
-              where: { deletedAt: null, department: { orgId } },
-              include: { department: { select: { name: true } } },
-            });
-          } else if (['DEAN', 'HOD'].includes(roleName) && membership?.departmentId) {
+          if (['DEAN', 'HOD'].includes(roleName) && membership?.departmentId) {
             scopedTeams = await prisma.team.findMany({
               where: { deletedAt: null, departmentId: membership.departmentId },
               include: { department: { select: { name: true } } },

@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { OrgRole } from '@prisma/client';
+import { OrgRole } from '../generated/client';
 import prisma from '../db/prisma';
 
 const ROLE_LEVEL: Record<string, number> = {

@@ -12,14 +12,23 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { Building2, Users, Layers, Plus, Mail, Trash2, Crown, ChevronRight, GraduationCap, UserCheck, Filter, Key, HeartHandshake, Pencil, Clock, Copy, CheckCircle2 } from 'lucide-react';
+import { Building2, Users, Layers, Plus, Mail, Trash2, Crown, ChevronRight, GraduationCap, UserCheck, Filter, Key, HeartHandshake, Pencil, Clock, Copy, CheckCircle2, UserX } from 'lucide-react';
 import { connectSocket, getSocket } from '@/lib/socket';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
 import StudentIDGenerator from '@/components/admin/StudentIDGenerator';
 import OrgRenameModal from '@/components/org/OrgRenameModal';
+import AcademicPromotionModal from '@/components/admin/AcademicPromotionModal';
 
 function initials(n) { return (n || '?').split(' ').map((x) => x[0]).slice(0, 2).join('').toUpperCase(); }
+
+function renderEmailCell(u) {
+  const email = u?.email;
+  if (!email || !email.includes('@') || email.startsWith('STU-') || email.startsWith('PAR-') || email.startsWith('stu-') || email.startsWith('par-') || email.endsWith('.convee.local')) {
+    return <span className="text-muted-foreground/40 italic text-xs">No email set</span>;
+  }
+  return email;
+}
 
 export default function AdminPage() {
   const navigate = useNavigate();
@@ -51,6 +60,7 @@ export default function AdminPage() {
   const [studentWingFilter, setStudentWingFilter] = useState('ALL');
   const [studentClassFilter, setStudentClassFilter] = useState('ALL');
   const [renameModalOpen, setRenameModalOpen] = useState(false);
+  const [promotionModalOpen, setPromotionModalOpen] = useState(false);
 
   const facultyMembers = useMemo(() => {
     return members.filter(
@@ -61,6 +71,12 @@ export default function AdminPage() {
   const parentMembers = useMemo(() => {
     return members.filter(
       (m) => m.role === 'PARENT' || m.user?.email?.includes('parent') || m.title?.toLowerCase().includes('parent')
+    );
+  }, [members]);
+
+  const unassignedMembers = useMemo(() => {
+    return members.filter(
+      (m) => m.role === 'STUDENT' && (!m.teamId && !m.team?.id)
     );
   }, [members]);
 
@@ -311,70 +327,106 @@ export default function AdminPage() {
 
         <TabsContent value="members">
           <Card>
-            <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 space-y-0 pb-4 border-b border-border">
-              <div className="flex items-center gap-2 bg-muted/40 p-1 rounded-lg border border-border">
+            <CardHeader className="flex flex-col lg:flex-row lg:items-center justify-between gap-3.5 space-y-0 pb-4 border-b border-border">
+              {/* Directory Sub-Tabs */}
+              <div className="inline-flex items-center gap-1 bg-slate-900/90 p-1.5 rounded-xl border border-slate-800 shadow-inner overflow-x-auto no-scrollbar">
                 <button
                   type="button"
                   onClick={() => setMemberSubTab('faculty')}
-                  className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center gap-1.5 ${memberSubTab === 'faculty'
-                      ? 'bg-background text-foreground shadow-sm'
-                      : 'text-muted-foreground hover:text-foreground'
-                    }`}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${
+                    memberSubTab === 'faculty'
+                      ? 'bg-blue-600/20 text-blue-400 border border-blue-500/40 shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                  }`}
                 >
-                  <UserCheck className="h-3.5 w-3.5 text-blue-500" />
+                  <UserCheck className="h-3.5 w-3.5 text-blue-400 shrink-0" />
                   <span>Faculty & Staff</span>
-                  <Badge variant="secondary" className="ml-1 text-[10px] px-1.5 py-0">{facultyMembers.length}</Badge>
+                  <span className={`text-[11px] px-1.5 py-0.5 rounded-full font-bold ${memberSubTab === 'faculty' ? 'bg-blue-500/30 text-blue-200' : 'bg-slate-800 text-slate-400'}`}>
+                    {facultyMembers.length}
+                  </span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setMemberSubTab('students')}
-                  className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center gap-1.5 ${memberSubTab === 'students'
-                      ? 'bg-background text-foreground shadow-sm'
-                      : 'text-muted-foreground hover:text-foreground'
-                    }`}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${
+                    memberSubTab === 'students'
+                      ? 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/40 shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                  }`}
                 >
-                  <GraduationCap className="h-3.5 w-3.5 text-emerald-500" />
-                  <span>Students Directory</span>
-                  <Badge variant="secondary" className="ml-1 text-[10px] px-1.5 py-0">{members.filter((m) => m.role === 'STUDENT').length}</Badge>
+                  <GraduationCap className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                  <span>Students</span>
+                  <span className={`text-[11px] px-1.5 py-0.5 rounded-full font-bold ${memberSubTab === 'students' ? 'bg-emerald-500/30 text-emerald-200' : 'bg-slate-800 text-slate-400'}`}>
+                    {members.filter((m) => m.role === 'STUDENT').length}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMemberSubTab('unassigned')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${
+                    memberSubTab === 'unassigned'
+                      ? 'bg-amber-600/20 text-amber-400 border border-amber-500/40 shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                  }`}
+                >
+                  <UserX className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+                  <span>Unassigned</span>
+                  <span className={`text-[11px] px-1.5 py-0.5 rounded-full font-bold ${memberSubTab === 'unassigned' ? 'bg-amber-500/30 text-amber-200' : 'bg-slate-800 text-slate-400'}`}>
+                    {unassignedMembers.length}
+                  </span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setMemberSubTab('parents')}
-                  className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center gap-1.5 ${memberSubTab === 'parents'
-                      ? 'bg-background text-foreground shadow-sm'
-                      : 'text-muted-foreground hover:text-foreground'
-                    }`}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${
+                    memberSubTab === 'parents'
+                      ? 'bg-purple-600/20 text-purple-400 border border-purple-500/40 shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                  }`}
                 >
-                  <HeartHandshake className="h-3.5 w-3.5 text-purple-500" />
-                  <span>Parents Directory</span>
-                  <Badge variant="secondary" className="ml-1 text-[10px] px-1.5 py-0">{parentMembers.length}</Badge>
+                  <HeartHandshake className="h-3.5 w-3.5 text-purple-400 shrink-0" />
+                  <span>Parents</span>
+                  <span className={`text-[11px] px-1.5 py-0.5 rounded-full font-bold ${memberSubTab === 'parents' ? 'bg-purple-500/30 text-purple-200' : 'bg-slate-800 text-slate-400'}`}>
+                    {parentMembers.length}
+                  </span>
                 </button>
               </div>
 
-              <div className="flex items-center gap-2">
+              {/* Action Buttons Group */}
+              <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
                 {isFullAdmin && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="border-amber-500/40 text-amber-400 hover:bg-amber-500/10 font-semibold shadow-sm"
-                    onClick={() => navigate('/app/student-id-generator')}
-                  >
-                    <Key className="h-4 w-4 mr-1.5 text-amber-400" /> Student ID Generator
-                  </Button>
+                  <>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="border-indigo-500/30 text-indigo-400 hover:bg-indigo-500/10 hover:text-indigo-300 font-semibold shadow-sm h-8 px-3 text-xs"
+                      onClick={() => setPromotionModalOpen(true)}
+                    >
+                      <GraduationCap className="h-3.5 w-3.5 mr-1.5 text-indigo-400" /> Academic Promotion
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="border-amber-500/30 text-amber-400 hover:bg-amber-500/10 hover:text-amber-300 font-semibold shadow-sm h-8 px-3 text-xs"
+                      onClick={() => navigate('/app/student-id-generator')}
+                    >
+                      <Key className="h-3.5 w-3.5 mr-1.5 text-amber-400" /> ID Generator
+                    </Button>
+                  </>
                 )}
                 {isCurrentUserOwner && (
                   <Button
                     size="sm"
                     variant="outline"
-                    className="border-amber-500/40 text-amber-500 hover:bg-amber-500/10 font-semibold"
+                    className="border-amber-500/30 text-amber-500 hover:bg-amber-500/10 font-semibold h-8 px-3 text-xs"
                     onClick={() => setTransferFlow({ open: true, step: 1, targetEmail: '', verifyEmail: '', targetMember: null, loading: false })}
                     data-testid="transfer-ownership-header-btn"
                   >
-                    <Crown className="h-4 w-4 mr-1.5" /> Transfer Ownership
+                    <Crown className="h-3.5 w-3.5 mr-1.5" /> Transfer Owner
                   </Button>
                 )}
-                <Button size="sm" onClick={() => setInvite({ ...invite, open: true })} data-testid="invite-member-btn">
-                  <Mail className="h-4 w-4 mr-1" /> Invite Member
+                <Button size="sm" className="h-8 px-3.5 text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white shadow-sm" onClick={() => setInvite({ ...invite, open: true })} data-testid="invite-member-btn">
+                  <Mail className="h-3.5 w-3.5 mr-1.5" /> Invite Member
                 </Button>
               </div>
             </CardHeader>
@@ -479,6 +531,97 @@ export default function AdminPage() {
                     </tbody>
                   </table>
                 </div>
+              ) : memberSubTab === 'unassigned' ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="border-b border-border bg-muted/20">
+                      <tr className="text-left text-muted-foreground">
+                        <th className="px-4 py-2.5 font-medium">Student Name</th>
+                        <th className="px-4 py-2.5 font-medium">Email</th>
+                        <th className="px-4 py-2.5 font-medium">Assign Class Section</th>
+                        <th className="px-4 py-2.5 font-medium">Joined</th>
+                        <th className="px-4 py-2.5 font-medium text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {unassignedMembers.map((m) => {
+                        const canRemove = canRemoveMember(m);
+                        return (
+                          <tr key={m.id} className="border-b border-border hover:bg-muted/30 transition-colors">
+                            <td className="px-4 py-2.5">
+                              <div className="flex items-center gap-2">
+                                <Avatar className="h-7 w-7">
+                                  <AvatarImage src={m.user?.avatarUrl} />
+                                  <AvatarFallback className="text-[10px] bg-amber-500/10 text-amber-500 font-bold">
+                                    {initials(m.user?.fullName || m.user?.email)}
+                                  </AvatarFallback>
+                                </Avatar>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-medium">{m.user?.fullName || m.user?.email || 'Unassigned Student'}</span>
+                                  {(m.title?.match(/\[(.*?)\]/)?.[1] || m.title?.match(/([A-Z]{3}-\d{4}-\d{3,4})/i)?.[1]) && (
+                                    <Badge variant="outline" className="font-mono text-[10px] px-1.5 py-0 h-4 font-bold bg-amber-500/10 text-amber-400 border-amber-500/20">
+                                      {m.title?.match(/\[(.*?)\]/)?.[1] || m.title?.match(/([A-Z]{3}-\d{4}-\d{3,4})/i)?.[1]}
+                                    </Badge>
+                                  )}
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-4 py-2.5 text-muted-foreground">{renderEmailCell(m.user)}</td>
+                            <td className="px-4 py-2.5">
+                              <select
+                                defaultValue=""
+                                onChange={async (e) => {
+                                  const targetTeamId = e.target.value;
+                                  const targetTeam = allTeams.find((t) => t.id === targetTeamId);
+                                  if (!targetTeam) return;
+                                  try {
+                                    await orgApi.updateMemberRole(currentOrg.id, m.id, m.role, {
+                                      departmentId: targetTeam.departmentId,
+                                      teamId: targetTeam.id,
+                                    });
+                                    toast.success(`Student assigned to ${targetTeam.name}`);
+                                    load();
+                                  } catch (e) {
+                                    toast.error('Failed to assign class section');
+                                  }
+                                }}
+                                className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-white focus:outline-none focus:border-indigo-500 cursor-pointer font-medium"
+                              >
+                                <option value="" disabled>Assign to Section...</option>
+                                {allTeams.map((t) => (
+                                  <option key={t.id} value={t.id}>
+                                    {t.deptName ? `${t.deptName} - ${t.name}` : t.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
+                            <td className="px-4 py-2.5 text-muted-foreground text-xs">{new Date(m.joinedAt).toLocaleDateString()}</td>
+                            <td className="px-4 py-2.5 text-right space-x-1">
+                              {canRemove && (
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                                  onClick={() => setRemoveDialog({ open: true, member: m })}
+                                  title="Remove student"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {unassignedMembers.length === 0 && (
+                        <tr>
+                          <td colSpan={5} className="text-center py-8 text-xs text-muted-foreground">
+                            No unassigned students in this workspace. All students belong to a class section!
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               ) : memberSubTab === 'parents' ? (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
@@ -514,7 +657,7 @@ export default function AdminPage() {
                                 </div>
                               </div>
                             </td>
-                            <td className="px-4 py-2.5 text-muted-foreground">{m.user?.email}</td>
+                            <td className="px-4 py-2.5 text-muted-foreground">{renderEmailCell(m.user)}</td>
                             <td className="px-4 py-2.5">
                               <Badge variant="secondary" className="text-[10px] uppercase font-bold tracking-wide bg-purple-500/10 text-purple-400 border border-purple-500/20">
                                 PARENT
@@ -628,7 +771,7 @@ export default function AdminPage() {
                                 </div>
                               </div>
                             </td>
-                            <td className="px-4 py-2.5 text-muted-foreground">{m.user?.email}</td>
+                            <td className="px-4 py-2.5 text-muted-foreground">{renderEmailCell(m.user)}</td>
                             <td className="px-4 py-2.5">
                               <Badge variant="outline" className="text-[11px] font-medium bg-blue-500/10 text-blue-500 border-blue-500/20">
                                 {wingName}
@@ -1107,6 +1250,12 @@ export default function AdminPage() {
         </DialogContent>
       </Dialog>
       <OrgRenameModal open={renameModalOpen} onOpenChange={setRenameModalOpen} />
+      <AcademicPromotionModal
+        isOpen={promotionModalOpen}
+        onClose={() => setPromotionModalOpen(false)}
+        orgId={currentOrg?.id}
+        onPromotionSuccess={load}
+      />
     </motion.div>
   );
 }

@@ -14,7 +14,7 @@ import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuIte
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Hash, Lock, Volume2, Users, Search, Sparkles, Send, Paperclip, Smile, MoreHorizontal, Pin, Reply, Trash2, Pencil, Copy, ListTodo, X, Wand2, Loader2, AtSign, UserCheck, UserPlus, BookOpen, UploadCloud, Download, FileText, Image as ImageIcon, Film, FileArchive, Music } from 'lucide-react';
+import { Hash, Lock, Volume2, Users, Search, Sparkles, Send, Paperclip, Smile, MoreHorizontal, Pin, Reply, Trash2, Pencil, Copy, ListTodo, X, Wand2, Loader2, AtSign, UserCheck, UserPlus, BookOpen, UploadCloud, Download, FileText, Image as ImageIcon, Film, FileArchive, Music, GraduationCap } from 'lucide-react';
 import { toast } from 'sonner';
 import { Virtuoso } from 'react-virtuoso';
 import { formatDistanceToNow, format } from 'date-fns';
@@ -211,6 +211,47 @@ export default function ChannelPage() {
   const [aiSummary, setAiSummary] = useState(null);
   const [aiTasksCreated, setAiTasksCreated] = useState(null);
   const [orgMembers, setOrgMembers] = useState([]);
+  const [addMemberSubTab, setAddMemberSubTab] = useState('unassigned'); // 'unassigned' | 'faculty'
+
+  const eligibleChannelCandidates = useMemo(() => {
+    return orgMembers.filter((om) => {
+      // 1. Exclude existing channel members
+      if ((channel?.members || []).some((cm) => cm.userId === om.userId)) return false;
+
+      // 2. EXCLUDE PARENTS
+      if (om.role === 'PARENT' || om.user?.email?.includes('parent') || om.title?.toLowerCase().includes('parent')) {
+        return false;
+      }
+
+      if (addMemberSubTab === 'unassigned') {
+        // Unassigned Students: Role is STUDENT and not assigned to any class/team
+        return om.role === 'STUDENT' && (!om.teamId && !om.team?.id);
+      }
+
+      // Faculty & Staff (Teachers, HODs, Deans, Admins)
+      return om.role !== 'STUDENT';
+    });
+  }, [orgMembers, channel?.members, addMemberSubTab]);
+
+  const unassignedStudentsCount = useMemo(() => {
+    return orgMembers.filter(
+      (om) =>
+        om.role === 'STUDENT' &&
+        (!om.teamId && !om.team?.id) &&
+        !(channel?.members || []).some((cm) => cm.userId === om.userId)
+    ).length;
+  }, [orgMembers, channel?.members]);
+
+  const facultyCandidatesCount = useMemo(() => {
+    return orgMembers.filter(
+      (om) =>
+        om.role !== 'STUDENT' &&
+        om.role !== 'PARENT' &&
+        !om.user?.email?.includes('parent') &&
+        !om.title?.toLowerCase().includes('parent') &&
+        !(channel?.members || []).some((cm) => cm.userId === om.userId)
+    ).length;
+  }, [orgMembers, channel?.members]);
   const [orgTeams, setOrgTeams] = useState([]);
   const [orgProjects, setOrgProjects] = useState([]);
   const [mentionOpen, setMentionOpen] = useState(false);
@@ -1159,31 +1200,75 @@ export default function ChannelPage() {
               <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
                 Add Workspace Members
               </h4>
+
+              {/* Sub-Tabs for Add Member candidates */}
+              <div className="flex items-center gap-1 bg-muted/40 p-1 rounded-lg border border-border mb-2.5">
+                <button
+                  type="button"
+                  onClick={() => setAddMemberSubTab('unassigned')}
+                  className={`flex-1 px-2.5 py-1.5 rounded-md text-[11px] font-semibold transition-all flex items-center justify-center gap-1.5 ${
+                    addMemberSubTab === 'unassigned'
+                      ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30 shadow-xs font-bold'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <GraduationCap className="h-4 w-4 text-amber-400 shrink-0" />
+                  <span>Unassigned Students</span>
+                  <Badge variant="secondary" className="ml-1 text-[9px] px-1.5 py-0 bg-amber-500/10 text-amber-300 font-bold">
+                    {unassignedStudentsCount}
+                  </Badge>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setAddMemberSubTab('faculty')}
+                  className={`flex-1 px-2.5 py-1.5 rounded-md text-[11px] font-semibold transition-all flex items-center justify-center gap-1.5 ${
+                    addMemberSubTab === 'faculty'
+                      ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30 shadow-xs font-bold'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <UserCheck className="h-4 w-4 text-blue-400 shrink-0" />
+                  <span>Faculty & Staff</span>
+                  <Badge variant="secondary" className="ml-1 text-[9px] px-1.5 py-0 bg-blue-500/10 text-blue-300 font-bold">
+                    {facultyCandidatesCount}
+                  </Badge>
+                </button>
+              </div>
+
               <div className="max-h-44 overflow-y-auto space-y-1.5 border rounded-md p-1.5">
-                {orgMembers
-                  .filter((om) => !(channel?.members || []).some((cm) => cm.userId === om.userId))
-                  .map((om) => (
-                    <div key={om.userId || om.id} className="flex items-center justify-between px-2 py-1 rounded-md text-xs hover:bg-accent/50">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <Avatar className="h-6 w-6">
-                          <AvatarImage src={om.user?.avatarUrl} />
-                          <AvatarFallback className="text-[9px] bg-primary/10 text-primary">{initials(om.user?.fullName)}</AvatarFallback>
-                        </Avatar>
-                        <span className="truncate">{om.user?.fullName || om.user?.email}</span>
+                {eligibleChannelCandidates.map((om) => (
+                  <div key={om.userId || om.id} className="flex items-center justify-between px-2 py-1 rounded-md text-xs hover:bg-accent/50">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Avatar className="h-6 w-6">
+                        <AvatarImage src={om.user?.avatarUrl} />
+                        <AvatarFallback className="text-[9px] bg-primary/10 text-primary">{initials(om.user?.fullName)}</AvatarFallback>
+                      </Avatar>
+                      <div className="flex flex-col min-w-0">
+                        <span className="truncate font-medium">{om.user?.fullName || om.user?.email}</span>
+                        <span className="text-[10px] text-muted-foreground">
+                          {om.role || 'Member'} • {om.title || 'No ID'}
+                        </span>
                       </div>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => addMemberToChannel(om.userId)}
-                        className="h-6 px-2 text-[10px]"
-                        data-testid={`add-channel-member-btn-${om.userId}`}
-                      >
-                        + Add
-                      </Button>
                     </div>
-                  ))}
-                {orgMembers.filter((om) => !(channel?.members || []).some((cm) => cm.userId === om.userId)).length === 0 && (
-                  <div className="px-2 py-1.5 text-xs text-muted-foreground">All workspace members are in this channel</div>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => addMemberToChannel(om.userId)}
+                      className="h-6 px-2 text-[10px]"
+                      data-testid={`add-channel-member-btn-${om.userId}`}
+                    >
+                      + Add
+                    </Button>
+                  </div>
+                ))}
+
+                {eligibleChannelCandidates.length === 0 && (
+                  <div className="px-2 py-3 text-center text-xs text-muted-foreground">
+                    {addMemberSubTab === 'unassigned'
+                      ? 'No unassigned students available to add'
+                      : 'No additional faculty members available to add'}
+                  </div>
                 )}
               </div>
             </div>

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { read, utils } from 'xlsx';
 import { useAuth } from '@/contexts/AuthContext';
+import { useOrgData } from '@/contexts/OrgDataContext';
 import { studentApi } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -15,8 +16,8 @@ import { toast } from 'sonner';
 const SYSTEM_FIELDS = [
   { key: 'fullName', label: 'Student Full Name', required: true, aliases: ['name', 'student name', 'full name', 'fullname', 'child name', 'candidate name', 'student_name'] },
   { key: 'admissionNo', label: 'Admission / Roll Number', required: true, aliases: ['admission no', 'admissionno', 'adm no', 'admno', 'roll no', 'rollno', 'reg no', 'registration no', 'id', 'student id', 'enrollment no', 'adm_no'] },
-  { key: 'departmentName', label: 'School Wing / Department', required: false, aliases: ['wing', 'school wing', 'department', 'dept', 'division', 'school_wing'] },
-  { key: 'className', label: 'Class & Section', required: false, aliases: ['class', 'section', 'grade', 'standard', 'class/sec', 'team', 'class section', 'class_name'] },
+  { key: 'departmentName', label: 'School Wing / Department', required: true, aliases: ['wing', 'school wing', 'department', 'dept', 'division', 'school_wing'] },
+  { key: 'className', label: 'Class & Section', required: true, aliases: ['class', 'section', 'grade', 'standard', 'class/sec', 'team', 'class section', 'class_name'] },
   { key: 'studentEmail', label: 'Student Email (Optional)', required: false, aliases: ['student email', 'studentemail', 'student mail', 'email', 'mail', 'student_email'] },
   { key: 'parentFullName', label: 'Parent Full Name (Optional)', required: false, aliases: ['father name', 'mother name', 'guardian name', 'parent name', 'parentname', 'father', 'mother', 'guardian', 'parent_name'] },
   { key: 'parentEmail', label: 'Parent Email (Optional)', required: false, aliases: ['parent email', 'parentemail', 'father email', 'guardian email', 'parent mail', 'parent_email'] },
@@ -24,6 +25,7 @@ const SYSTEM_FIELDS = [
 
 export default function StudentIDGenerator({ departments = [], onStudentCreated }) {
   const { currentOrg } = useAuth();
+  const { refreshOrgData } = useOrgData() || {};
   const [mode, setMode] = useState('single'); // 'single' | 'mass'
 
   // Single mode state
@@ -97,6 +99,7 @@ export default function StudentIDGenerator({ departments = [], onStudentCreated 
       });
       toast.success(`Student ID generated & enrolled into ${res.className}!`);
       if (onStudentCreated) onStudentCreated();
+      if (refreshOrgData) refreshOrgData();
     } catch (err) {
       toast.error(err?.response?.data?.error || 'Failed to generate student ID');
     } finally {
@@ -223,6 +226,18 @@ Parent Temp Password: ${pPass}`;
       toast.error('Please map the required field "Student Full Name" to a file column');
       return;
     }
+    if (!columnMapping.admissionNo || columnMapping.admissionNo === '__UNMAPPED__') {
+      toast.error('Please map the required field "Admission / Roll Number" to a file column');
+      return;
+    }
+    if (!columnMapping.departmentName || columnMapping.departmentName === '__UNMAPPED__') {
+      toast.error('Please map the required field "School Wing / Department" to a file column');
+      return;
+    }
+    if (!columnMapping.className || columnMapping.className === '__UNMAPPED__') {
+      toast.error('Please map the required field "Class & Section" to a file column');
+      return;
+    }
 
     const rows = dataRows.map((row) => {
       const getVal = (sysKey) => {
@@ -277,6 +292,7 @@ Michael Brown,ADM-2026-003,Middle School,Grade 8 - Sec B,,Sarah Brown,sarah.brow
       setMassResults(res);
       toast.success(`Successfully generated ${res.count} student & parent accounts!`);
       if (onStudentCreated) onStudentCreated();
+      if (refreshOrgData) refreshOrgData();
     } catch (err) {
       toast.error(err?.response?.data?.error || 'Failed to mass generate student IDs');
     } finally {
@@ -290,9 +306,12 @@ Michael Brown,ADM-2026-003,Middle School,Grade 8 - Sec B,,Sarah Brown,sarah.brow
     let csv = 'Student Full Name,Admission No,Student ID,Student Email,Student Temp Password,Parent Name,Parent Email,Parent Temp Password,Department,Class Section\n';
     massResults.students.forEach((s) => {
       const pName = s.parentName || s.parent?.fullName || '';
-      const pEmail = s.parentEmail || s.parent?.email || '';
+      const rawPEmail = s.parentEmail || s.parent?.email || '';
+      const pEmail = (rawPEmail && rawPEmail.includes('@') && !rawPEmail.startsWith('PAR-')) ? rawPEmail : '';
+      const rawSEmail = s.email || '';
+      const sEmail = (rawSEmail && rawSEmail.includes('@') && !rawSEmail.startsWith('STU-')) ? rawSEmail : '';
       const pPass = s.parentPassword || s.parent?.tempPassword || '';
-      csv += `"${s.fullName}","${s.admissionNo}","${s.studentId}","${s.email}","${s.tempPassword}","${pName}","${pEmail}","${pPass}","${s.departmentName}","${s.className}"\n`;
+      csv += `"${s.fullName}","${s.admissionNo}","${s.studentId}","${sEmail}","${s.tempPassword}","${pName}","${pEmail}","${pPass}","${s.departmentName}","${s.className}"\n`;
     });
 
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -328,9 +347,8 @@ Michael Brown,ADM-2026-003,Middle School,Grade 8 - Sec B,,Sarah Brown,sarah.brow
             <button
               type="button"
               onClick={() => setMode('single')}
-              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center gap-1.5 ${
-                mode === 'single' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
-              }`}
+              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center gap-1.5 ${mode === 'single' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                }`}
             >
               <UserCheck className="h-3.5 w-3.5 text-amber-400" />
               <span>Single Student</span>
@@ -338,9 +356,8 @@ Michael Brown,ADM-2026-003,Middle School,Grade 8 - Sec B,,Sarah Brown,sarah.brow
             <button
               type="button"
               onClick={() => setMode('mass')}
-              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center gap-1.5 ${
-                mode === 'mass' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
-              }`}
+              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center gap-1.5 ${mode === 'mass' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                }`}
             >
               <Users className="h-3.5 w-3.5 text-blue-400" />
               <span>Mass File Generator</span>

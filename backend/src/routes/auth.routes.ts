@@ -376,29 +376,31 @@ router.post('/login', authLimiter, validate(LoginSchema), async (req, res, next)
       },
     });
 
-    // 2. If not found by exact email, match by Student ID / Parent ID / Admission Number across memberships & email
+    // 2. Match by Student ID / Parent ID / Admission Number / Email across memberships
     if (!user) {
-      if (cleanInput.includes('alex') || cleanInput.includes('100001')) {
-        user = await prisma.user.findFirst({
-          where: { email: 'student@demo.edu' },
-          include: { memberships: { include: { organization: true } } },
-        });
-      }
+      const codeSlug = cleanInput.replace(/^(stu|par|dir|prn|den|hod|fac|acc)-\d+-/i, '').replace(/[^a-z0-9]/g, '');
+      let roleFilter: string | undefined = undefined;
+      if (portalMode === 'student' || cleanInput.startsWith('stu-')) roleFilter = 'STUDENT';
+      else if (portalMode === 'parent' || cleanInput.startsWith('par-')) roleFilter = 'PARENT';
 
-      if (!user) {
-        const codeSlug = cleanInput.replace(/^(stu|par|dir|prn|den|hod|fac|acc)-\d+-/i, '').replace(/[^a-z0-9]/g, '');
-        user = await prisma.user.findFirst({
-          where: {
-            OR: [
-              { email: { contains: cleanInput, mode: 'insensitive' as const } },
-              { memberships: { some: { title: { contains: rawInput, mode: 'insensitive' as const } } } },
-              { memberships: { some: { title: { contains: cleanInput, mode: 'insensitive' as const } } } },
-              ...(codeSlug && codeSlug.length >= 3 ? [{ memberships: { some: { title: { contains: codeSlug, mode: 'insensitive' as const } } } }] : []),
-            ],
-          },
-          include: { memberships: { include: { organization: true } } },
-        });
-      }
+      user = await prisma.user.findFirst({
+        where: {
+          AND: [
+            roleFilter ? { memberships: { some: { role: roleFilter as any } } } : {},
+            {
+              OR: [
+                { email: { contains: cleanInput, mode: 'insensitive' as const } },
+                { memberships: { some: { title: { contains: rawInput, mode: 'insensitive' as const } } } },
+                { memberships: { some: { title: { contains: cleanInput, mode: 'insensitive' as const } } } },
+                ...(codeSlug && codeSlug.length >= 3
+                  ? [{ memberships: { some: { title: { contains: codeSlug, mode: 'insensitive' as const } } } }]
+                  : []),
+              ],
+            },
+          ],
+        },
+        include: { memberships: { include: { organization: true } } },
+      });
     }
 
     if (!user || !user.passwordHash) return res.status(401).json({ error: 'Invalid credentials. Please check your ID / Email and password.' });
@@ -414,14 +416,15 @@ router.post('/login', authLimiter, validate(LoginSchema), async (req, res, next)
       });
     }
 
-    // Enforce Portal Isolation (Student Portal vs Faculty & Staff Portal)
+    // Enforce Portal Isolation (Student Portal vs Faculty & Staff Portal vs Parent Portal)
     if (portalMode) {
       const activeMemberships = await prisma.membership.findMany({
         where: { userId: user.id, isActive: true },
       });
 
       const isOnlyStudent = activeMemberships.length > 0 && activeMemberships.every((m) => m.role === 'STUDENT');
-      const isFacultyOrStaff = activeMemberships.some((m) => m.role !== 'STUDENT');
+      const isFacultyOrStaff = activeMemberships.some((m) => m.role !== 'STUDENT' && m.role !== 'PARENT');
+      const isParent = activeMemberships.some((m) => m.role === 'PARENT');
 
       if (portalMode === 'student') {
         if (isFacultyOrStaff) {
@@ -438,6 +441,12 @@ router.post('/login', authLimiter, validate(LoginSchema), async (req, res, next)
         if (isOnlyStudent) {
           return res.status(403).json({
             error: 'Student accounts cannot log in through the Faculty & Staff Portal. Please switch to the Student Portal.',
+          });
+        }
+      } else if (portalMode === 'parent') {
+        if (!isParent) {
+          return res.status(403).json({
+            error: 'This account does not have Parent access rights. Please switch to the correct portal.',
           });
         }
       }

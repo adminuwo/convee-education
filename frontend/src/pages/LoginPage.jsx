@@ -16,7 +16,9 @@ export default function LoginPage({ initialPortal = 'faculty' }) {
 
   const queryParams = new URLSearchParams(location.search);
   const defaultMode = queryParams.get('portal') || initialPortal;
-  const [portalMode, setPortalMode] = useState(defaultMode === 'student' ? 'student' : 'faculty');
+  const [portalMode, setPortalMode] = useState(
+    defaultMode === 'student' ? 'student' : defaultMode === 'parent' ? 'parent' : 'faculty'
+  );
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');

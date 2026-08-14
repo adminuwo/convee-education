@@ -238,10 +238,6 @@ export default function TeacherPage() {
             <FolderGit2 className="h-3.5 w-3.5 text-purple-500" />
             <span>My Projects</span>
           </TabsTrigger>
-          <TabsTrigger value="salary" className="text-xs font-semibold flex items-center gap-1.5" data-testid="tab-salary">
-            <IndianRupee className="h-3.5 w-3.5 text-emerald-500" />
-            <span>Salary & Payslips</span>
-          </TabsTrigger>
         </TabsList>
 
         {/* Tab 1: Class Students (Class Teacher View) */}
@@ -532,90 +528,6 @@ export default function TeacherPage() {
                     No assigned projects found for your account or classes.
                   </div>
                 )}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Tab 4: Salary & Payslips */}
-        <TabsContent value="salary" className="space-y-4">
-          <Card className="border-border">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base font-bold flex items-center gap-2">
-                <IndianRupee className="h-4 w-4 text-emerald-500" /> Faculty Payroll & Payslips Statement
-              </CardTitle>
-              <CardDescription className="text-xs">
-                Synced from Institution Accounting Ledgers (Tally Prime / Busy Sync)
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="p-4 rounded-xl border border-border bg-card">
-                  <div className="text-xs text-muted-foreground">Latest Disbursed Salary</div>
-                  <div className="text-xl font-bold text-emerald-500 mt-1">
-                    ₹{(salaryData[0]?.netSalary || 80800).toLocaleString('en-IN')}
-                  </div>
-                  <div className="text-[11px] text-muted-foreground mt-0.5">Month: {salaryData[0]?.month || 'August'} {salaryData[0]?.year || 2026}</div>
-                </div>
-                <div className="p-4 rounded-xl border border-border bg-card">
-                  <div className="text-xs text-muted-foreground">Designation & Grade</div>
-                  <div className="text-sm font-bold text-foreground mt-1">
-                    {salaryData[0]?.designation || 'Faculty Teacher'}
-                  </div>
-                  <div className="text-[11px] text-muted-foreground mt-0.5">ID: {salaryData[0]?.employeeId || 'EMP-202'}</div>
-                </div>
-                <div className="p-4 rounded-xl border border-border bg-card">
-                  <div className="text-xs text-muted-foreground">Tally Voucher Ref</div>
-                  <div className="text-xs font-mono font-bold text-foreground mt-1">
-                    {salaryData[0]?.tallyVoucherId || 'PAY-TAL-8802'}
-                  </div>
-                  <div className="text-[11px] text-emerald-400 mt-0.5">✔ Direct Bank Deposit</div>
-                </div>
-              </div>
-
-              <div className="overflow-x-auto rounded-xl border border-border">
-                <table className="w-full text-left text-xs text-foreground">
-                  <thead className="bg-muted/60 text-muted-foreground uppercase text-[10px] font-semibold">
-                    <tr>
-                      <th className="p-3">Period</th>
-                      <th className="p-3">Basic Pay</th>
-                      <th className="p-3">Allowances</th>
-                      <th className="p-3">Deductions</th>
-                      <th className="p-3">Net Salary</th>
-                      <th className="p-3">Status</th>
-                      <th className="p-3">Payslip</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {salaryData.length === 0 ? (
-                      <tr>
-                        <td colSpan="7" className="p-4 text-center text-muted-foreground">
-                          No payroll statements logged yet.
-                        </td>
-                      </tr>
-                    ) : (
-                      salaryData.map((s) => (
-                        <tr key={s.id} className="hover:bg-muted/30 transition-all">
-                          <td className="p-3 font-bold">{s.month} {s.year}</td>
-                          <td className="p-3">₹{s.basicPay?.toLocaleString('en-IN')}</td>
-                          <td className="p-3 text-emerald-500">+₹{s.allowances?.toLocaleString('en-IN')}</td>
-                          <td className="p-3 text-rose-400">-₹{s.deductions?.toLocaleString('en-IN')}</td>
-                          <td className="p-3 font-bold text-emerald-400">₹{s.netSalary?.toLocaleString('en-IN')}</td>
-                          <td className="p-3">
-                            <span className="px-2 py-0.5 text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-full">
-                              {s.status}
-                            </span>
-                          </td>
-                          <td className="p-3">
-                            <Button size="sm" variant="outline" className="h-6 text-[11px] border-border px-2">
-                              <FileText className="w-3 h-3 mr-1 text-blue-400" /> View PDF
-                            </Button>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
               </div>
             </CardContent>
           </Card>

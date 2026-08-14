@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '../generated/client';
 import { env } from '../config/env';
 
 let dbUrl = env.DATABASE_URL || process.env.DATABASE_URL || '';

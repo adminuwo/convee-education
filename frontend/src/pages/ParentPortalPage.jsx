@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { parentApi, channelApi, financeApi } from '@/lib/api';
@@ -6,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { UserCheck, CalendarCheck, BookOpen, MessageSquare, AlertTriangle, CheckCircle, Clock, Award, Shield, Sparkles, GraduationCap, Building, IndianRupee, CreditCard, Download } from 'lucide-react';
+import { UserCheck, CalendarCheck, BookOpen, MessageSquare, AlertTriangle, CheckCircle, Clock, Award, Shield, Sparkles, GraduationCap, Building, IndianRupee, CreditCard, Download, Printer, Receipt, Building2, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
 
@@ -22,6 +23,7 @@ export default function ParentPortalPage() {
   const [report, setReport] = useState(null);
   const [feeData, setFeeData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [printableReceipt, setPrintableReceipt] = useState(null);
 
   useEffect(() => {
     if (currentOrg?.role && currentOrg.role !== 'PARENT') {
@@ -316,13 +318,23 @@ export default function ParentPortalPage() {
                         </div>
                       </div>
 
-                      <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-1">
+                      <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-2 border-t border-border/40">
                         <span>Receipt: <code className="text-xs text-foreground font-mono">{fee.receiptNo}</code></span>
-                        {fee.status !== 'PAID' && (
-                          <Button size="sm" className="h-6 text-[11px] bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-0">
-                            <CreditCard className="w-3 h-3 mr-1" /> Pay Now
+                        <div className="flex items-center gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setPrintableReceipt(fee)}
+                            className="h-6 text-[11px] border-border text-emerald-400 hover:bg-emerald-500/10 px-2 py-0"
+                          >
+                            <Printer className="w-3 h-3 mr-1" /> Download Receipt
                           </Button>
-                        )}
+                          {fee.status !== 'PAID' && (
+                            <Button size="sm" className="h-6 text-[11px] bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-0">
+                              <CreditCard className="w-3 h-3 mr-1" /> Pay Now
+                            </Button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -412,6 +424,134 @@ export default function ParentPortalPage() {
         <div className="flex h-48 items-center justify-center">
           <div className="h-6 w-6 animate-spin rounded-full border-2 border-purple-500 border-t-transparent" />
         </div>
+      )}
+
+      {/* Modal: Official Student Fee Payment Receipt PDF View */}
+      {printableReceipt && createPortal(
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-md flex items-start justify-center p-4 sm:p-6 z-[9999] overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-xl w-full p-6 space-y-6 shadow-2xl relative text-slate-100 my-4 sm:my-8">
+            {/* Modal Header Actions */}
+            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+              <div className="flex items-center gap-2">
+                <Receipt className="w-5 h-5 text-emerald-400" />
+                <h3 className="text-lg font-bold text-white">Student Fee Payment Receipt</h3>
+              </div>
+              <div className="flex items-center gap-3">
+                <Button
+                  size="sm"
+                  onClick={() => window.print()}
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs rounded-xl shadow-lg flex items-center gap-1.5"
+                >
+                  <Printer className="w-4 h-4" /> Print / Save as PDF
+                </Button>
+                <button
+                  onClick={() => setPrintableReceipt(null)}
+                  className="p-1.5 text-slate-400 hover:text-white text-sm"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {/* PRINTABLE RECEIPT CARD CONTENT */}
+            <div id="printable-receipt-content" className="bg-slate-950 border border-slate-800 rounded-xl p-6 space-y-6 text-slate-200">
+              {/* Institution Letterhead Header */}
+              <div className="flex items-start justify-between border-b border-slate-800 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-3 bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-xl">
+                    <Building2 className="w-8 h-8" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-extrabold text-white tracking-tight">{currentOrg?.name || 'Demo International Academy'}</h2>
+                    <p className="text-xs text-slate-400">Department of Finance & Accounts • Parent Portal</p>
+                    <p className="text-[11px] text-slate-500">Official Fee Voucher & Tally Prime Ledger Receipt</p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-xs font-mono font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-lg inline-block">
+                    {printableReceipt.receiptNo || `REC/2026-27/${printableReceipt.studentRollNo || '001'}`}
+                  </div>
+                  <div className="text-[11px] text-slate-400 mt-1">Date: {new Date().toLocaleDateString('en-IN')}</div>
+                </div>
+              </div>
+
+              {/* Voucher Title Banner */}
+              <div className="bg-slate-900 border border-slate-800 p-3 rounded-lg text-center">
+                <span className="text-xs font-extrabold uppercase tracking-wider text-emerald-400">
+                  Official Student Fee Payment Receipt
+                </span>
+              </div>
+
+              {/* Metadata Details Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-xs bg-slate-900/60 p-4 rounded-xl border border-slate-800/80">
+                <div>
+                  <span className="text-[10px] text-slate-400 block font-semibold uppercase">Student Roll No</span>
+                  <span className="font-mono text-slate-200">{printableReceipt.studentRollNo}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 block font-semibold uppercase">Fee Header</span>
+                  <span className="text-slate-200">{printableReceipt.feeHeader}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 block font-semibold uppercase">Academic Year</span>
+                  <span className="text-slate-200">{printableReceipt.academicYear || '2026-27'}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 block font-semibold uppercase">Payment Status</span>
+                  <span className="text-emerald-400 font-semibold">{printableReceipt.status}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 block font-semibold uppercase">Payment Method</span>
+                  <span className="text-slate-200">{printableReceipt.paymentMethod || 'UPI / Online'}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 block font-semibold uppercase">Bank Account</span>
+                  <span className="text-teal-300 font-mono">{printableReceipt.bankAccountName || 'HDFC Bank Main Account'}</span>
+                </div>
+              </div>
+
+              {/* Itemized Table Breakdown */}
+              <div className="overflow-x-auto rounded-lg border border-slate-800">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-900 text-slate-400 uppercase text-[10px] font-semibold">
+                    <tr>
+                      <th className="p-3">Fee Item Breakdown</th>
+                      <th className="p-3 text-right">Amount (₹)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800 text-slate-300">
+                    <tr>
+                      <td className="p-3 font-medium">Total Billed Fee Amount</td>
+                      <td className="p-3 text-right font-mono font-bold text-white">₹{printableReceipt.totalAmount?.toLocaleString('en-IN')}</td>
+                    </tr>
+                    <tr>
+                      <td className="p-3 font-medium text-emerald-400">Total Payment Received</td>
+                      <td className="p-3 text-right font-mono font-bold text-emerald-400">₹{printableReceipt.paidAmount?.toLocaleString('en-IN')}</td>
+                    </tr>
+                    <tr>
+                      <td className="p-3 font-medium text-amber-400">Balance Outstanding Dues</td>
+                      <td className="p-3 text-right font-mono font-bold text-amber-400">₹{printableReceipt.pendingBalance?.toLocaleString('en-IN')}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Verification & Stamp */}
+              <div className="flex items-center justify-between pt-4 border-t border-slate-800">
+                <div className="flex items-center gap-2 text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 rounded-lg">
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Verified & Synced with Tally Prime / Busy ERP</span>
+                </div>
+
+                <div className="text-right space-y-1">
+                  <div className="text-xs font-bold text-slate-300">Finance & Accounts Department</div>
+                  <div className="text-[10px] text-slate-500 italic">Authorized System Generated Receipt & Seal</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
     </motion.div>
   );

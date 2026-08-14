@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import axios from 'axios';
 import {
   IndianRupee,
@@ -22,21 +23,51 @@ import {
   FileText,
   Wallet,
   Zap,
+  Landmark,
+  Building,
+  Receipt,
+  Trash2,
+  HeartHandshake,
+  Wrench,
+  Tag,
+  Printer,
+  Coins,
+  Layers,
+  ArrowRightLeft,
+  Calculator,
+  FileBadge,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { financeApi, orgApi } from '@/lib/api';
 
 export default function AccountantPage() {
-  const { currentOrg } = useAuth();
+  const { currentOrg, user } = useAuth();
   const [activeTab, setActiveTab] = useState('overview');
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [overview, setOverview] = useState(null);
   const [fees, setFees] = useState([]);
   const [payrolls, setPayrolls] = useState([]);
+  const [expenses, setExpenses] = useState([]);
+  const [bankAccounts, setBankAccounts] = useState([]);
+  const [societyFunds, setSocietyFunds] = useState([]);
+  const [cashRegisters, setCashRegisters] = useState([]);
+  const [cashTransactions, setCashTransactions] = useState([]);
+  const [fixedAssets, setFixedAssets] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [feeStatusFilter, setFeeStatusFilter] = useState('ALL');
+  const [expenseCategoryFilter, setExpenseCategoryFilter] = useState('ALL');
+  const [assetCategoryFilter, setAssetCategoryFilter] = useState('ALL');
+  const [selectedRegisterId, setSelectedRegisterId] = useState(null);
+
+  // Printable Receipt / Voucher Modal state
+  const [printableVoucher, setPrintableVoucher] = useState(null);
+
+  const renderPortal = (children) => {
+    if (typeof document === 'undefined' || !document.body) return null;
+    return createPortal(children, document.body);
+  };
 
   // Searchable Dropdown States
   const [orgMembers, setOrgMembers] = useState([]);
@@ -48,6 +79,11 @@ export default function AccountantPage() {
   // Modal States
   const [showAddFeeModal, setShowAddFeeModal] = useState(false);
   const [showAddPayrollModal, setShowAddPayrollModal] = useState(false);
+  const [showAddExpenseModal, setShowAddExpenseModal] = useState(false);
+  const [showAddBankModal, setShowAddBankModal] = useState(false);
+  const [showAddSocietyFundModal, setShowAddSocietyFundModal] = useState(false);
+  const [showAddCashTransactionModal, setShowAddCashTransactionModal] = useState(false);
+  const [showAddFixedAssetModal, setShowAddFixedAssetModal] = useState(false);
 
   // Tally Company Selection States
   const [selectedTallyCompany, setSelectedTallyCompany] = useState(() => {
@@ -68,6 +104,7 @@ export default function AccountantPage() {
     paidAmount: '',
     dueDate: '',
     paymentMethod: 'UPI / Online',
+    bankAccountName: 'HDFC Bank Main Account',
   });
 
   // New Payroll Form
@@ -80,7 +117,74 @@ export default function AccountantPage() {
     basicPay: '',
     allowances: '',
     deductions: '',
+    bankAccountName: 'HDFC Bank Main Account',
   });
+
+  // New Expense Form
+  const [newExpense, setNewExpense] = useState({
+    title: '',
+    category: 'MAINTENANCE',
+    amount: '',
+    expenseDate: new Date().toISOString().split('T')[0],
+    paymentMethod: 'BANK_TRANSFER',
+    bankAccountName: 'HDFC Bank Main Account',
+    vendorName: '',
+    academicYear: '2026-27',
+    notes: '',
+  });
+
+  // New Bank Account Form
+  const [newBankAccount, setNewBankAccount] = useState({
+    accountName: '',
+    bankName: 'HDFC Bank',
+    accountNumber: '',
+    ifscCode: '',
+    branchName: '',
+    accountType: 'CURRENT',
+    openingBalance: '',
+    isPrimary: false,
+  });
+
+  // New Society Fund Form
+  const [newSocietyFund, setNewSocietyFund] = useState({
+    fundName: '',
+    fundType: 'CORPUS',
+    contributingBody: '',
+    amount: '',
+    fundDate: new Date().toISOString().split('T')[0],
+    isRestricted: false,
+    purpose: '',
+    notes: '',
+  });
+
+  // New Cash Transaction Form
+  const [newCashTransaction, setNewCashTransaction] = useState({
+    registerId: '',
+    transactionType: 'CASH_IN',
+    amount: '',
+    transactionDate: new Date().toISOString().split('T')[0],
+    recipientOrPayer: '',
+    category: 'PETTY_EXPENSE',
+    voucherNumber: '',
+    notes: '',
+    bankAccountId: '',
+  });
+
+  // New Fixed Asset Form
+  const [newFixedAsset, setNewFixedAsset] = useState({
+    assetName: '',
+    category: 'IT_HARDWARE',
+    assetCode: '',
+    purchaseDate: new Date().toISOString().split('T')[0],
+    purchasePrice: '',
+    vendorName: '',
+    invoiceNo: '',
+    location: '',
+    depreciationRate: '15.0',
+    depreciationMethod: 'STRAIGHT_LINE',
+    notes: '',
+  });
+
 
   const fetchTallyCompanies = async () => {
     setLoadingTallyCompanies(true);
@@ -150,34 +254,30 @@ export default function AccountantPage() {
         });
       }
     });
-    // From fees ledger (excluding parent accounts)
-    fees.forEach((f) => {
-      const isParent = f.studentName && f.studentName.toLowerCase().includes('sanjay matta');
-      if (f.studentName && !isParent && !map.has(f.studentName.toLowerCase())) {
-        map.set(f.studentName.toLowerCase(), {
-          name: f.studentName,
-          email: '',
-          rollNo: f.studentRollNo || `STU-2026-100${map.size + 1}`,
-        });
-      }
-    });
-    // Known student list defaults with exact STU-2026-XXXXXX Student IDs
-    const defaults = [
-      { name: 'sudhanshu matta', email: 'mattasudhanshu@gmail.com', rollNo: 'STU-2026-789321' },
-      { name: 'sanskar sahu', email: 'sanskarsahu1511@gmail.com', rollNo: 'STU-2026-654654' },
-      { name: 'Alex Rivera (Student)', email: 'student@demo.edu', rollNo: 'STU-2026-100001' },
-    ];
-    defaults.forEach((d) => {
-      if (!map.has(d.name.toLowerCase())) {
-        map.set(d.name.toLowerCase(), d);
-      } else {
-        // Ensure exact Student ID from default if map entry rollNo was fallback
-        const existing = map.get(d.name.toLowerCase());
-        if (!existing.rollNo || existing.rollNo.startsWith('STU-100')) {
-          existing.rollNo = d.rollNo;
+    // From fees ledger (only as fallback if orgMembers has no students)
+    if (map.size === 0) {
+      fees.forEach((f) => {
+        const isParent = f.studentName && f.studentName.toLowerCase().includes('sanjay matta');
+        if (f.studentName && !isParent && !map.has(f.studentName.toLowerCase())) {
+          map.set(f.studentName.toLowerCase(), {
+            name: f.studentName,
+            email: '',
+            rollNo: f.studentRollNo || `STU-2026-100${map.size + 1}`,
+          });
         }
-      }
-    });
+      });
+    }
+    // Known student list defaults (only used as fallback when map is still empty)
+    if (map.size === 0) {
+      const defaults = [
+        { name: 'Alex Rivera (Student)', email: 'student@demo.edu', rollNo: 'STU-2026-100001' },
+      ];
+      defaults.forEach((d) => {
+        if (!map.has(d.name.toLowerCase())) {
+          map.set(d.name.toLowerCase(), d);
+        }
+      });
+    }
     return Array.from(map.values());
   }, [orgMembers, fees]);
 
@@ -197,41 +297,241 @@ export default function AccountantPage() {
         });
       }
     });
-    const defaults = [
-      { name: 'Dr. Arthur Vance (Director)', empId: 'EMP-FAC-001', role: 'DIRECTOR' },
-      { name: 'Dr. Eleanor Vance (Principal)', empId: 'EMP-FAC-002', role: 'PRINCIPAL' },
-      { name: 'Dr. Robert Vance (Dean)', empId: 'EMP-FAC-003', role: 'DEAN' },
-      { name: 'Prof. Alan Turing (HOD)', empId: 'EMP-FAC-004', role: 'HOD' },
-      { name: 'Dr. Marie Curie (HOD)', empId: 'EMP-FAC-005', role: 'HOD' },
-      { name: 'Sarah Chen (Teacher)', empId: 'EMP-FAC-006', role: 'TEACHER' },
-      { name: 'Mike Johnson (Teacher)', empId: 'EMP-FAC-007', role: 'TEACHER' },
-      { name: 'Dr. Emily Watson (Teacher)', empId: 'EMP-FAC-008', role: 'TEACHER' },
-    ];
-    defaults.forEach((d) => {
-      if (!map.has(d.name.toLowerCase())) map.set(d.name.toLowerCase(), d);
-    });
+    if (orgMembers.length === 0 && map.size === 0) {
+      const defaults = [
+        { name: 'Dr. Arthur Vance (Director)', empId: 'EMP-FAC-001', role: 'DIRECTOR' },
+        { name: 'Dr. Eleanor Vance (Principal)', empId: 'EMP-FAC-002', role: 'PRINCIPAL' },
+        { name: 'Dr. Robert Vance (Dean)', empId: 'EMP-FAC-003', role: 'DEAN' },
+        { name: 'Prof. Alan Turing (HOD)', empId: 'EMP-FAC-004', role: 'HOD' },
+        { name: 'Dr. Marie Curie (HOD)', empId: 'EMP-FAC-005', role: 'HOD' },
+        { name: 'Sarah Chen (Teacher)', empId: 'EMP-FAC-006', role: 'TEACHER' },
+        { name: 'Mike Johnson (Teacher)', empId: 'EMP-FAC-007', role: 'TEACHER' },
+        { name: 'Dr. Emily Watson (Teacher)', empId: 'EMP-FAC-008', role: 'TEACHER' },
+      ];
+      defaults.forEach((d) => {
+        if (!map.has(d.name.toLowerCase())) map.set(d.name.toLowerCase(), d);
+      });
+    }
     return Array.from(map.values());
   }, [orgMembers]);
 
   const fetchFinancialData = async () => {
     setLoading(true);
     try {
-      const [overviewRes, feesRes, payrollRes] = await Promise.all([
-        financeApi.getOverview(),
-        financeApi.getFees(),
-        financeApi.getPayroll(),
+      const [overviewRes, feesRes, payrollRes, expensesRes, bankAccountsRes, fundsRes, registersRes, transactionsRes, assetsRes] = await Promise.all([
+        financeApi.getOverview().catch(() => ({ summary: {} })),
+        financeApi.getFees().catch(() => ({ fees: [] })),
+        financeApi.getPayroll().catch(() => ({ payrolls: [] })),
+        financeApi.getExpenses().catch(() => ({ expenses: [] })),
+        financeApi.getBankAccounts().catch(() => ({ bankAccounts: [] })),
+        financeApi.getSocietyFunds().catch(() => ({ societyFunds: [] })),
+        financeApi.getCashRegisters().catch(() => ({ cashRegisters: [] })),
+        financeApi.getCashTransactions().catch(() => ({ cashTransactions: [] })),
+        financeApi.getFixedAssets().catch(() => ({ fixedAssets: [] })),
       ]);
 
-      setOverview(overviewRes.summary);
-      setFees(feesRes.fees || []);
-      setPayrolls(payrollRes.payrolls || []);
+      if (overviewRes?.summary) setOverview(overviewRes.summary);
+      setFees(feesRes?.fees || []);
+      setPayrolls(payrollRes?.payrolls || []);
+      setExpenses(expensesRes?.expenses || []);
+      setBankAccounts(bankAccountsRes?.bankAccounts || []);
+      setSocietyFunds(fundsRes?.societyFunds || []);
+      setCashRegisters(registersRes?.cashRegisters || []);
+      setCashTransactions(transactionsRes?.cashTransactions || []);
+      setFixedAssets(assetsRes?.fixedAssets || []);
+      if (!selectedRegisterId && registersRes?.cashRegisters?.length > 0) {
+        setSelectedRegisterId(registersRes.cashRegisters[0].id);
+      }
     } catch (err) {
       console.error('Error loading financial data:', err);
-      toast.error('Failed to load financial data');
     } finally {
       setLoading(false);
     }
   };
+
+  const handleCreateSocietyFund = async (e) => {
+    e.preventDefault();
+    try {
+      await financeApi.createSocietyFund(newSocietyFund);
+      toast.success('Society / Corpus Fund recorded successfully & staged for Tally!');
+      setShowAddSocietyFundModal(false);
+      setNewSocietyFund({
+        fundName: '',
+        fundType: 'CORPUS',
+        contributingBody: '',
+        amount: '',
+        fundDate: new Date().toISOString().split('T')[0],
+        isRestricted: false,
+        purpose: '',
+        notes: '',
+      });
+      fetchFinancialData();
+    } catch (err) {
+      console.error('Error creating society fund:', err);
+      toast.error('Failed to record society fund');
+    }
+  };
+
+  const handleDeleteSocietyFund = async (id) => {
+    if (!window.confirm('Are you sure you want to delete this Society Fund record?')) return;
+    try {
+      await financeApi.deleteSocietyFund(id);
+      toast.success('Society fund record deleted');
+      fetchFinancialData();
+    } catch (err) {
+      console.error('Error deleting society fund:', err);
+      toast.error('Failed to delete society fund');
+    }
+  };
+
+  const handleCreateCashTransaction = async (e) => {
+    e.preventDefault();
+    try {
+      const regId = newCashTransaction.registerId || selectedRegisterId || cashRegisters[0]?.id;
+      await financeApi.createCashTransaction({
+        ...newCashTransaction,
+        registerId: regId,
+      });
+      toast.success('Cash transaction & drawer balance updated successfully!');
+      setShowAddCashTransactionModal(false);
+      setNewCashTransaction({
+        registerId: '',
+        transactionType: 'CASH_IN',
+        amount: '',
+        transactionDate: new Date().toISOString().split('T')[0],
+        recipientOrPayer: '',
+        category: 'PETTY_EXPENSE',
+        voucherNumber: '',
+        notes: '',
+        bankAccountId: '',
+      });
+      fetchFinancialData();
+    } catch (err) {
+      console.error('Error creating cash transaction:', err);
+      toast.error('Failed to record cash transaction');
+    }
+  };
+
+  const handleCreateFixedAsset = async (e) => {
+    e.preventDefault();
+    try {
+      await financeApi.createFixedAsset(newFixedAsset);
+      toast.success('Fixed asset added to register & staged for Tally Prime!');
+      setShowAddFixedAssetModal(false);
+      setNewFixedAsset({
+        assetName: '',
+        category: 'IT_HARDWARE',
+        assetCode: '',
+        purchaseDate: new Date().toISOString().split('T')[0],
+        purchasePrice: '',
+        vendorName: '',
+        invoiceNo: '',
+        location: '',
+        depreciationRate: '15.0',
+        depreciationMethod: 'STRAIGHT_LINE',
+        notes: '',
+      });
+      fetchFinancialData();
+    } catch (err) {
+      console.error('Error creating fixed asset:', err);
+      toast.error('Failed to record fixed asset');
+    }
+  };
+
+  const handleDepreciateAsset = async (id) => {
+    try {
+      const res = await financeApi.depreciateAsset(id);
+      toast.success(res.message || 'Annual depreciation applied successfully!');
+      fetchFinancialData();
+    } catch (err) {
+      console.error('Error applying depreciation:', err);
+      toast.error('Failed to apply asset depreciation');
+    }
+  };
+
+  const handleDeleteFixedAsset = async (id) => {
+    if (!window.confirm('Are you sure you want to delete this Fixed Asset record?')) return;
+    try {
+      await financeApi.deleteFixedAsset(id);
+      toast.success('Fixed asset removed from register');
+      fetchFinancialData();
+    } catch (err) {
+      console.error('Error deleting fixed asset:', err);
+      toast.error('Failed to delete fixed asset');
+    }
+  };
+
+  const handleCreateExpense = async (e) => {
+    e.preventDefault();
+    try {
+      await financeApi.createExpense(newExpense);
+      toast.success('New expense / donation record added successfully!');
+      setShowAddExpenseModal(false);
+      setNewExpense({
+        title: '',
+        category: 'MAINTENANCE',
+        amount: '',
+        expenseDate: new Date().toISOString().split('T')[0],
+        paymentMethod: 'BANK_TRANSFER',
+        bankAccountName: bankAccounts[0]?.accountName || 'HDFC Bank Main Account',
+        vendorName: '',
+        academicYear: '2026-27',
+        notes: '',
+      });
+      fetchFinancialData();
+    } catch (err) {
+      console.error('Error creating expense record:', err);
+      toast.error('Failed to record expense');
+    }
+  };
+
+  const handleDeleteExpense = async (id) => {
+    if (!window.confirm('Are you sure you want to delete this expense record?')) return;
+    try {
+      await financeApi.deleteExpense(id);
+      toast.success('Expense record deleted');
+      fetchFinancialData();
+    } catch (err) {
+      console.error('Error deleting expense record:', err);
+      toast.error('Failed to delete expense record');
+    }
+  };
+
+  const handleCreateBankAccount = async (e) => {
+    e.preventDefault();
+    try {
+      await financeApi.createBankAccount(newBankAccount);
+      toast.success('New school bank account added successfully!');
+      setShowAddBankModal(false);
+      setNewBankAccount({
+        accountName: '',
+        bankName: 'HDFC Bank',
+        accountNumber: '',
+        ifscCode: '',
+        branchName: '',
+        accountType: 'CURRENT',
+        openingBalance: '',
+        isPrimary: false,
+      });
+      fetchFinancialData();
+    } catch (err) {
+      console.error('Error adding bank account:', err);
+      toast.error('Failed to add bank account');
+    }
+  };
+
+  const handleDeleteBankAccount = async (id) => {
+    if (!window.confirm('Are you sure you want to deactivate this bank account?')) return;
+    try {
+      await financeApi.deleteBankAccount(id);
+      toast.success('Bank account deactivated');
+      fetchFinancialData();
+    } catch (err) {
+      console.error('Error deactivating bank account:', err);
+      toast.error('Failed to deactivate bank account');
+    }
+  };
+
 
   const handleRunTallySync = async () => {
     setSyncing(true);
@@ -435,45 +735,127 @@ export default function AccountantPage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5 flex-wrap">
           <button
             onClick={handleRunTallySync}
             disabled={syncing}
-            className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-teal-600 hover:from-blue-500 hover:to-teal-500 text-white font-medium rounded-xl shadow-lg transition-all disabled:opacity-50"
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-blue-600 to-teal-600 hover:from-blue-500 hover:to-teal-500 text-white text-xs font-semibold rounded-xl shadow-lg transition-all disabled:opacity-50"
           >
-            <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
-            {syncing ? 'Syncing Tally...' : 'Sync Tally / Busy'}
+            <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
+            {syncing ? 'Syncing...' : 'Sync Tally / Busy'}
           </button>
           <button
             onClick={handleForceTallySync}
             disabled={syncing}
-            className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white font-semibold rounded-xl shadow-lg transition-all disabled:opacity-50"
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white text-xs font-bold rounded-xl shadow-lg transition-all disabled:opacity-50"
           >
-            <Zap className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
+            <Zap className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
             {syncing ? 'Force Syncing...' : '⚡ Force Sync Tally'}
           </button>
           <button
-            onClick={handleOpenAddFeeModal}
-            className="flex items-center gap-2 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-medium rounded-xl transition-all"
+            onClick={() => setShowAddSocietyFundModal(true)}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-xl shadow-md transition-all"
           >
-            <Plus className="w-4 h-4" /> Add Fee
+            <Building className="w-3.5 h-3.5" /> + Society Fund
+          </button>
+          <button
+            onClick={() => setShowAddCashTransactionModal(true)}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold rounded-xl shadow-md transition-all"
+          >
+            <Coins className="w-3.5 h-3.5" /> + Cash Float / Transfer
+          </button>
+          <button
+            onClick={() => setShowAddFixedAssetModal(true)}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold rounded-xl shadow-md transition-all"
+          >
+            <Layers className="w-3.5 h-3.5" /> + Fixed Asset
+          </button>
+          <button
+            onClick={() => setShowAddExpenseModal(true)}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold rounded-xl shadow-md transition-all"
+          >
+            <Plus className="w-3.5 h-3.5" /> Add Expense
+          </button>
+          <button
+            onClick={() => setShowAddBankModal(true)}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-teal-600 hover:bg-teal-500 text-white text-xs font-semibold rounded-xl shadow-md transition-all"
+          >
+            <Landmark className="w-3.5 h-3.5" /> Add Bank
+          </button>
+          <button
+            onClick={handleOpenAddFeeModal}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold rounded-xl transition-all"
+          >
+            <Plus className="w-3.5 h-3.5" /> Add Fee
           </button>
         </div>
       </div>
 
       {/* KPI Overview Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
+        {/* Net Worth */}
+        <div className="bg-gradient-to-br from-slate-900 to-indigo-950/60 border border-indigo-500/30 p-5 rounded-2xl shadow-lg relative overflow-hidden">
+          <div className="flex items-center justify-between text-indigo-300 text-xs font-semibold">
+            <span>INSTITUTIONAL NET WORTH</span>
+            <Building2 className="w-4 h-4 text-indigo-400" />
+          </div>
+          <div className="text-2xl font-black text-white mt-2">
+            {formatCurrency(overview?.institutionalNetWorth || ((overview?.totalBankBalances || 0) + (overview?.totalCashInHand || 0) + (overview?.totalFixedAssetsBookValue || 0)))}
+          </div>
+          <div className="text-[11px] text-indigo-300/80 mt-1">Liquid Capital + Fixed Assets</div>
+        </div>
+
+        {/* Fixed Assets */}
         <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl">
           <div className="flex items-center justify-between text-slate-400 text-xs font-medium">
-            <span>TOTAL FEES COLLECTED</span>
+            <span>FIXED ASSETS (BOOK VALUE)</span>
+            <Layers className="w-4 h-4 text-cyan-400" />
+          </div>
+          <div className="text-2xl font-bold text-cyan-400 mt-2">
+            {formatCurrency(overview?.totalFixedAssetsBookValue || 0)}
+          </div>
+          <div className="text-xs text-slate-500 mt-1">{fixedAssets.length} active registered assets</div>
+        </div>
+
+        {/* Liquid Funds */}
+        <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl">
+          <div className="flex items-center justify-between text-slate-400 text-xs font-medium">
+            <span>LIQUID FUNDS (BANK + CASH)</span>
+            <Landmark className="w-4 h-4 text-teal-400" />
+          </div>
+          <div className="text-2xl font-bold text-teal-400 mt-2">
+            {formatCurrency(overview?.totalLiquidFunds || ((overview?.totalBankBalances || 0) + (overview?.totalCashInHand || 0)))}
+          </div>
+          <div className="text-xs text-slate-500 mt-1">
+            Cash Drawer: {formatCurrency(overview?.totalCashInHand || 0)}
+          </div>
+        </div>
+
+        {/* Society Funds */}
+        <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl">
+          <div className="flex items-center justify-between text-slate-400 text-xs font-medium">
+            <span>SOCIETY & CORPUS FUNDS</span>
+            <Building className="w-4 h-4 text-indigo-400" />
+          </div>
+          <div className="text-2xl font-bold text-indigo-400 mt-2">
+            {formatCurrency(overview?.totalSocietyFunds || 0)}
+          </div>
+          <div className="text-xs text-slate-500 mt-1">{societyFunds.length} corpus & endowment reserves</div>
+        </div>
+
+        {/* Fee Collection */}
+        <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl">
+          <div className="flex items-center justify-between text-slate-400 text-xs font-medium">
+            <span>FEES COLLECTED</span>
             <TrendingUp className="w-4 h-4 text-emerald-400" />
           </div>
           <div className="text-2xl font-bold text-emerald-400 mt-2">
             {formatCurrency(overview?.totalFeesCollected)}
           </div>
-          <div className="text-xs text-slate-500 mt-1">From {overview?.paidCount || 0} paid student accounts</div>
+          <div className="text-xs text-slate-500 mt-1">{overview?.paidCount || 0} student fee receipts</div>
         </div>
 
+        {/* Pending Dues */}
         <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl">
           <div className="flex items-center justify-between text-slate-400 text-xs font-medium">
             <span>OUTSTANDING DUES</span>
@@ -482,42 +864,15 @@ export default function AccountantPage() {
           <div className="text-2xl font-bold text-amber-400 mt-2">
             {formatCurrency(overview?.totalPendingDues)}
           </div>
-          <div className="text-xs text-slate-500 mt-1">{overview?.pendingCount || 0} accounts with pending dues</div>
-        </div>
-
-        <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl">
-          <div className="flex items-center justify-between text-slate-400 text-xs font-medium">
-            <span>DISBURSED PAYROLL</span>
-            <Users className="w-4 h-4 text-blue-400" />
-          </div>
-          <div className="text-2xl font-bold text-blue-400 mt-2">
-            {formatCurrency(overview?.totalPayrollDisbursed)}
-          </div>
-          <div className="text-xs text-slate-500 mt-1">Faculty & staff August salary</div>
-        </div>
-
-        <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl">
-          <div className="flex items-center justify-between text-slate-400 text-xs font-medium">
-            <span>TALLY / BUSY CONNECTOR</span>
-            <Database className="w-4 h-4 text-teal-400" />
-          </div>
-          <div className="flex items-center gap-2 mt-2">
-            <span className={`w-2.5 h-2.5 rounded-full ${tallyConnectedStatus ? 'bg-emerald-400 animate-pulse' : 'bg-rose-500'}`}></span>
-            <span className={`text-lg font-bold ${tallyConnectedStatus ? 'text-emerald-400' : 'text-rose-400'}`}>
-              {tallyConnectedStatus ? 'Port 9000 Live' : 'Port 9000 Offline'}
-            </span>
-          </div>
-          <div className="text-xs text-slate-500 mt-1">
-            {tallyConnectedStatus ? `Last synced: ${new Date().toLocaleTimeString()}` : 'Tally software not running'}
-          </div>
+          <div className="text-xs text-slate-500 mt-1">{overview?.pendingCount || 0} overdue fee accounts</div>
         </div>
       </div>
 
       {/* Navigation Tabs */}
-      <div className="flex items-center gap-2 border-b border-slate-800 pb-2">
+      <div className="flex items-center gap-2 border-b border-slate-800 pb-2 overflow-x-auto">
         <button
           onClick={() => setActiveTab('overview')}
-          className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${
+          className={`px-4 py-2 text-sm font-medium rounded-lg transition-all whitespace-nowrap ${
             activeTab === 'overview'
               ? 'bg-blue-600 text-white shadow-md'
               : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
@@ -527,7 +882,7 @@ export default function AccountantPage() {
         </button>
         <button
           onClick={() => setActiveTab('fees')}
-          className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${
+          className={`px-4 py-2 text-sm font-medium rounded-lg transition-all whitespace-nowrap ${
             activeTab === 'fees'
               ? 'bg-blue-600 text-white shadow-md'
               : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
@@ -537,7 +892,7 @@ export default function AccountantPage() {
         </button>
         <button
           onClick={() => setActiveTab('payroll')}
-          className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${
+          className={`px-4 py-2 text-sm font-medium rounded-lg transition-all whitespace-nowrap ${
             activeTab === 'payroll'
               ? 'bg-blue-600 text-white shadow-md'
               : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
@@ -546,8 +901,58 @@ export default function AccountantPage() {
           Faculty Payroll ({payrolls.length})
         </button>
         <button
+          onClick={() => setActiveTab('expenses')}
+          className={`px-4 py-2 text-sm font-medium rounded-lg transition-all whitespace-nowrap ${
+            activeTab === 'expenses'
+              ? 'bg-purple-600 text-white shadow-md'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+          }`}
+        >
+          Other Expenses & Donations ({expenses.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('bank-accounts')}
+          className={`px-4 py-2 text-sm font-medium rounded-lg transition-all whitespace-nowrap ${
+            activeTab === 'bank-accounts'
+              ? 'bg-teal-600 text-white shadow-md'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+          }`}
+        >
+          Bank Accounts ({bankAccounts.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('society-funds')}
+          className={`px-4 py-2 text-sm font-medium rounded-lg transition-all whitespace-nowrap ${
+            activeTab === 'society-funds'
+              ? 'bg-indigo-600 text-white shadow-md'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+          }`}
+        >
+          🏛️ Society & Corpus Funds ({societyFunds.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('cash-in-hand')}
+          className={`px-4 py-2 text-sm font-medium rounded-lg transition-all whitespace-nowrap ${
+            activeTab === 'cash-in-hand'
+              ? 'bg-amber-600 text-white shadow-md'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+          }`}
+        >
+          💵 Cash in Hand & Float ({cashRegisters.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('fixed-assets')}
+          className={`px-4 py-2 text-sm font-medium rounded-lg transition-all whitespace-nowrap ${
+            activeTab === 'fixed-assets'
+              ? 'bg-cyan-600 text-white shadow-md'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+          }`}
+        >
+          🏢 Fixed Asset Register ({fixedAssets.length})
+        </button>
+        <button
           onClick={() => setActiveTab('connector')}
-          className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${
+          className={`px-4 py-2 text-sm font-medium rounded-lg transition-all whitespace-nowrap ${
             activeTab === 'connector'
               ? 'bg-blue-600 text-white shadow-md'
               : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
@@ -731,23 +1136,32 @@ export default function AccountantPage() {
                       </td>
                       <td className="p-3.5">
                         {f.tallySyncStatus === 'STAGED_FOR_TALLY' ? (
-                          <span className="px-2.5 py-1 text-[11px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/30 rounded-full flex items-center gap-1 w-max">
+                          <span className="px-2.5 py-1 text-[11px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/30 rounded-full inline-flex items-center gap-1 whitespace-nowrap">
                             🟡 Staged for Tally
                           </span>
                         ) : (
-                          <span className="px-2.5 py-1 text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-full flex items-center gap-1 w-max">
+                          <span className="px-2.5 py-1 text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-full inline-flex items-center gap-1 whitespace-nowrap">
                             🟢 Tally Master Synced
                           </span>
                         )}
                       </td>
                       <td className="p-3.5 font-mono text-xs text-slate-400">{f.receiptNo}</td>
                       <td className="p-3.5 text-right">
-                        <button
-                          onClick={() => handleOpenUpdateFeeModal(f)}
-                          className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-blue-400 border border-slate-700 text-xs font-medium rounded-lg transition-all"
-                        >
-                          Update Payment
-                        </button>
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => setPrintableVoucher({ type: 'FEE', data: f })}
+                            className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-slate-700 text-xs font-medium rounded-lg transition-all flex items-center gap-1.5"
+                            title="Download / Print Official Fee Receipt"
+                          >
+                            <Printer className="w-3.5 h-3.5" /> Receipt
+                          </button>
+                          <button
+                            onClick={() => handleOpenUpdateFeeModal(f)}
+                            className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-blue-400 border border-slate-700 text-xs font-medium rounded-lg transition-all"
+                          >
+                            Update
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -783,6 +1197,7 @@ export default function AccountantPage() {
                   <th className="p-3.5">Deductions</th>
                   <th className="p-3.5">Net Salary</th>
                   <th className="p-3.5">Status</th>
+                  <th className="p-3.5 text-right">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800">
@@ -805,6 +1220,15 @@ export default function AccountantPage() {
                         {p.status}
                       </span>
                     </td>
+                    <td className="p-3.5 text-right">
+                      <button
+                        onClick={() => setPrintableVoucher({ type: 'PAYROLL', data: p })}
+                        className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-teal-400 border border-slate-700 text-xs font-medium rounded-lg transition-all flex items-center gap-1.5 ml-auto"
+                        title="Download / Print Faculty Payslip Voucher"
+                      >
+                        <Printer className="w-3.5 h-3.5" /> Payslip
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -813,8 +1237,683 @@ export default function AccountantPage() {
         </div>
       )}
 
-      {/* TAB 4: TALLY & BUSY CONNECTOR */}
+      {/* TAB 4: OTHER EXPENSES & DONATIONS */}
+      {activeTab === 'expenses' && (
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-center gap-2 overflow-x-auto pb-1">
+              {['ALL', 'MAINTENANCE', 'DONATION', 'UTILITIES', 'LAB_INFRA', 'EVENTS', 'OTHER'].map((cat) => (
+                <button
+                  key={cat}
+                  onClick={() => setExpenseCategoryFilter(cat)}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all whitespace-nowrap ${
+                    expenseCategoryFilter === cat
+                      ? 'bg-purple-600 text-white shadow-md'
+                      : 'bg-slate-950 text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-800'
+                  }`}
+                >
+                  {cat === 'ALL' ? 'All Categories' : cat.replace('_', ' ')}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1 md:w-64">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                <input
+                  type="text"
+                  placeholder="Search by title, vendor, receipt..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-4 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500"
+                />
+              </div>
+              <button
+                onClick={() => setShowAddExpenseModal(true)}
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white text-sm font-medium rounded-xl flex items-center gap-1.5 whitespace-nowrap"
+              >
+                <Plus className="w-4 h-4" /> Add Expense
+              </button>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto rounded-xl border border-slate-800">
+            <table className="w-full text-left text-sm text-slate-300">
+              <thead className="bg-slate-950 text-slate-400 uppercase text-xs font-semibold">
+                <tr>
+                  <th className="p-3.5">Expense Title & Date</th>
+                  <th className="p-3.5">Category</th>
+                  <th className="p-3.5">Vendor / Payee</th>
+                  <th className="p-3.5">Amount</th>
+                  <th className="p-3.5">Bank Account</th>
+                  <th className="p-3.5">Payment Method</th>
+                  <th className="p-3.5">Receipt / Voucher</th>
+                  <th className="p-3.5">Tally Status</th>
+                  <th className="p-3.5 text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800">
+                {expenses.length === 0 ? (
+                  <tr>
+                    <td colSpan="9" className="p-6 text-center text-slate-500">
+                      No expense records found matching your filter.
+                    </td>
+                  </tr>
+                ) : (
+                  expenses
+                    .filter((e) => {
+                      const matchesCategory = expenseCategoryFilter === 'ALL' || e.category === expenseCategoryFilter;
+                      const matchesSearch =
+                        e.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                        e.vendorName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                        e.receiptNo?.toLowerCase().includes(searchQuery.toLowerCase());
+                      return matchesCategory && matchesSearch;
+                    })
+                    .map((e) => (
+                      <tr key={e.id} className="hover:bg-slate-850 transition-all">
+                        <td className="p-3.5 font-medium text-white">
+                          <div>{e.title}</div>
+                          <div className="text-xs text-slate-500">{new Date(e.expenseDate).toLocaleDateString('en-IN')}</div>
+                        </td>
+                        <td className="p-3.5">
+                          <span
+                            className={`px-2.5 py-1 text-xs font-semibold rounded-full border ${
+                              e.category === 'DONATION'
+                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                                : e.category === 'MAINTENANCE'
+                                ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                                : e.category === 'LAB_INFRA'
+                                ? 'bg-blue-500/10 text-blue-400 border-blue-500/30'
+                                : 'bg-purple-500/10 text-purple-400 border-purple-500/30'
+                            }`}
+                          >
+                            {e.category}
+                          </span>
+                        </td>
+                        <td className="p-3.5 text-slate-300">{e.vendorName || '-'}</td>
+                        <td className={`p-3.5 font-bold ${e.category === 'DONATION' ? 'text-emerald-400' : 'text-purple-300'}`}>
+                          {e.category === 'DONATION' ? '+' : '-'}{formatCurrency(e.amount)}
+                        </td>
+                        <td className="p-3.5 text-xs text-teal-400 font-mono">{e.bankAccountName || 'HDFC Bank Main Account'}</td>
+                        <td className="p-3.5 text-xs text-slate-400">{e.paymentMethod || 'BANK_TRANSFER'}</td>
+                        <td className="p-3.5 font-mono text-xs text-slate-400">{e.receiptNo}</td>
+                        <td className="p-3.5">
+                          <span className="px-2.5 py-1 text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-full whitespace-nowrap inline-flex items-center gap-1">
+                            🟢 Synced Tally
+                          </span>
+                        </td>
+                        <td className="p-3.5 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              onClick={() => setPrintableVoucher({ type: 'EXPENSE', data: e })}
+                              className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-purple-400 border border-slate-700 text-xs font-medium rounded-lg transition-all flex items-center gap-1.5"
+                              title="Download / Print Expense Voucher"
+                            >
+                              <Printer className="w-3.5 h-3.5" /> Voucher
+                            </button>
+                            <button
+                              onClick={() => handleDeleteExpense(e.id)}
+                              className="p-1.5 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded-lg transition-all"
+                              title="Delete Expense Record"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 5: SCHOOL BANK ACCOUNTS */}
+      {activeTab === 'bank-accounts' && (
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-semibold text-white">School & Campus Bank Accounts</h3>
+              <p className="text-xs text-slate-400">Configure bank ledgers for fees receipt, payroll disbursement, and operational expenses</p>
+            </div>
+            <button
+              onClick={() => setShowAddBankModal(true)}
+              className="px-4 py-2 bg-teal-600 hover:bg-teal-500 text-white text-sm font-medium rounded-xl flex items-center gap-1.5"
+            >
+              <Plus className="w-4 h-4" /> Add Bank Account
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {bankAccounts.map((b) => (
+              <div key={b.id} className="bg-slate-950 border border-slate-800 hover:border-teal-500/40 p-5 rounded-2xl space-y-3 relative transition-all">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Landmark className="w-5 h-5 text-teal-400" />
+                    <span className="font-bold text-white text-base">{b.bankName}</span>
+                  </div>
+                  {b.isPrimary ? (
+                    <span className="px-2.5 py-0.5 text-[10px] font-extrabold bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 rounded-full">
+                      PRIMARY ACCOUNT
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() => handleDeleteBankAccount(b.id)}
+                      className="p-1 text-slate-500 hover:text-rose-400 transition-all"
+                      title="Deactivate Account"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                <div className="space-y-1">
+                  <div className="text-xs text-slate-300 font-medium">{b.accountName}</div>
+                  <div className="text-sm font-mono text-slate-200 tracking-wider">
+                    •••• •••• •••• {b.accountNumber.slice(-4) || '1039'}
+                  </div>
+                  <div className="text-xs text-slate-500">IFSC: {b.ifscCode} • {b.branchName || 'Main Branch'}</div>
+                </div>
+
+                <div className="pt-2 border-t border-slate-900 flex items-center justify-between text-xs">
+                  <div>
+                    <span className="text-slate-500 block">Current Balance:</span>
+                    <span className="font-bold text-emerald-400 text-base">{formatCurrency(b.currentBalance || b.openingBalance)}</span>
+                  </div>
+                  <span className="px-2 py-0.5 bg-slate-800 text-slate-300 rounded font-mono text-[10px]">
+                    {b.accountType}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* TAB 6: SOCIETY & CORPUS FUNDS */}
+      {activeTab === 'society-funds' && (
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-lg font-semibold text-white">Society & Corpus Capital Funds</h3>
+                <span className="px-2.5 py-0.5 text-xs font-semibold bg-indigo-500/10 text-indigo-400 border border-indigo-500/30 rounded-full">
+                  Capital Account Ledgers
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-1">
+                Manage society corpus capital, trust endowments, restricted grants, and development reserves synced with Tally.
+              </p>
+            </div>
+            <button
+              onClick={() => setShowAddSocietyFundModal(true)}
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-xl flex items-center gap-1.5 shadow-lg transition-all"
+            >
+              <Building className="w-4 h-4" /> + Record Society Fund
+            </button>
+          </div>
+
+          {/* Stat Summary Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
+              <div className="text-xs text-slate-400 font-medium">TOTAL CORPUS CAPITAL</div>
+              <div className="text-2xl font-bold text-indigo-400 mt-1">
+                {formatCurrency(societyFunds.reduce((sum, f) => sum + (f.amount || 0), 0))}
+              </div>
+              <div className="text-[11px] text-slate-500 mt-0.5">{societyFunds.length} total active reserve funds</div>
+            </div>
+
+            <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
+              <div className="text-xs text-slate-400 font-medium">RESTRICTED ENDOWMENTS</div>
+              <div className="text-2xl font-bold text-amber-400 mt-1">
+                {formatCurrency(societyFunds.filter((f) => f.isRestricted).reduce((sum, f) => sum + (f.amount || 0), 0))}
+              </div>
+              <div className="text-[11px] text-slate-500 mt-0.5">Earmarked grants & scholarship funds</div>
+            </div>
+
+            <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
+              <div className="text-xs text-slate-400 font-medium">UNRESTRICTED RESERVES</div>
+              <div className="text-2xl font-bold text-emerald-400 mt-1">
+                {formatCurrency(societyFunds.filter((f) => !f.isRestricted).reduce((sum, f) => sum + (f.amount || 0), 0))}
+              </div>
+              <div className="text-[11px] text-slate-500 mt-0.5">General institutional advancement</div>
+            </div>
+
+            <div className="bg-slate-950 p-4 rounded-xl border border-indigo-500/30">
+              <div className="text-xs text-indigo-300 font-semibold flex items-center gap-1">
+                <Database className="w-3.5 h-3.5" /> TALLY PRIME STATUS
+              </div>
+              <div className="text-base font-bold text-white mt-1">Capital Account</div>
+              <div className="text-[11px] text-indigo-300/80 mt-0.5">Auto-generates Capital Receipts</div>
+            </div>
+          </div>
+
+          {/* Funds List Table */}
+          <div className="overflow-x-auto rounded-xl border border-slate-800">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-slate-950 text-slate-400 text-xs uppercase font-medium">
+                <tr>
+                  <th className="p-3.5">Fund Name & Purpose</th>
+                  <th className="p-3.5 whitespace-nowrap">Type & Classification</th>
+                  <th className="p-3.5">Contributing Body</th>
+                  <th className="p-3.5 whitespace-nowrap">Receipt No & Date</th>
+                  <th className="p-3.5 whitespace-nowrap">Restriction Status</th>
+                  <th className="p-3.5 text-right whitespace-nowrap">Fund Amount</th>
+                  <th className="p-3.5 text-center whitespace-nowrap">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60 text-slate-300">
+                {societyFunds.length === 0 ? (
+                  <tr>
+                    <td colSpan="7" className="p-8 text-center text-slate-500">
+                      No Society or Corpus funds recorded yet. Click "+ Record Society Fund" to add one.
+                    </td>
+                  </tr>
+                ) : (
+                  societyFunds.map((fund) => (
+                    <tr key={fund.id} className="hover:bg-slate-800/40 transition-colors">
+                      <td className="p-3.5 min-w-[200px]">
+                        <div className="font-semibold text-white">{fund.fundName}</div>
+                        {fund.purpose && <div className="text-xs text-slate-400 mt-0.5">{fund.purpose}</div>}
+                      </td>
+                      <td className="p-3.5 whitespace-nowrap">
+                        <span className={`px-2.5 py-1 text-[11px] font-bold rounded-md inline-block ${
+                          fund.fundType === 'CORPUS' ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30' :
+                          fund.fundType === 'INFRASTRUCTURE' ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' :
+                          fund.fundType === 'SCHOLARSHIP' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' :
+                          'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                        }`}>
+                          {fund.fundType}
+                        </span>
+                      </td>
+                      <td className="p-3.5 min-w-[180px]">
+                        <div className="font-medium text-slate-200">{fund.contributingBody}</div>
+                      </td>
+                      <td className="p-3.5 whitespace-nowrap">
+                        <div className="font-mono text-xs text-slate-200 font-semibold">{fund.receiptNo || 'SOC/2026-27/001'}</div>
+                        <div className="text-[11px] text-slate-500">{new Date(fund.fundDate || fund.createdAt).toLocaleDateString('en-IN')}</div>
+                      </td>
+                      <td className="p-3.5 whitespace-nowrap">
+                        {fund.isRestricted ? (
+                          <span className="px-2.5 py-1 text-[10px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/30 rounded-full inline-flex items-center gap-1">
+                            🔒 RESTRICTED PURPOSE
+                          </span>
+                        ) : (
+                          <span className="px-2.5 py-1 text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-full inline-flex items-center gap-1">
+                            ✨ UNRESTRICTED CORPUS
+                          </span>
+                        )}
+                      </td>
+                      <td className="p-3.5 text-right font-mono font-bold text-indigo-300 text-base whitespace-nowrap">
+                        {formatCurrency(fund.amount)}
+                      </td>
+                      <td className="p-3.5 text-center">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button
+                            onClick={() => setPrintableVoucher({ type: 'SOCIETY_FUND', data: fund })}
+                            className="p-1.5 text-slate-400 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg transition-all"
+                            title="Print Fund Receipt Voucher"
+                          >
+                            <Printer className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteSocietyFund(fund.id)}
+                            className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-all"
+                            title="Delete Fund Record"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 7: CASH IN HAND & CASH DRAWERS */}
+      {activeTab === 'cash-in-hand' && (
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-lg font-semibold text-white">Cash in Hand & Counter Cash Drawers</h3>
+                <span className="px-2.5 py-0.5 text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/30 rounded-full">
+                  F4 Contra & Petty Cash
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-1">
+                Track physical cash registers, counter collections, bank float withdrawals, and petty cash disbursements.
+              </p>
+            </div>
+            <button
+              onClick={() => setShowAddCashTransactionModal(true)}
+              className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white text-sm font-medium rounded-xl flex items-center gap-1.5 shadow-lg transition-all"
+            >
+              <Coins className="w-4 h-4" /> + Record Cash In/Out / Transfer
+            </button>
+          </div>
+
+          {/* Cash Drawers Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {cashRegisters.map((reg) => (
+              <div
+                key={reg.id}
+                onClick={() => setSelectedRegisterId(reg.id)}
+                className={`p-5 rounded-2xl border transition-all cursor-pointer ${
+                  selectedRegisterId === reg.id
+                    ? 'bg-slate-950 border-amber-500 ring-1 ring-amber-500/40 shadow-lg'
+                    : 'bg-slate-950 border-slate-800 hover:border-slate-700'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 bg-amber-500/10 text-amber-400 rounded-xl">
+                      <Coins className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="font-bold text-white text-sm">{reg.registerName}</div>
+                      <div className="text-[11px] text-slate-400">Custodian: {reg.custodianName || 'Cashier'}</div>
+                    </div>
+                  </div>
+                  {reg.isDefault && (
+                    <span className="px-2 py-0.5 text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-full">
+                      DEFAULT
+                    </span>
+                  )}
+                </div>
+
+                <div className="pt-3 mt-3 border-t border-slate-900 flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] text-slate-500 block uppercase font-semibold">Live Drawer Balance</span>
+                    <span className="text-xl font-bold text-emerald-400 font-mono">
+                      {formatCurrency(reg.currentBalance || reg.openingBalance)}
+                    </span>
+                  </div>
+                  <span className="text-xs text-amber-400 font-medium">
+                    {selectedRegisterId === reg.id ? '✓ Selected' : 'Filter by Box'}
+                  </span>
+                </div>
+              </div>
+            ))}
+
+            <div className="bg-gradient-to-br from-slate-950 to-amber-950/30 border border-amber-500/30 p-5 rounded-2xl flex flex-col justify-between">
+              <div>
+                <span className="text-xs font-semibold text-amber-300 uppercase">Total Cash in Hand Across Campus</span>
+                <div className="text-2xl font-bold text-white font-mono mt-1">
+                  {formatCurrency(cashRegisters.reduce((sum, r) => sum + (r.currentBalance || 0), 0))}
+                </div>
+              </div>
+              <div className="text-[11px] text-amber-300/80 pt-2 border-t border-slate-900 flex items-center justify-between">
+                <span>Tally Group: Cash-in-Hand</span>
+                <span>Port 9000 Ready</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Cash Transactions Table */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+                <Clock className="w-4 h-4 text-amber-400" /> Cash Daybook & Transaction Log
+              </h4>
+              {selectedRegisterId && (
+                <button
+                  onClick={() => setSelectedRegisterId(null)}
+                  className="text-xs text-amber-400 hover:text-amber-300 underline"
+                >
+                  Show All Cash Boxes
+                </button>
+              )}
+            </div>
+
+            <div className="overflow-x-auto rounded-xl border border-slate-800">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-slate-950 text-slate-400 text-xs uppercase font-medium">
+                  <tr>
+                    <th className="p-3.5 whitespace-nowrap">Date & Voucher</th>
+                    <th className="p-3.5 whitespace-nowrap">Cash Register</th>
+                    <th className="p-3.5 whitespace-nowrap">Type</th>
+                    <th className="p-3.5">Payer / Beneficiary</th>
+                    <th className="p-3.5 whitespace-nowrap">Category</th>
+                    <th className="p-3.5 text-right whitespace-nowrap">Amount (₹)</th>
+                    <th className="p-3.5 text-center whitespace-nowrap">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60 text-slate-300">
+                  {cashTransactions.length === 0 ? (
+                    <tr>
+                      <td colSpan="7" className="p-8 text-center text-slate-500">
+                        No cash transactions recorded yet. Click "+ Record Cash In/Out / Transfer" to post a cash entry.
+                      </td>
+                    </tr>
+                  ) : (
+                    cashTransactions
+                      .filter((tx) => !selectedRegisterId || tx.registerId === selectedRegisterId)
+                      .map((tx) => {
+                        const isOutflow = ['CASH_OUT', 'BANK_DEPOSIT', 'EXPENSE_PAYMENT'].includes(tx.transactionType);
+                        const regName = cashRegisters.find((r) => r.id === tx.registerId)?.registerName || 'Cash Box';
+                        return (
+                          <tr key={tx.id} className="hover:bg-slate-800/40 transition-colors">
+                            <td className="p-3.5 whitespace-nowrap">
+                              <div className="font-mono text-xs font-bold text-white">{tx.voucherNumber || `CSH-${tx.id.slice(0, 6)}`}</div>
+                              <div className="text-[11px] text-slate-500">{new Date(tx.transactionDate || tx.createdAt).toLocaleDateString('en-IN')}</div>
+                            </td>
+                            <td className="p-3.5 whitespace-nowrap">
+                              <div className="font-medium text-slate-200 text-xs">{regName}</div>
+                            </td>
+                            <td className="p-3.5 whitespace-nowrap">
+                              <span className={`px-2.5 py-1 text-[10px] font-extrabold rounded-md inline-block ${
+                                isOutflow
+                                  ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                                  : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                              }`}>
+                                {tx.transactionType.replace('_', ' ')}
+                              </span>
+                            </td>
+                            <td className="p-3.5 min-w-[180px]">
+                              <div className="font-medium text-slate-200">{tx.recipientOrPayer || '-'}</div>
+                              {tx.notes && <div className="text-[11px] text-slate-400 italic">{tx.notes}</div>}
+                            </td>
+                            <td className="p-3.5 whitespace-nowrap">
+                              <span className="px-2.5 py-1 bg-slate-800 text-slate-300 rounded text-xs font-mono inline-block">
+                                {tx.category || 'PETTY_EXPENSE'}
+                              </span>
+                            </td>
+                            <td className={`p-3.5 text-right font-mono font-bold text-sm whitespace-nowrap ${isOutflow ? 'text-rose-400' : 'text-emerald-400'}`}>
+                              {isOutflow ? '-' : '+'}{formatCurrency(tx.amount)}
+                            </td>
+                            <td className="p-3.5 text-center whitespace-nowrap">
+                              <button
+                                onClick={() => setPrintableVoucher({ type: 'CASH_TRANSACTION', data: { ...tx, registerName: regName } })}
+                                className="p-1.5 text-slate-400 hover:text-amber-400 hover:bg-amber-500/10 rounded-lg transition-all"
+                                title="Print Cash Voucher"
+                              >
+                                <Printer className="w-4 h-4" />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 8: FIXED ASSET REGISTER & DEPRECIATION */}
+      {activeTab === 'fixed-assets' && (
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-lg font-semibold text-white">Fixed Asset Register & Depreciation</h3>
+                <span className="px-2.5 py-0.5 text-xs font-semibold bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 rounded-full">
+                  Balance Sheet Capital Assets
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-1">
+                Track academic block buildings, IT computer labs, school buses, lab equipment, and live annual depreciation journal vouchers.
+              </p>
+            </div>
+            <button
+              onClick={() => setShowAddFixedAssetModal(true)}
+              className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-medium rounded-xl flex items-center gap-1.5 shadow-lg transition-all"
+            >
+              <Layers className="w-4 h-4" /> + Add Fixed Asset
+            </button>
+          </div>
+
+          {/* Asset Summary Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
+              <div className="text-xs text-slate-400 font-medium">TOTAL ASSET PURCHASE COST</div>
+              <div className="text-2xl font-bold text-white mt-1">
+                {formatCurrency(fixedAssets.reduce((sum, a) => sum + (a.purchasePrice || 0), 0))}
+              </div>
+              <div className="text-[11px] text-slate-500 mt-0.5">Historical acquisition value</div>
+            </div>
+
+            <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
+              <div className="text-xs text-slate-400 font-medium">ACCUMULATED DEPRECIATION</div>
+              <div className="text-2xl font-bold text-rose-400 mt-1">
+                -{formatCurrency(fixedAssets.reduce((sum, a) => sum + (a.accumulatedDepreciation || 0), 0))}
+              </div>
+              <div className="text-[11px] text-slate-500 mt-0.5">Total written-down value reduction</div>
+            </div>
+
+            <div className="bg-gradient-to-br from-slate-950 to-cyan-950/40 p-4 rounded-xl border border-cyan-500/30">
+              <div className="text-xs text-cyan-300 font-semibold">NET CURRENT BOOK VALUE</div>
+              <div className="text-2xl font-black text-cyan-400 mt-1">
+                {formatCurrency(fixedAssets.reduce((sum, a) => sum + (a.currentBookValue || 0), 0))}
+              </div>
+              <div className="text-[11px] text-cyan-300/70 mt-0.5">Balance Sheet asset balance</div>
+            </div>
+
+            <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 flex flex-col justify-between">
+              <div>
+                <div className="text-xs text-slate-400 font-medium">TALLY PRIME JOURNAL VOUCHERS</div>
+                <div className="text-sm font-bold text-emerald-400 mt-1">Auto Journal Posting Active</div>
+              </div>
+              <div className="text-[11px] text-slate-500">Dr. Depreciation A/c | Cr. Asset A/c</div>
+            </div>
+          </div>
+
+          {/* Category Filter Pills */}
+          <div className="flex items-center gap-2 overflow-x-auto pb-1">
+            {['ALL', 'LAND_BUILDING', 'IT_HARDWARE', 'LAB_EQUIPMENT', 'VEHICLES', 'SMART_CLASSROOM', 'FURNITURE'].map((cat) => (
+              <button
+                key={cat}
+                onClick={() => setAssetCategoryFilter(cat)}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all whitespace-nowrap ${
+                  assetCategoryFilter === cat
+                    ? 'bg-cyan-600 text-white shadow-md'
+                    : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
+                }`}
+              >
+                {cat.replace('_', ' ')}
+              </button>
+            ))}
+          </div>
+
+          {/* Fixed Asset Register Table */}
+          <div className="overflow-x-auto rounded-xl border border-slate-800">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-slate-950 text-slate-400 text-xs uppercase font-medium">
+                <tr>
+                  <th className="p-3.5 whitespace-nowrap">Asset Name & Code</th>
+                  <th className="p-3.5 whitespace-nowrap">Category & Location</th>
+                  <th className="p-3.5 whitespace-nowrap">Purchase Details</th>
+                  <th className="p-3.5 text-right whitespace-nowrap">Purchase Price</th>
+                  <th className="p-3.5 text-center whitespace-nowrap">Depreciation Rate</th>
+                  <th className="p-3.5 text-right whitespace-nowrap">Accumulated Dep.</th>
+                  <th className="p-3.5 text-right whitespace-nowrap">Current Book Value</th>
+                  <th className="p-3.5 text-center whitespace-nowrap">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60 text-slate-300">
+                {fixedAssets.length === 0 ? (
+                  <tr>
+                    <td colSpan="8" className="p-8 text-center text-slate-500">
+                      No Fixed Assets recorded yet. Click "+ Add Fixed Asset" to register school capital assets.
+                    </td>
+                  </tr>
+                ) : (
+                  fixedAssets
+                    .filter((a) => assetCategoryFilter === 'ALL' || a.category === assetCategoryFilter)
+                    .map((asset) => (
+                      <tr key={asset.id} className="hover:bg-slate-800/40 transition-colors">
+                        <td className="p-3.5 min-w-[200px]">
+                          <div className="font-semibold text-white">{asset.assetName}</div>
+                          <div className="font-mono text-xs text-cyan-400 font-bold mt-0.5">{asset.assetCode || 'AST-001'}</div>
+                        </td>
+                        <td className="p-3.5 whitespace-nowrap">
+                          <span className="px-2 py-0.5 text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-700 rounded-md inline-block">
+                            {asset.category}
+                          </span>
+                          <div className="text-xs text-slate-400 mt-1">{asset.location || 'Main Campus'}</div>
+                        </td>
+                        <td className="p-3.5 whitespace-nowrap">
+                          <div className="text-xs text-slate-200">{new Date(asset.purchaseDate || asset.createdAt).toLocaleDateString('en-IN')}</div>
+                          <div className="text-[11px] text-slate-400">{asset.vendorName || 'Direct Vendor'}</div>
+                        </td>
+                        <td className="p-3.5 text-right font-mono font-medium text-slate-200 whitespace-nowrap">
+                          {formatCurrency(asset.purchasePrice)}
+                        </td>
+                        <td className="p-3.5 text-center whitespace-nowrap">
+                          <span className="px-2.5 py-1 bg-amber-500/10 text-amber-300 border border-amber-500/30 rounded font-mono text-xs font-bold inline-block">
+                            {asset.depreciationRate}% p.a.
+                          </span>
+                        </td>
+                        <td className="p-3.5 text-right font-mono text-rose-400 font-medium whitespace-nowrap">
+                          -{formatCurrency(asset.accumulatedDepreciation)}
+                        </td>
+                        <td className="p-3.5 text-right font-mono font-bold text-cyan-300 text-base whitespace-nowrap">
+                          {formatCurrency(asset.currentBookValue)}
+                        </td>
+                        <td className="p-3.5 text-center whitespace-nowrap">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              onClick={() => handleDepreciateAsset(asset.id)}
+                              className="px-2 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 rounded-lg text-xs font-bold flex items-center gap-1 transition-all"
+                              title="Apply Annual Depreciation & Post Journal Entry"
+                            >
+                              <Calculator className="w-3.5 h-3.5" /> Depreciate
+                            </button>
+                            <button
+                              onClick={() => setPrintableVoucher({ type: 'FIXED_ASSET', data: asset })}
+                              className="p-1.5 text-slate-400 hover:text-cyan-400 hover:bg-cyan-500/10 rounded-lg transition-all"
+                              title="Print Asset Tag / Register Card"
+                            >
+                              <Printer className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteFixedAsset(asset.id)}
+                              className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-all"
+                              title="Delete Asset"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 9: TALLY & BUSY CONNECTOR */}
       {activeTab === 'connector' && (
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl space-y-4">
             <div className="flex items-center justify-between">
@@ -1010,8 +2109,8 @@ export default function AccountantPage() {
       )}
 
       {/* Modal: Add Fee (Clean & Blank) */}
-      {showAddFeeModal && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
+      {showAddFeeModal && renderPortal(
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-[9999]">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-md w-full space-y-4 shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h3 className="text-lg font-semibold text-white">Record New Student Fee</h3>
@@ -1229,7 +2328,7 @@ export default function AccountantPage() {
       )}
 
       {/* Dedicated Modal: Update Student Fee Payment (Read-Only Info + New Installment Received) */}
-      {showUpdateFeeModal && updatingFeeRecord && (() => {
+      {showUpdateFeeModal && updatingFeeRecord && renderPortal((() => {
         const previousPaid = parseFloat(updatingFeeRecord.paidAmount || 0);
         const totalBilled = parseFloat(updatingFeeRecord.totalAmount || 0);
         const remainingDues = Math.max(0, totalBilled - previousPaid);
@@ -1239,7 +2338,7 @@ export default function AccountantPage() {
         const newRemaining = Math.max(0, remainingDues - addedPayment);
 
         return (
-          <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-[9999]">
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-md w-full space-y-4 shadow-2xl">
               <div className="flex items-center justify-between border-b border-slate-800 pb-3">
                 <div>
@@ -1382,16 +2481,16 @@ export default function AccountantPage() {
                   >
                     Update & Save Payment
                   </button>
-                </div>
-              </form>
-            </div>
+              </div>
+            </form>
           </div>
-        );
-      })()}
+        </div>
+      );
+    })())}
 
       {/* Modal: Add Payroll */}
-      {showAddPayrollModal && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
+      {showAddPayrollModal && renderPortal(
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-[9999]">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-md w-full space-y-4">
             <h3 className="text-lg font-semibold text-white">Issue Faculty Salary Voucher</h3>
             <form onSubmit={handleCreatePayroll} className="space-y-3">
@@ -1453,13 +2552,18 @@ export default function AccountantPage() {
                             </div>
                           </div>
                         ))}
+                      {facultyOptions.filter((f) => (f.empId || '').toLowerCase().includes((newPayroll.employeeId || '').toLowerCase())).length === 0 && (
+                        <div className="p-3 text-xs text-slate-400 text-center">
+                          Custom Employee ID: <span className="text-white font-semibold">{newPayroll.employeeId}</span>
+                        </div>
+                      )}
                     </div>
                   </>
                 )}
               </div>
               {/* Searchable Faculty Name Dropdown */}
               <div className={`relative ${isFacultyDropdownOpen ? 'z-30' : 'z-0'}`}>
-                <label className="text-xs text-slate-400 font-medium block mb-1">Faculty / Staff Name</label>
+                <label className="text-xs text-slate-400 font-medium block mb-1">Employee / Faculty Name</label>
                 <div className="relative">
                   <input
                     type="text"
@@ -1512,68 +2616,73 @@ export default function AccountantPage() {
                             </div>
                           </div>
                         ))}
+                      {facultyOptions.filter((f) => f.name.toLowerCase().includes((newPayroll.employeeName || '').toLowerCase())).length === 0 && (
+                        <div className="p-3 text-xs text-slate-400 text-center">
+                          Custom Employee: <span className="text-white font-semibold">{newPayroll.employeeName}</span>
+                        </div>
+                      )}
                     </div>
                   </>
                 )}
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs text-slate-400 font-medium block mb-1">Month</label>
+                  <label className="text-xs text-slate-400 font-medium block mb-1">Designation</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Senior HOD, Teacher"
+                    value={newPayroll.designation}
+                    onChange={(e) => setNewPayroll({ ...newPayroll, designation: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-emerald-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-400 font-medium block mb-1">Payroll Month</label>
                   <select
                     value={newPayroll.month}
                     onChange={(e) => setNewPayroll({ ...newPayroll, month: e.target.value })}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-emerald-500 focus:outline-none"
                   >
-                    {['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'].map(m => (
+                    {['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'].map((m) => (
                       <option key={m} value={m}>{m}</option>
                     ))}
                   </select>
                 </div>
-                <div>
-                  <label className="text-xs text-slate-400 font-medium block mb-1">Financial Year</label>
-                  <select
-                    value={newPayroll.year}
-                    onChange={(e) => setNewPayroll({ ...newPayroll, year: parseInt(e.target.value) })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-emerald-500 focus:outline-none"
-                  >
-                    <option value={2026}>2026-27 (Current Year)</option>
-                    <option value={2025}>2025-26 (Past Arrears)</option>
-                    <option value={2024}>2024-25 (Previous Dues)</option>
-                    <option value={2027}>2027-28 (Upcoming Year)</option>
-                  </select>
-                </div>
               </div>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-3 gap-2">
                 <div>
-                  <label className="text-xs text-slate-400 font-medium block mb-1">Basic Pay (₹)</label>
+                  <label className="text-[10px] text-slate-400">Basic Pay (₹)</label>
                   <input
                     type="number"
                     required
+                    placeholder="75000"
                     value={newPayroll.basicPay}
                     onChange={(e) => setNewPayroll({ ...newPayroll, basicPay: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-slate-200"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-xs text-slate-200 focus:border-emerald-500 focus:outline-none"
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-slate-400">Allowances</label>
+                  <label className="text-[10px] text-slate-400">Allowances</label>
                   <input
                     type="number"
+                    placeholder="12000"
                     value={newPayroll.allowances}
                     onChange={(e) => setNewPayroll({ ...newPayroll, allowances: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-slate-200"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-xs text-slate-200 focus:border-emerald-500 focus:outline-none"
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-slate-400">Deductions</label>
+                  <label className="text-[10px] text-slate-400">Deductions</label>
                   <input
                     type="number"
+                    placeholder="4500"
                     value={newPayroll.deductions}
                     onChange={(e) => setNewPayroll({ ...newPayroll, deductions: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-slate-200"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-xs text-slate-200 focus:border-emerald-500 focus:outline-none"
                   />
                 </div>
               </div>
-              <div className="flex items-center justify-end gap-3 pt-3">
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
                 <button
                   type="button"
                   onClick={() => setShowAddPayrollModal(false)}
@@ -1592,6 +2701,1073 @@ export default function AccountantPage() {
           </div>
         </div>
       )}
+
+      {/* Modal: Add Expense / Donation */}
+      {showAddExpenseModal && renderPortal(
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-[9999]">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-lg w-full space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-white">Record Other Expense or Donation</h3>
+              <button
+                onClick={() => setShowAddExpenseModal(false)}
+                className="text-slate-400 hover:text-white text-sm"
+              >
+                ✕
+              </button>
+            </div>
+            <form onSubmit={handleCreateExpense} className="space-y-3">
+              <div>
+                <label className="text-xs text-slate-400 font-medium block mb-1">Expense Title / Ledger Name *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Campus Electrical Maintenance, Alumni Grant..."
+                  value={newExpense.title}
+                  onChange={(e) => setNewExpense({ ...newExpense, title: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-slate-200 focus:border-purple-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-slate-400 font-medium block mb-1">Category *</label>
+                  <select
+                    value={newExpense.category}
+                    onChange={(e) => setNewExpense({ ...newExpense, category: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-purple-500 focus:outline-none"
+                  >
+                    <option value="MAINTENANCE">Maintenance & Repairs</option>
+                    <option value="DONATION">Donation & Grant Income</option>
+                    <option value="UTILITIES">Utilities & Fuel</option>
+                    <option value="LAB_INFRA">Laboratory & Infrastructure</option>
+                    <option value="EVENTS">Sports & Cultural Events</option>
+                    <option value="OTHER">Other Operational Expense</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-slate-400 font-medium block mb-1">Amount (₹) *</label>
+                  <input
+                    type="number"
+                    required
+                    placeholder="e.g. 35000"
+                    value={newExpense.amount}
+                    onChange={(e) => setNewExpense({ ...newExpense, amount: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-slate-200 focus:border-purple-500 focus:outline-none font-bold"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-slate-400 font-medium block mb-1">Vendor / Donor Name</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Cooling Engineers, Alumni Trust..."
+                    value={newExpense.vendorName}
+                    onChange={(e) => setNewExpense({ ...newExpense, vendorName: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-purple-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-400 font-medium block mb-1">Expense Date</label>
+                  <input
+                    type="date"
+                    value={newExpense.expenseDate}
+                    onChange={(e) => setNewExpense({ ...newExpense, expenseDate: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-purple-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-slate-400 font-medium block mb-1">Payment Method</label>
+                  <select
+                    value={newExpense.paymentMethod}
+                    onChange={(e) => setNewExpense({ ...newExpense, paymentMethod: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-purple-500 focus:outline-none"
+                  >
+                    <option value="BANK_TRANSFER">Bank Transfer / NEFT</option>
+                    <option value="UPI">UPI / GPay</option>
+                    <option value="CHEQUE">Cheque</option>
+                    <option value="CASH">Cash</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-slate-400 font-medium block mb-1">Bank Account</label>
+                  <select
+                    value={newExpense.bankAccountName}
+                    onChange={(e) => setNewExpense({ ...newExpense, bankAccountName: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-purple-500 focus:outline-none"
+                  >
+                    {bankAccounts.map((b) => (
+                      <option key={b.id} value={b.accountName}>
+                        {b.accountName} ({b.bankName})
+                      </option>
+                    ))}
+                    {bankAccounts.length === 0 && <option value="HDFC Bank Main Account">HDFC Bank Main Account</option>}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs text-slate-400 font-medium block mb-1">Notes / Remarks</label>
+                <textarea
+                  rows="2"
+                  placeholder="Additional expense breakdown or voucher details..."
+                  value={newExpense.notes}
+                  onChange={(e) => setNewExpense({ ...newExpense, notes: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-purple-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3">
+                <button
+                  type="button"
+                  onClick={() => setShowAddExpenseModal(false)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium rounded-xl"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white text-sm font-medium rounded-xl shadow-lg"
+                >
+                  Save & Queue Tally Sync
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Add Bank Account */}
+      {showAddBankModal && renderPortal(
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-[9999]">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-md w-full space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-white">Add School Bank Account</h3>
+              <button
+                onClick={() => setShowAddBankModal(false)}
+                className="text-slate-400 hover:text-white text-sm"
+              >
+                ✕
+              </button>
+            </div>
+            <form onSubmit={handleCreateBankAccount} className="space-y-3">
+              <div>
+                <label className="text-xs text-slate-400 font-medium block mb-1">Display Ledger Account Name *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. State Bank of India Operations, ICICI Fee Collection..."
+                  value={newBankAccount.accountName}
+                  onChange={(e) => setNewBankAccount({ ...newBankAccount, accountName: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-slate-200 focus:border-teal-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-slate-400 font-medium block mb-1">Bank Name *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. HDFC Bank, SBI..."
+                    value={newBankAccount.bankName}
+                    onChange={(e) => setNewBankAccount({ ...newBankAccount, bankName: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-teal-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-400 font-medium block mb-1">Account Number *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. 50100492810394"
+                    value={newBankAccount.accountNumber}
+                    onChange={(e) => setNewBankAccount({ ...newBankAccount, accountNumber: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-teal-500 focus:outline-none font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-slate-400 font-medium block mb-1">IFSC Code</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. HDFC0001824"
+                    value={newBankAccount.ifscCode}
+                    onChange={(e) => setNewBankAccount({ ...newBankAccount, ifscCode: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-teal-500 focus:outline-none uppercase font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-400 font-medium block mb-1">Branch Name</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Main Branch"
+                    value={newBankAccount.branchName}
+                    onChange={(e) => setNewBankAccount({ ...newBankAccount, branchName: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-teal-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-slate-400 font-medium block mb-1">Account Type</label>
+                  <select
+                    value={newBankAccount.accountType}
+                    onChange={(e) => setNewBankAccount({ ...newBankAccount, accountType: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-teal-500 focus:outline-none"
+                  >
+                    <option value="CURRENT">Current Account</option>
+                    <option value="SAVINGS">Savings Account</option>
+                    <option value="OVERDRAFT">Overdraft (OD) Account</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-slate-400 font-medium block mb-1">Opening Balance (₹)</label>
+                  <input
+                    type="number"
+                    placeholder="e.g. 500000"
+                    value={newBankAccount.openingBalance}
+                    onChange={(e) => setNewBankAccount({ ...newBankAccount, openingBalance: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-teal-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 pt-2">
+                <input
+                  type="checkbox"
+                  id="isPrimaryCheck"
+                  checked={newBankAccount.isPrimary}
+                  onChange={(e) => setNewBankAccount({ ...newBankAccount, isPrimary: e.target.checked })}
+                  className="rounded border-slate-800 bg-slate-950 text-teal-500 focus:ring-0"
+                />
+                <label htmlFor="isPrimaryCheck" className="text-xs text-slate-300 cursor-pointer font-medium">
+                  Set as Primary Bank Account for Tally Sync
+                </label>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3">
+                <button
+                  type="button"
+                  onClick={() => setShowAddBankModal(false)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium rounded-xl"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-teal-600 hover:bg-teal-500 text-white text-sm font-medium rounded-xl shadow-lg"
+                >
+                  Create Bank Account
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Add Society Fund */}
+      {showAddSocietyFundModal && renderPortal(
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-[9999]">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-lg w-full space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <Building className="w-5 h-5 text-indigo-400" />
+                <h3 className="text-lg font-semibold text-white">Record Society / Corpus Capital Fund</h3>
+              </div>
+              <button
+                onClick={() => setShowAddSocietyFundModal(false)}
+                className="text-slate-400 hover:text-white text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateSocietyFund} className="space-y-3">
+              <div>
+                <label className="text-xs text-slate-400 font-medium block mb-1">Fund / Endowment Name *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. General Trust Corpus Fund, Campus Development Grant..."
+                  value={newSocietyFund.fundName}
+                  onChange={(e) => setNewSocietyFund({ ...newSocietyFund, fundName: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-slate-200 focus:border-indigo-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-slate-400 font-medium block mb-1">Fund Classification</label>
+                  <select
+                    value={newSocietyFund.fundType}
+                    onChange={(e) => setNewSocietyFund({ ...newSocietyFund, fundType: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-indigo-500 focus:outline-none"
+                  >
+                    <option value="CORPUS">🏛️ Corpus Reserve Fund</option>
+                    <option value="INFRASTRUCTURE">🏗️ Infrastructure Grant</option>
+                    <option value="SCHOLARSHIP">🎓 Scholarship Endowment</option>
+                    <option value="TRUST_GRANT">🤝 Trust / Society Grant</option>
+                    <option value="DEVELOPMENT">🚀 Development Fund</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-slate-400 font-medium block mb-1">Contributing Body / Donor *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Education Trust Society"
+                    value={newSocietyFund.contributingBody}
+                    onChange={(e) => setNewSocietyFund({ ...newSocietyFund, contributingBody: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-indigo-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-slate-400 font-medium block mb-1">Fund Amount (₹) *</label>
+                  <input
+                    type="number"
+                    required
+                    placeholder="e.g. 2500000"
+                    value={newSocietyFund.amount}
+                    onChange={(e) => setNewSocietyFund({ ...newSocietyFund, amount: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-slate-200 focus:border-indigo-500 focus:outline-none font-mono font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-400 font-medium block mb-1">Inflow Date</label>
+                  <input
+                    type="date"
+                    value={newSocietyFund.fundDate}
+                    onChange={(e) => setNewSocietyFund({ ...newSocietyFund, fundDate: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-indigo-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs text-slate-400 font-medium block mb-1">Endowment Purpose / Donor Earmarks</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Reserved for building 3rd floor science wing & smart robotics lab"
+                  value={newSocietyFund.purpose}
+                  onChange={(e) => setNewSocietyFund({ ...newSocietyFund, purpose: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-indigo-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="flex items-center gap-2 pt-1">
+                <input
+                  type="checkbox"
+                  id="restrictedCheck"
+                  checked={newSocietyFund.isRestricted}
+                  onChange={(e) => setNewSocietyFund({ ...newSocietyFund, isRestricted: e.target.checked })}
+                  className="rounded border-slate-800 bg-slate-950 text-indigo-500 focus:ring-0"
+                />
+                <label htmlFor="restrictedCheck" className="text-xs text-slate-300 cursor-pointer font-medium">
+                  🔒 Restricted Fund (Restricted exclusively to specified purpose)
+                </label>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowAddSocietyFundModal(false)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium rounded-xl"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-xl shadow-lg"
+                >
+                  Record Society Fund
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Record Cash In/Out & Float Transfer */}
+      {showAddCashTransactionModal && renderPortal(
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-[9999]">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-lg w-full space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <Coins className="w-5 h-5 text-amber-400" />
+                <h3 className="text-lg font-semibold text-white">Record Cash Transaction / Float Transfer</h3>
+              </div>
+              <button
+                onClick={() => setShowAddCashTransactionModal(false)}
+                className="text-slate-400 hover:text-white text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateCashTransaction} className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-slate-400 font-medium block mb-1">Cash Register / Drawer *</label>
+                  <select
+                    value={newCashTransaction.registerId || selectedRegisterId || (cashRegisters[0]?.id || '')}
+                    onChange={(e) => setNewCashTransaction({ ...newCashTransaction, registerId: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-amber-500 focus:outline-none"
+                  >
+                    {cashRegisters.map((reg) => (
+                      <option key={reg.id} value={reg.id}>
+                        💵 {reg.registerName} (Bal: {formatCurrency(reg.currentBalance)})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-slate-400 font-medium block mb-1">Transaction Type *</label>
+                  <select
+                    value={newCashTransaction.transactionType}
+                    onChange={(e) => setNewCashTransaction({ ...newCashTransaction, transactionType: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-amber-500 focus:outline-none font-semibold text-amber-400"
+                  >
+                    <option value="CASH_IN">📥 Cash Inflow / Counter Collection</option>
+                    <option value="CASH_OUT">📤 Cash Outflow / Petty Expense</option>
+                    <option value="BANK_WITHDRAWAL">🏦 Bank ➔ Cash Float Refill (Contra F4)</option>
+                    <option value="BANK_DEPOSIT">🏦 Cash ➔ Bank Deposit (Contra F4)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-slate-400 font-medium block mb-1">Amount (₹) *</label>
+                  <input
+                    type="number"
+                    required
+                    placeholder="e.g. 15000"
+                    value={newCashTransaction.amount}
+                    onChange={(e) => setNewCashTransaction({ ...newCashTransaction, amount: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-slate-200 focus:border-amber-500 focus:outline-none font-mono font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-400 font-medium block mb-1">Transaction Date</label>
+                  <input
+                    type="date"
+                    value={newCashTransaction.transactionDate}
+                    onChange={(e) => setNewCashTransaction({ ...newCashTransaction, transactionDate: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-amber-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              {['BANK_WITHDRAWAL', 'BANK_DEPOSIT'].includes(newCashTransaction.transactionType) && (
+                <div className="bg-slate-950 p-3 rounded-xl border border-amber-500/30 space-y-1">
+                  <label className="text-xs text-amber-300 font-semibold block flex items-center gap-1">
+                    <Landmark className="w-3.5 h-3.5" /> Linked Bank Account for Contra Transfer
+                  </label>
+                  <select
+                    value={newCashTransaction.bankAccountId || (bankAccounts[0]?.id || '')}
+                    onChange={(e) => setNewCashTransaction({ ...newCashTransaction, bankAccountId: e.target.value })}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none"
+                  >
+                    {bankAccounts.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.bankName} - {b.accountName} (Bal: {formatCurrency(b.currentBalance)})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-slate-400 font-medium block mb-1">Beneficiary / Payer Name</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Courier boy, Electrician, Admissions desk..."
+                    value={newCashTransaction.recipientOrPayer}
+                    onChange={(e) => setNewCashTransaction({ ...newCashTransaction, recipientOrPayer: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-amber-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-400 font-medium block mb-1">Category Header</label>
+                  <select
+                    value={newCashTransaction.category}
+                    onChange={(e) => setNewCashTransaction({ ...newCashTransaction, category: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-amber-500 focus:outline-none"
+                  >
+                    <option value="PETTY_EXPENSE">Petty Office Expense</option>
+                    <option value="FEE_PAYMENT">Fee Collection Inflow</option>
+                    <option value="BANK_FLOAT_TRANSFER">Bank Float Refill / Deposit</option>
+                    <option value="MAINTENANCE">Immediate Repair & Maintenance</option>
+                    <option value="STAFF_ADVANCE">Staff Cash Advance</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs text-slate-400 font-medium block mb-1">Narration / Notes</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Urgent plumbing fixtures purchase & postal stamps"
+                  value={newCashTransaction.notes}
+                  onChange={(e) => setNewCashTransaction({ ...newCashTransaction, notes: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-amber-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowAddCashTransactionModal(false)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium rounded-xl"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white text-sm font-medium rounded-xl shadow-lg"
+                >
+                  Post Cash Entry
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Add Fixed Asset */}
+      {showAddFixedAssetModal && renderPortal(
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-[9999]">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-lg w-full space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <Layers className="w-5 h-5 text-cyan-400" />
+                <h3 className="text-lg font-semibold text-white">Add Fixed Asset to Capital Register</h3>
+              </div>
+              <button
+                onClick={() => setShowAddFixedAssetModal(false)}
+                className="text-slate-400 hover:text-white text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateFixedAsset} className="space-y-3">
+              <div>
+                <label className="text-xs text-slate-400 font-medium block mb-1">Asset Description / Name *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Dell OptiPlex Core i7 Lab PCs (Batch 2), Campus Starbus 42-Seater..."
+                  value={newFixedAsset.assetName}
+                  onChange={(e) => setNewFixedAsset({ ...newFixedAsset, assetName: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-slate-200 focus:border-cyan-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-slate-400 font-medium block mb-1">Asset Category *</label>
+                  <select
+                    value={newFixedAsset.category}
+                    onChange={(e) => setNewFixedAsset({ ...newFixedAsset, category: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-cyan-500 focus:outline-none font-semibold text-cyan-300"
+                  >
+                    <option value="IT_HARDWARE">💻 IT Hardware & Computers</option>
+                    <option value="LAND_BUILDING">🏛️ Land & Academic Buildings</option>
+                    <option value="LAB_EQUIPMENT">🔬 Science Lab Equipment</option>
+                    <option value="VEHICLES">🚌 Vehicles & School Buses</option>
+                    <option value="SMART_CLASSROOM">📺 Smart Digital Boards</option>
+                    <option value="FURNITURE">🪑 Classroom Furniture</option>
+                    <option value="LIBRARY_BOOKS">📚 Library Books & Archives</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-slate-400 font-medium block mb-1">Asset Tag / Serial Code</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. AST-IT-2026-009"
+                    value={newFixedAsset.assetCode}
+                    onChange={(e) => setNewFixedAsset({ ...newFixedAsset, assetCode: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-cyan-500 focus:outline-none font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-slate-400 font-medium block mb-1">Purchase Price (₹) *</label>
+                  <input
+                    type="number"
+                    required
+                    placeholder="e.g. 450000"
+                    value={newFixedAsset.purchasePrice}
+                    onChange={(e) => setNewFixedAsset({ ...newFixedAsset, purchasePrice: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-slate-200 focus:border-cyan-500 focus:outline-none font-mono font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-400 font-medium block mb-1">Purchase Date</label>
+                  <input
+                    type="date"
+                    value={newFixedAsset.purchaseDate}
+                    onChange={(e) => setNewFixedAsset({ ...newFixedAsset, purchaseDate: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-cyan-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-slate-400 font-medium block mb-1">Vendor / Supplier</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Dell Direct Commercial Sales"
+                    value={newFixedAsset.vendorName}
+                    onChange={(e) => setNewFixedAsset({ ...newFixedAsset, vendorName: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-cyan-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-400 font-medium block mb-1">Invoice / Bill Number</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. INV-2026-DEL-890"
+                    value={newFixedAsset.invoiceNo}
+                    onChange={(e) => setNewFixedAsset({ ...newFixedAsset, invoiceNo: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-cyan-500 focus:outline-none font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-slate-400 font-medium block mb-1">Physical Location</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Science Block Lab 2"
+                    value={newFixedAsset.location}
+                    onChange={(e) => setNewFixedAsset({ ...newFixedAsset, location: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-cyan-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-400 font-medium block mb-1">Annual Depr. Rate (% p.a.)</label>
+                  <input
+                    type="number"
+                    step="0.5"
+                    placeholder="15.0"
+                    value={newFixedAsset.depreciationRate}
+                    onChange={(e) => setNewFixedAsset({ ...newFixedAsset, depreciationRate: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-cyan-500 focus:outline-none font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowAddFixedAssetModal(false)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium rounded-xl"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-medium rounded-xl shadow-lg"
+                >
+                  Register Fixed Asset
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Official Receipt & Voucher Printable PDF View */}
+      {printableVoucher && renderPortal(
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-md flex items-start justify-center p-4 sm:p-6 z-[9999] overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full p-6 space-y-6 shadow-2xl relative text-slate-100 my-4 sm:my-8">
+            {/* Modal Header Actions */}
+            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+              <div className="flex items-center gap-2">
+                <Receipt className="w-5 h-5 text-teal-400" />
+                <h3 className="text-lg font-bold text-white">Voucher & Receipt Document</h3>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => window.print()}
+                  className="px-4 py-2 bg-teal-600 hover:bg-teal-500 text-white font-semibold text-xs rounded-xl shadow-lg flex items-center gap-1.5 transition-all"
+                >
+                  <Printer className="w-4 h-4" /> Print / Save as PDF
+                </button>
+                <button
+                  onClick={() => setPrintableVoucher(null)}
+                  className="p-1.5 text-slate-400 hover:text-white text-sm"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {/* PRINTABLE RECEIPT CARD CONTENT */}
+            <div id="printable-receipt-content" className="bg-slate-950 border border-slate-800 rounded-xl p-6 space-y-6 text-slate-200">
+              {/* Institution Letterhead Header */}
+              <div className="flex items-start justify-between border-b border-slate-800 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-3 bg-teal-500/10 text-teal-400 border border-teal-500/30 rounded-xl">
+                    <Building2 className="w-8 h-8" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-extrabold text-white tracking-tight">{currentOrg?.name || 'Demo International Academy'}</h2>
+                    <p className="text-xs text-slate-400">Department of Finance & Accounts • Institutional ERP</p>
+                    <p className="text-[11px] text-slate-500">Official Accounting & Tally Prime Ledger Document</p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-xs font-mono font-bold text-teal-400 bg-teal-500/10 border border-teal-500/20 px-2.5 py-1 rounded-lg inline-block">
+                    {printableVoucher.type === 'FEE' && (printableVoucher.data.receiptNo || `REC/2026-27/${printableVoucher.data.studentRollNo || '001'}`)}
+                    {printableVoucher.type === 'PAYROLL' && (printableVoucher.data.tallyVoucherId || `PAY-TAL/${printableVoucher.data.employeeId || '001'}`)}
+                    {printableVoucher.type === 'EXPENSE' && (printableVoucher.data.receiptNo || `VOUCH/${printableVoucher.data.id?.slice(0, 6)}`)}
+                    {printableVoucher.type === 'SOCIETY_FUND' && (printableVoucher.data.receiptNo || `SOC-REC/${printableVoucher.data.id?.slice(0, 6)}`)}
+                    {printableVoucher.type === 'CASH_TRANSACTION' && (printableVoucher.data.voucherNumber || `CSH-VOUCH/${printableVoucher.data.id?.slice(0, 6)}`)}
+                    {printableVoucher.type === 'FIXED_ASSET' && (printableVoucher.data.assetCode || `AST-REG/${printableVoucher.data.id?.slice(0, 6)}`)}
+                  </div>
+                  <div className="text-[11px] text-slate-400 mt-1">Date: {new Date().toLocaleDateString('en-IN')}</div>
+                </div>
+              </div>
+
+              {/* Voucher Title Banner */}
+              <div className="bg-slate-900 border border-slate-800 p-3 rounded-lg text-center">
+                <span className="text-xs font-extrabold uppercase tracking-wider text-teal-400">
+                  {printableVoucher.type === 'FEE' && 'Official Student Fee Payment Receipt'}
+                  {printableVoucher.type === 'PAYROLL' && 'Official Faculty Salary Disbursement Payslip'}
+                  {printableVoucher.type === 'EXPENSE' && 'Official Expense & Donation Payment Voucher'}
+                  {printableVoucher.type === 'SOCIETY_FUND' && 'Official Society / Corpus Capital Fund Receipt Voucher'}
+                  {printableVoucher.type === 'CASH_TRANSACTION' && 'Official Cash Daybook Voucher / Contra Entry (F4)'}
+                  {printableVoucher.type === 'FIXED_ASSET' && 'Official Fixed Asset Registration & Depreciation Certificate'}
+                </span>
+              </div>
+
+              {/* Metadata Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-xs bg-slate-900/60 p-4 rounded-xl border border-slate-800/80">
+                {printableVoucher.type === 'FEE' && (
+                  <>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Student Name</span>
+                      <span className="font-bold text-white text-sm">{printableVoucher.data.studentName}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Roll Number</span>
+                      <span className="font-mono text-slate-200">{printableVoucher.data.studentRollNo}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Fee Header</span>
+                      <span className="text-slate-200">{printableVoucher.data.feeHeader}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Payment Method</span>
+                      <span className="text-emerald-400 font-medium">{printableVoucher.data.paymentMethod || 'UPI / Online'}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Bank Account</span>
+                      <span className="text-teal-300 font-mono">{printableVoucher.data.bankAccountName || 'HDFC Bank Main Account'}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Academic Year</span>
+                      <span className="text-slate-200">{printableVoucher.data.academicYear || '2026-27'}</span>
+                    </div>
+                  </>
+                )}
+
+                {printableVoucher.type === 'PAYROLL' && (
+                  <>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Employee Name</span>
+                      <span className="font-bold text-white text-sm">{printableVoucher.data.employeeName}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Employee ID</span>
+                      <span className="font-mono text-slate-200">{printableVoucher.data.employeeId}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Designation</span>
+                      <span className="text-slate-200">{printableVoucher.data.designation}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Payroll Period</span>
+                      <span className="text-emerald-400 font-medium">{printableVoucher.data.month} {printableVoucher.data.year}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Disbursement Mode</span>
+                      <span className="text-teal-300">Direct Bank Deposit</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Tally Ref Voucher</span>
+                      <span className="font-mono text-slate-300">{printableVoucher.data.tallyVoucherId || 'PAY-TAL-8801'}</span>
+                    </div>
+                  </>
+                )}
+
+                {printableVoucher.type === 'EXPENSE' && (
+                  <>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Expense Title</span>
+                      <span className="font-bold text-white text-sm">{printableVoucher.data.title}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Category</span>
+                      <span className="text-purple-300 font-semibold">{printableVoucher.data.category}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Vendor / Payee</span>
+                      <span className="text-slate-200">{printableVoucher.data.vendorName || '-'}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Payment Method</span>
+                      <span className="text-emerald-400 font-medium">{printableVoucher.data.paymentMethod || 'BANK_TRANSFER'}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Bank Account</span>
+                      <span className="text-teal-300 font-mono">{printableVoucher.data.bankAccountName || 'HDFC Bank Main Account'}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Voucher Date</span>
+                      <span className="text-slate-200">{new Date(printableVoucher.data.expenseDate || Date.now()).toLocaleDateString('en-IN')}</span>
+                    </div>
+                  </>
+                )}
+
+                {printableVoucher.type === 'SOCIETY_FUND' && (
+                  <>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Fund Name</span>
+                      <span className="font-bold text-white text-sm">{printableVoucher.data.fundName}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Classification</span>
+                      <span className="text-indigo-300 font-semibold">{printableVoucher.data.fundType}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Contributing Body</span>
+                      <span className="text-slate-200">{printableVoucher.data.contributingBody}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Restriction Type</span>
+                      <span className="text-amber-400 font-medium">{printableVoucher.data.isRestricted ? 'Restricted Endowment' : 'Unrestricted Corpus'}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Tally Group Parent</span>
+                      <span className="text-teal-300 font-mono">Capital Account</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Inflow Date</span>
+                      <span className="text-slate-200">{new Date(printableVoucher.data.fundDate || Date.now()).toLocaleDateString('en-IN')}</span>
+                    </div>
+                  </>
+                )}
+
+                {printableVoucher.type === 'CASH_TRANSACTION' && (
+                  <>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Cash Drawer</span>
+                      <span className="font-bold text-white text-sm">{printableVoucher.data.registerName || 'Main Admissions Counter'}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Transaction Type</span>
+                      <span className="text-amber-300 font-bold">{printableVoucher.data.transactionType}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Payer / Recipient</span>
+                      <span className="text-slate-200">{printableVoucher.data.recipientOrPayer || '-'}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Category</span>
+                      <span className="text-emerald-400 font-medium">{printableVoucher.data.category || 'PETTY_EXPENSE'}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Tally Voucher Type</span>
+                      <span className="text-teal-300 font-mono">F4 Contra / Cash Receipt</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Transaction Date</span>
+                      <span className="text-slate-200">{new Date(printableVoucher.data.transactionDate || Date.now()).toLocaleDateString('en-IN')}</span>
+                    </div>
+                  </>
+                )}
+
+                {printableVoucher.type === 'FIXED_ASSET' && (
+                  <>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Asset Name</span>
+                      <span className="font-bold text-white text-sm">{printableVoucher.data.assetName}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Asset Tag Code</span>
+                      <span className="font-mono text-cyan-300 font-bold">{printableVoucher.data.assetCode || 'AST-001'}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Category</span>
+                      <span className="text-slate-200">{printableVoucher.data.category}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Campus Location</span>
+                      <span className="text-emerald-400 font-medium">{printableVoucher.data.location || 'Main Campus'}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Depreciation Method</span>
+                      <span className="text-teal-300 font-mono">{printableVoucher.data.depreciationMethod || 'STRAIGHT_LINE'}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Purchase Date</span>
+                      <span className="text-slate-200">{new Date(printableVoucher.data.purchaseDate || Date.now()).toLocaleDateString('en-IN')}</span>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Itemized Table Breakdown */}
+              <div className="overflow-x-auto rounded-lg border border-slate-800">
+                <table className="w-full text-xs">
+                  <thead className="bg-slate-900 text-slate-400 uppercase font-semibold">
+                    <tr>
+                      <th className="p-3 text-left">Description / Accounting Particulars</th>
+                      <th className="p-3 text-right">Amount (₹)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60 text-slate-300">
+                    {printableVoucher.type === 'FEE' && (
+                      <>
+                        <tr>
+                          <td className="p-3 font-medium">{printableVoucher.data.feeHeader} (Billed Amount)</td>
+                          <td className="p-3 text-right font-mono text-slate-200">{formatCurrency(printableVoucher.data.totalAmount)}</td>
+                        </tr>
+                        <tr>
+                          <td className="p-3 font-medium text-emerald-400">Total Payment Received</td>
+                          <td className="p-3 text-right font-mono text-emerald-400 font-bold">+{formatCurrency(printableVoucher.data.paidAmount)}</td>
+                        </tr>
+                        <tr className="bg-slate-900/80 font-bold">
+                          <td className="p-3 text-amber-400">Remaining Balance Dues</td>
+                          <td className="p-3 text-right font-mono text-amber-400">{formatCurrency(printableVoucher.data.pendingBalance)}</td>
+                        </tr>
+                      </>
+                    )}
+
+                    {printableVoucher.type === 'PAYROLL' && (
+                      <>
+                        <tr>
+                          <td className="p-3 font-medium">Basic Pay Salary</td>
+                          <td className="p-3 text-right font-mono text-slate-200">{formatCurrency(printableVoucher.data.basicPay)}</td>
+                        </tr>
+                        <tr>
+                          <td className="p-3 font-medium text-emerald-400">Allowances & Bonuses</td>
+                          <td className="p-3 text-right font-mono text-emerald-400">+{formatCurrency(printableVoucher.data.allowances)}</td>
+                        </tr>
+                        <tr>
+                          <td className="p-3 font-medium text-rose-400">Deductions (TDS / PF)</td>
+                          <td className="p-3 text-right font-mono text-rose-400">-{formatCurrency(printableVoucher.data.deductions)}</td>
+                        </tr>
+                        <tr className="bg-slate-900/80 font-bold text-white">
+                          <td className="p-3 text-sm">Net Salary Disbursed</td>
+                          <td className="p-3 text-right text-sm font-mono text-emerald-400">{formatCurrency(printableVoucher.data.netSalary)}</td>
+                        </tr>
+                      </>
+                    )}
+
+                    {printableVoucher.type === 'EXPENSE' && (
+                      <>
+                        <tr>
+                          <td className="p-3 font-medium">{printableVoucher.data.title}</td>
+                          <td className="p-3 text-right font-mono font-bold text-white">{formatCurrency(printableVoucher.data.amount)}</td>
+                        </tr>
+                        {printableVoucher.data.notes && (
+                          <tr>
+                            <td colSpan="2" className="p-3 text-slate-400 italic">Notes: {printableVoucher.data.notes}</td>
+                          </tr>
+                        )}
+                      </>
+                    )}
+
+                    {printableVoucher.type === 'SOCIETY_FUND' && (
+                      <>
+                        <tr>
+                          <td className="p-3 font-medium">{printableVoucher.data.fundName} (Capital Corpus Allocation)</td>
+                          <td className="p-3 text-right font-mono font-bold text-indigo-400">{formatCurrency(printableVoucher.data.amount)}</td>
+                        </tr>
+                        {printableVoucher.data.purpose && (
+                          <tr>
+                            <td colSpan="2" className="p-3 text-slate-400 italic">Specific Purpose / Earmark: {printableVoucher.data.purpose}</td>
+                          </tr>
+                        )}
+                        <tr className="bg-slate-900/80 font-bold text-white">
+                          <td className="p-3">Total Corpus Capital Inflow (Credit: Capital Account)</td>
+                          <td className="p-3 text-right font-mono text-emerald-400">{formatCurrency(printableVoucher.data.amount)}</td>
+                        </tr>
+                      </>
+                    )}
+
+                    {printableVoucher.type === 'CASH_TRANSACTION' && (
+                      <>
+                        <tr>
+                          <td className="p-3 font-medium">Cash Entry - {printableVoucher.data.transactionType} ({printableVoucher.data.category})</td>
+                          <td className="p-3 text-right font-mono font-bold text-amber-400">{formatCurrency(printableVoucher.data.amount)}</td>
+                        </tr>
+                        {printableVoucher.data.notes && (
+                          <tr>
+                            <td colSpan="2" className="p-3 text-slate-400 italic">Narration: {printableVoucher.data.notes}</td>
+                          </tr>
+                        )}
+                      </>
+                    )}
+
+                    {printableVoucher.type === 'FIXED_ASSET' && (
+                      <>
+                        <tr>
+                          <td className="p-3 font-medium">Original Capital Acquisition Cost</td>
+                          <td className="p-3 text-right font-mono text-slate-200">{formatCurrency(printableVoucher.data.purchasePrice)}</td>
+                        </tr>
+                        <tr>
+                          <td className="p-3 font-medium text-rose-400">Total Accumulated Depreciation ({printableVoucher.data.depreciationRate}% p.a.)</td>
+                          <td className="p-3 text-right font-mono text-rose-400 font-bold">-{formatCurrency(printableVoucher.data.accumulatedDepreciation)}</td>
+                        </tr>
+                        <tr className="bg-slate-900/80 font-bold text-white">
+                          <td className="p-3 text-cyan-300">Net Current Book Value on Balance Sheet</td>
+                          <td className="p-3 text-right font-mono text-cyan-300 text-sm">{formatCurrency(printableVoucher.data.currentBookValue)}</td>
+                        </tr>
+                      </>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Verification & Signatures */}
+              <div className="flex items-center justify-between pt-4 border-t border-slate-800">
+                <div className="flex items-center gap-2 text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 rounded-lg">
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Verified & Synced with Tally Prime / Busy ERP</span>
+                </div>
+
+                <div className="text-right space-y-1">
+                  <div className="text-xs font-bold text-slate-300">Finance & Accounts Department</div>
+                  <div className="text-[10px] text-slate-500 italic">Authorized System Generated Signature & Stamp</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+

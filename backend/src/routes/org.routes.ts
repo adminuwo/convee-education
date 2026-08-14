@@ -1049,7 +1049,7 @@ router.post('/:orgId/invite', inviteLimiter, async (req, res, next) => {
         where: { channelId_userId: { channelId: genChannel.id, userId: user.id } },
         create: { channelId: genChannel.id, userId: user.id },
         update: {},
-      }).catch(() => {});
+      }).catch(() => { });
     }
 
     // Deliver email credentials
@@ -1120,7 +1120,7 @@ router.delete('/:orgId/invitations/:membershipId', async (req, res, next) => {
         userId: invitedUser.id,
         orgId,
       },
-    }).catch(() => {});
+    }).catch(() => { });
 
     // Delete membership
     await prisma.membership.delete({
@@ -1134,7 +1134,7 @@ router.delete('/:orgId/invitations/:membershipId', async (req, res, next) => {
     if (invitedUser && !invitedUser.passwordHash && invitedUser.memberships.length <= 1) {
       await prisma.user.delete({
         where: { id: invitedUser.id },
-      }).catch(() => {});
+      }).catch(() => { });
       userDeleted = true;
     }
 
@@ -1360,81 +1360,95 @@ const ROLE_RANKS: Record<string, number> = {
 router.patch('/:orgId/members/:membershipId', async (req, res, next) => {
   try {
     const currentMember = await prisma.membership.findFirst({ where: { userId: req.user!.id, orgId: req.params.orgId, isActive: true } });
-    if (!currentMember) {
+    if (!currentMember || !['OWNER', 'ADMIN', 'DIRECTOR', 'PRINCIPAL', 'DEAN', 'HOD'].includes(currentMember.role)) {
       return res.status(403).json({ error: 'Insufficient permissions' });
-    }
-
-    const { role } = req.body;
-    const validRoles = ['TEACHER', 'HOD', 'DEAN', 'PRINCIPAL', 'ADMIN'];
-    if (!role || !validRoles.includes(role)) {
-      return res.status(400).json({ error: 'Invalid role. STUDENT, OWNER, or DIRECTOR roles cannot be assigned directly.' });
-    }
-
-    // Single Principal Check: Only 1 Principal allowed per institution
-    if (role === 'PRINCIPAL') {
-      const existingPrincipal = await prisma.membership.findFirst({
-        where: { orgId: req.params.orgId, role: 'PRINCIPAL', id: { not: req.params.membershipId } },
-      });
-      if (existingPrincipal) {
-        return res.status(409).json({ error: 'This institution already has an assigned Principal. An institution can only have one Principal at a time.' });
-      }
     }
 
     const target = await prisma.membership.findUnique({ where: { id: req.params.membershipId } });
     if (!target) return res.status(404).json({ error: 'Member not found' });
 
-    // 1. Cannot change own role
-    if (target.userId === req.user!.id) {
-      return res.status(400).json({ error: 'You cannot change your own role.' });
+    const { role, departmentId, teamId } = req.body;
+    const updateData: any = {};
+
+    // Allow updating departmentId and teamId (e.g. section/class assignment for students or staff)
+    if (departmentId !== undefined) {
+      updateData.departmentId = (!departmentId || departmentId === 'unassigned') ? null : departmentId;
+    }
+    if (teamId !== undefined) {
+      updateData.teamId = (!teamId || teamId === 'unassigned') ? null : teamId;
     }
 
-    // 2. STUDENT role is fixed
-    if (target.role === 'STUDENT') {
-      return res.status(400).json({ error: 'STUDENT role is fixed and cannot be changed.' });
+    // Role change logic (if role is explicitly changing)
+    if (role && role !== target.role) {
+      const validRoles = ['TEACHER', 'HOD', 'DEAN', 'PRINCIPAL', 'ADMIN'];
+      if (!validRoles.includes(role)) {
+        return res.status(400).json({ error: 'Invalid role. STUDENT, OWNER, or DIRECTOR roles cannot be assigned directly.' });
+      }
+
+      // 1. Cannot change own role
+      if (target.userId === req.user!.id) {
+        return res.status(400).json({ error: 'You cannot change your own role.' });
+      }
+
+      // 2. STUDENT role is fixed
+      if (target.role === 'STUDENT') {
+        return res.status(400).json({ error: 'STUDENT role is fixed and cannot be changed.' });
+      }
+
+      // Single Principal Check: Only 1 Principal allowed per institution
+      if (role === 'PRINCIPAL') {
+        const existingPrincipal = await prisma.membership.findFirst({
+          where: { orgId: req.params.orgId, role: 'PRINCIPAL', id: { not: req.params.membershipId } },
+        });
+        if (existingPrincipal) {
+          return res.status(409).json({ error: 'This institution already has an assigned Principal. An institution can only have one Principal at a time.' });
+        }
+      }
+
+      const org = await prisma.organization.findUnique({ where: { id: req.params.orgId } });
+      if (target.role === 'OWNER' || target.role === 'DIRECTOR' || target.userId === org?.ownerId) {
+        return res.status(400).json({ error: 'Cannot change owner or director role directly.' });
+      }
+
+      const callerRank = ROLE_RANKS[currentMember.role] ?? -2;
+      const targetCurrentRank = ROLE_RANKS[target.role] ?? -2;
+      const newRoleRank = ROLE_RANKS[role] ?? -2;
+
+      // Can only change roles of members strictly below caller's rank
+      if (targetCurrentRank >= callerRank) {
+        return res.status(403).json({ error: 'You can only modify roles for members below your rank.' });
+      }
+
+      // Cannot assign a role equal to or higher than caller's rank
+      if (newRoleRank >= callerRank) {
+        return res.status(403).json({ error: 'You cannot assign a role equal to or higher than your own rank.' });
+      }
+
+      const prefixMap: Record<string, string> = {
+        DIRECTOR: 'DIR',
+        PRINCIPAL: 'PRN',
+        DEAN: 'DEN',
+        HOD: 'HOD',
+        TEACHER: 'FAC',
+        ACCOUNTANT: 'ACC',
+        STUDENT: 'STU',
+        PARENT: 'PAR',
+      };
+      const prefix = prefixMap[role] || 'FAC';
+      const seqMatch = target.title?.match(/\d{4}/)?.[0] || Math.floor(1000 + Math.random() * 9000);
+      updateData.role = role;
+      updateData.title = `${role} [${prefix}-2026-${seqMatch}]`;
     }
-
-    const org = await prisma.organization.findUnique({ where: { id: req.params.orgId } });
-    if (target.role === 'OWNER' || target.role === 'DIRECTOR' || target.userId === org?.ownerId) {
-      return res.status(400).json({ error: 'Cannot change owner or director role directly.' });
-    }
-
-    const callerRank = ROLE_RANKS[currentMember.role] ?? -2;
-    const targetCurrentRank = ROLE_RANKS[target.role] ?? -2;
-    const newRoleRank = ROLE_RANKS[role] ?? -2;
-
-    // 2. Can only change roles of members strictly below caller's rank
-    if (targetCurrentRank >= callerRank) {
-      return res.status(403).json({ error: 'You can only modify roles for members below your rank.' });
-    }
-
-    // 3. Cannot assign a role equal to or higher than caller's rank
-    if (newRoleRank >= callerRank) {
-      return res.status(403).json({ error: 'You cannot assign a role equal to or higher than your own rank.' });
-    }
-
-    const prefixMap: Record<string, string> = {
-      DIRECTOR: 'DIR',
-      PRINCIPAL: 'PRN',
-      DEAN: 'DEN',
-      HOD: 'HOD',
-      TEACHER: 'FAC',
-      ACCOUNTANT: 'ACC',
-      STUDENT: 'STU',
-      PARENT: 'PAR',
-    };
-    const prefix = prefixMap[role] || 'FAC';
-    const seqMatch = target.title?.match(/\d{4}/)?.[0] || Math.floor(1000 + Math.random() * 9000);
-    const updatedTitle = `${role} [${prefix}-2026-${seqMatch}]`;
 
     const updated = await prisma.membership.update({
       where: { id: req.params.membershipId },
-      data: { role: role as any, title: updatedTitle },
+      data: updateData,
       include: { user: { select: { id: true, email: true, fullName: true, avatarUrl: true, status: true, lastSeenAt: true } } },
     });
 
     const io = req.app.locals.io;
     if (io) {
-      io.emit('membership:updated', { id: updated.id, userId: updated.userId, orgId: req.params.orgId, role: updated.role });
+      io.emit('membership:updated', { id: updated.id, userId: updated.userId, orgId: req.params.orgId, role: updated.role, teamId: updated.teamId });
     }
 
     res.json(updated);
@@ -1479,7 +1493,7 @@ router.delete('/:orgId/members/:membershipId', async (req, res, next) => {
       // Remove parent-student link records
       await prisma.parentStudentLink.deleteMany({
         where: { studentUserId: targetUserId, orgId: req.params.orgId },
-      }).catch(() => {});
+      }).catch(() => { });
 
       // For each parent, if they have no other children linked in the system, remove their membership & user account
       for (const pUserId of parentUserIds) {
@@ -1487,12 +1501,12 @@ router.delete('/:orgId/members/:membershipId', async (req, res, next) => {
         if (remainingLinks === 0) {
           const parentMems = await prisma.membership.findMany({ where: { userId: pUserId, orgId: req.params.orgId } });
           for (const pm of parentMems) {
-            await prisma.membership.delete({ where: { id: pm.id } }).catch(() => {});
+            await prisma.membership.delete({ where: { id: pm.id } }).catch(() => { });
           }
 
           const parentRemainingMems = await prisma.membership.count({ where: { userId: pUserId } });
           if (parentRemainingMems === 0) {
-            await prisma.user.delete({ where: { id: pUserId } }).catch(() => {});
+            await prisma.user.delete({ where: { id: pUserId } }).catch(() => { });
           }
         }
       }
@@ -1503,7 +1517,7 @@ router.delete('/:orgId/members/:membershipId', async (req, res, next) => {
     // If user has no other organization memberships, remove User record completely from DB
     const remainingMemberships = await prisma.membership.count({ where: { userId: targetUserId } });
     if (remainingMemberships === 0) {
-      await prisma.user.delete({ where: { id: targetUserId } }).catch(() => {});
+      await prisma.user.delete({ where: { id: targetUserId } }).catch(() => { });
     }
 
     res.json({ ok: true, message: 'Member and associated links removed successfully from database' });
@@ -1555,21 +1569,71 @@ async function generateStudentAccount({
   let deptName = departmentName || '';
   let teamName = className || '';
 
+  // 1. Department/Wing Lookup (Exact, Contains, or Synonym)
   if (departmentName && !finalDeptId) {
-    const d = await prisma.department.findFirst({
-      where: { orgId, name: { mode: 'insensitive', equals: departmentName.trim() } },
+    const rawDept = departmentName.trim();
+    let d = await prisma.department.findFirst({
+      where: { orgId, name: { mode: 'insensitive', equals: rawDept } },
     });
+    if (!d) {
+      d = await prisma.department.findFirst({
+        where: { orgId, name: { mode: 'insensitive', contains: rawDept } },
+      });
+    }
+    if (!d) {
+      const lowerD = rawDept.toLowerCase();
+      let keyword = '';
+      if (lowerD.includes('junior') || lowerD.includes('primary')) keyword = 'Primary';
+      else if (lowerD.includes('middle')) keyword = 'Middle';
+      else if (lowerD.includes('senior') || lowerD.includes('high')) keyword = 'High';
+      else if (lowerD.includes('kindergarten') || lowerD.includes('kg')) keyword = 'Kindergarten';
+
+      if (keyword) {
+        d = await prisma.department.findFirst({
+          where: { orgId, name: { mode: 'insensitive', contains: keyword } },
+        });
+      }
+    }
     if (d) {
       finalDeptId = d.id;
       deptName = d.name;
     }
   }
 
+  // 2. Class/Team Lookup (Exact, Contains, or Grade Number + Section Letter Matching)
   if (className && !finalTeamId) {
-    const t = await prisma.team.findFirst({
-      where: { department: { orgId }, name: { mode: 'insensitive', equals: className.trim() } },
+    const rawClass = className.trim();
+    let t = await prisma.team.findFirst({
+      where: { department: { orgId }, name: { mode: 'insensitive', equals: rawClass } },
       include: { department: true },
     });
+    if (!t) {
+      t = await prisma.team.findFirst({
+        where: { department: { orgId }, name: { mode: 'insensitive', contains: rawClass } },
+        include: { department: true },
+      });
+    }
+    if (!t) {
+      const numMatch = rawClass.match(/\d+/);
+      const gradeNum = numMatch ? numMatch[0] : '';
+      const secMatch = rawClass.match(/[-_\s]([a-zA-Z])\b/);
+      const secLetter = secMatch ? secMatch[1].toUpperCase() : '';
+
+      const allTeams = await prisma.team.findMany({
+        where: { department: { orgId } },
+        include: { department: true },
+      });
+
+      if (gradeNum) {
+        t = allTeams.find((team) => {
+          const tName = team.name;
+          const hasNum = tName.includes(gradeNum);
+          const hasSec = secLetter ? tName.toUpperCase().includes(secLetter) : true;
+          return hasNum && hasSec;
+        }) || allTeams.find((team) => team.name.includes(gradeNum)) || null;
+      }
+    }
+
     if (t) {
       finalTeamId = t.id;
       teamName = t.name;
@@ -1580,14 +1644,24 @@ async function generateStudentAccount({
     }
   }
 
-  if (!deptName && finalDeptId) {
-    const d = await prisma.department.findUnique({ where: { id: finalDeptId } });
-    if (d) deptName = d.name;
-  }
-
-  if (!teamName && finalTeamId) {
-    const t = await prisma.team.findUnique({ where: { id: finalTeamId } });
-    if (t) teamName = t.name;
+  // Fallback: If no class matched, assign to first active class team in department/org
+  if (!finalTeamId && finalDeptId) {
+    const defaultTeam = await prisma.team.findFirst({ where: { departmentId: finalDeptId } });
+    if (defaultTeam) {
+      finalTeamId = defaultTeam.id;
+      teamName = defaultTeam.name;
+    }
+  } else if (!finalTeamId && !finalDeptId) {
+    const defaultTeam = await prisma.team.findFirst({
+      where: { department: { orgId } },
+      include: { department: true },
+    });
+    if (defaultTeam) {
+      finalTeamId = defaultTeam.id;
+      teamName = defaultTeam.name;
+      finalDeptId = defaultTeam.departmentId;
+      deptName = defaultTeam.department?.name || '';
+    }
   }
 
   // Check uniqueness of Admission Number within the Organization
@@ -1610,9 +1684,20 @@ async function generateStudentAccount({
     }
   }
 
-  // Generate Unique Student ID & Unique Email
+  // Generate Clean Unique Student ID & Parent ID (e.g. STU-2026-001 & PAR-2026-001)
+  const currentYear = new Date().getFullYear();
+  let admSuffix = cleanAdm ? cleanAdm.replace(/^ADM[-_\s]*/i, '').trim() : '';
+  if (admSuffix.startsWith(`${currentYear}-`)) {
+    admSuffix = admSuffix.slice(5);
+  } else if (admSuffix.startsWith(`${currentYear}`)) {
+    admSuffix = admSuffix.slice(4);
+  }
+  admSuffix = admSuffix.replace(/[^A-Z0-9]/gi, '');
   const randomCode = Math.floor(1000 + Math.random() * 9000);
-  const studentId = `STU-${new Date().getFullYear()}-${cleanAdm ? cleanAdm.replace(/[^A-Z0-9]/gi, '') : randomCode}`;
+  if (!admSuffix) admSuffix = String(randomCode);
+
+  const studentId = `STU-${currentYear}-${admSuffix}`;
+  const parentId = `PAR-${currentYear}-${admSuffix}`;
 
   let email: string;
   let isCustomStudentEmail = false;
@@ -1627,7 +1712,7 @@ async function generateStudentAccount({
       throw new Error(domainCheck.reason || 'Invalid student email address or non-existent domain');
     }
   } else {
-    // If no email provided, use studentId as unique email identifier in database
+    // If no email provided, use internal studentId as unique email identifier in database
     email = studentId;
   }
 
@@ -1688,7 +1773,6 @@ async function generateStudentAccount({
   // ALWAYS create parent user & link (whether info provided or not)
   let pEmailToUse: string;
   let isCustomEmail = false;
-  const parentId = `PAR-${new Date().getFullYear()}-${cleanAdm ? cleanAdm.replace(/[^A-Z0-9]/gi, '') : randomCode}`;
 
   if (parentEmail && parentEmail.trim()) {
     pEmailToUse = parentEmail.trim().toLowerCase();
@@ -1877,6 +1961,12 @@ router.post('/:orgId/students/generate-single', async (req, res, next) => {
       parentFullName,
     });
 
+    const io = req.app.locals.io;
+    if (io) {
+      io.emit('membership:updated', { orgId: req.params.orgId });
+      io.emit('department:updated', { orgId: req.params.orgId });
+    }
+
     res.status(201).json(studentData);
   } catch (e: any) {
     if (e?.message && typeof e.message === 'string') {
@@ -1919,6 +2009,12 @@ router.post('/:orgId/students/generate-mass', async (req, res, next) => {
       } catch (err) {
         // Skip failed individual rows and continue
       }
+    }
+
+    const io = req.app.locals.io;
+    if (io) {
+      io.emit('membership:updated', { orgId: req.params.orgId });
+      io.emit('department:updated', { orgId: req.params.orgId });
     }
 
     res.status(201).json({ count: results.length, students: results });

@@ -2,6 +2,7 @@
 
 generator client {
   provider = "prisma-client-js"
+  output   = "../src/generated/client"
 }
 
 datasource db {
@@ -838,6 +839,169 @@ model ProxyAssignment {
   @@index([slotId])
   @@index([date])
   @@index([substituteTeacherId])
+}
+
+model AcademicPromotionConfig {
+  id             String   @id @default(uuid())
+  orgId          String
+  orderIndex     Int
+  fromClassName  String
+  toClassName    String
+  isEntryLevel   Boolean  @default(false)
+  isUnifiedPool  Boolean  @default(false)
+  isAlumniTarget Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([orgId])
+  @@index([orgId, orderIndex])
+}
+
+model AcademicBatchArchive {
+  id            String   @id @default(uuid())
+  orgId         String
+  sessionName   String
+  archivedAt    DateTime @default(now())
+  structureJson String   @db.Text
+  studentCount  Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  @@index([orgId])
+  @@index([orgId, archivedAt])
+}
+
+model AlumniGroup {
+  id        String   @id @default(uuid())
+  orgId     String
+  batchYear Int
+  channelId String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([orgId, batchYear])
+  @@index([orgId])
+}
+
+model ExpenseRecord {
+  id              String   @id @default(uuid())
+  orgId           String
+  title           String
+  category        String   @default("MAINTENANCE")
+  amount          Float    @default(0)
+  expenseDate     DateTime @default(now())
+  paymentMethod   String?  @default("BANK_TRANSFER")
+  bankAccountName String?  @default("HDFC Bank Main Account")
+  vendorName      String?
+  receiptNo       String?
+  tallyVoucherId  String?
+  status          String   @default("PAID")
+  academicYear    String   @default("2026-27")
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([orgId])
+  @@index([orgId, category])
+}
+
+model BankAccount {
+  id             String   @id @default(uuid())
+  orgId          String
+  accountName    String
+  bankName       String
+  accountNumber  String
+  ifscCode       String?
+  branchName     String?
+  accountType    String   @default("CURRENT")
+  openingBalance Float    @default(0)
+  currentBalance Float    @default(0)
+  isPrimary      Boolean  @default(false)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([orgId])
+  @@index([orgId, isActive])
+}
+
+model SocietyFund {
+  id               String   @id @default(uuid())
+  orgId            String
+  fundName         String   // e.g., "General Trust Corpus", "Campus Infrastructure Fund", "Scholarship Endowment"
+  fundType         String   @default("CORPUS") // CORPUS, INFRASTRUCTURE, SCHOLARSHIP, TRUST_GRANT, DEVELOPMENT
+  contributingBody String   // e.g., "Education Trust Society", "Govt Higher Ed Grant", "Philanthropic Trustee"
+  amount           Float    @default(0)
+  fundDate         DateTime @default(now())
+  isRestricted     Boolean  @default(false)
+  purpose          String?  // Purpose or donor restriction details
+  bankAccountId    String?  // Optional linked bank account holding this fund
+  receiptNo        String?
+  notes            String?
+  status           String   @default("ACTIVE") // ACTIVE, UTILIZED, CLOSED
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([orgId])
+  @@index([orgId, fundType])
+}
+
+model CashRegister {
+  id             String   @id @default(uuid())
+  orgId          String
+  registerName   String   // e.g., "Main Admissions Counter Cash", "Admin Petty Cash Float", "Principal Office Cash"
+  custodianName  String?  // Person in charge e.g., "Senior Cashier", "Head Accountant"
+  openingBalance Float    @default(0)
+  currentBalance Float    @default(0)
+  isDefault      Boolean  @default(false)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([orgId])
+  @@index([orgId, isActive])
+}
+
+model CashTransaction {
+  id               String   @id @default(uuid())
+  orgId            String
+  registerId       String
+  transactionType  String   // CASH_IN, CASH_OUT, BANK_WITHDRAWAL, BANK_DEPOSIT, EXPENSE_PAYMENT, FEE_COLLECTION
+  amount           Float
+  transactionDate  DateTime @default(now())
+  recipientOrPayer String?
+  category         String?  // FEE_PAYMENT, PETTY_EXPENSE, BANK_FLOAT_TRANSFER
+  voucherNumber    String?
+  notes            String?
+  createdAt        DateTime @default(now())
+
+  @@index([orgId])
+  @@index([registerId])
+  @@index([orgId, transactionDate])
+}
+
+model FixedAsset {
+  id                      String   @id @default(uuid())
+  orgId                   String
+  assetName               String   // e.g., "Physics Lab Spectrometer", "School Bus - Tata Starbus 40-Seater", "Dell Lab PCs (Batch 1)"
+  category                String   // LAND_BUILDING, IT_HARDWARE, LAB_EQUIPMENT, VEHICLES, FURNITURE, LIBRARY_BOOKS, SMART_CLASSROOM
+  assetCode               String?  // Asset Tag / Serial No e.g., "AST-2026-0042"
+  purchaseDate            DateTime @default(now())
+  purchasePrice           Float    @default(0)
+  vendorName              String?
+  invoiceNo               String?
+  location                String?  // e.g., "Science Block - Lab 2", "Transport Depot", "Main Building Floor 1"
+  depreciationRate        Float    @default(0) // Annual percentage e.g., 15.0 (%)
+  depreciationMethod      String   @default("STRAIGHT_LINE") // STRAIGHT_LINE, WDV (Written Down Value)
+  accumulatedDepreciation Float    @default(0)
+  currentBookValue        Float    @default(0) // purchasePrice - accumulatedDepreciation
+  status                  String   @default("ACTIVE") // ACTIVE, UNDER_MAINTENANCE, DISPOSED, WRITTEN_OFF
+  notes                   String?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  @@index([orgId])
+  @@index([orgId, category])
+  @@index([orgId, status])
 }
 
 
