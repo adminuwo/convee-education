@@ -32,22 +32,30 @@ router.get('/config', async (req, res, next) => {
     // If no config exists, generate smart default progression pipeline from current org teams
     if (configs.length === 0) {
       const defaultSequence = [
-        { from: 'Playschool', to: 'Nursery', entry: true },
-        { from: 'Nursery', to: 'LKG - Sec A' },
+        { from: 'Playgroup - Sec A', to: 'Nursery - Sec A', entry: true },
+        { from: 'Nursery - Sec A', to: 'LKG - Sec A' },
         { from: 'LKG - Sec A', to: 'UKG - Sec A' },
+        { from: 'LKG - Sec B', to: 'UKG - Sec B' },
         { from: 'UKG - Sec A', to: 'Grade 1 - Sec A' },
+        { from: 'UKG - Sec B', to: 'Grade 1 - Sec B' },
         { from: 'Grade 1 - Sec A', to: 'Grade 2 - Sec A' },
+        { from: 'Grade 1 - Sec B', to: 'Grade 2 - Sec A' },
         { from: 'Grade 2 - Sec A', to: 'Grade 3 - Sec A' },
         { from: 'Grade 3 - Sec A', to: 'Grade 4 - Sec A' },
         { from: 'Grade 4 - Sec A', to: 'Grade 5 - Sec A' },
         { from: 'Grade 5 - Sec A', to: 'Grade 6 - Sec A' },
         { from: 'Grade 6 - Sec A', to: 'Grade 7 - Sec A' },
+        { from: 'Grade 6 - Sec B', to: 'Grade 7 - Sec A' },
         { from: 'Grade 7 - Sec A', to: 'Grade 8 - Sec A' },
         { from: 'Grade 8 - Sec A', to: 'Grade 9 - Sec A' },
         { from: 'Grade 9 - Sec A', to: 'Grade 10 - Sec A' },
+        { from: 'Grade 9 - Sec B', to: 'Grade 10 - Sec B' },
         { from: 'Grade 10 - Sec A', to: 'Class 11 - Unified', unified: true },
-        { from: 'Class 11 - Unified', to: 'Grade 12 - Science A' },
+        { from: 'Grade 10 - Sec B', to: 'Class 11 - Unified', unified: true },
+        { from: 'Grade 11 - Science A', to: 'Grade 12 - Science A' },
+        { from: 'Grade 11 - Commerce A', to: 'Grade 12 - Commerce A' },
         { from: 'Grade 12 - Science A', to: 'Alumni Network', alumni: true },
+        { from: 'Grade 12 - Commerce A', to: 'Alumni Network', alumni: true },
       ];
 
       const createdConfigs: any[] = [];
@@ -181,7 +189,7 @@ router.post('/execute', async (req, res, next) => {
     // B. Fetch Promotion Pipeline Sequence
     let configs = await (prisma as any).academicPromotionConfig.findMany({
       where: { orgId },
-      orderBy: { orderIndex: 'desc' }, // Process in reverse order so lower grades don't overwrite higher ones
+      orderBy: { orderIndex: 'desc' }, // Process in reverse order so higher grades graduate before lower grades arrive
     });
 
     const currentYear = new Date().getFullYear();
@@ -215,7 +223,7 @@ router.post('/execute', async (req, res, next) => {
       const fromName = step.fromClassName.trim();
       const toName = step.toClassName.trim();
 
-      // Find teams matching 'fromName' and 'toName'
+      // Find teams matching 'fromName'
       const fromTeams = await prisma.team.findMany({
         where: { department: { orgId }, name: { mode: 'insensitive', contains: fromName } },
       });
@@ -238,22 +246,23 @@ router.post('/execute', async (req, res, next) => {
               continue;
             }
 
+            // Graduate to Alumni and vacate classroom team
             await prisma.membership.update({
               where: { id: st.id },
               data: {
-                role: 'STUDENT', // Retain student/alumni role tag
-                title: `${st.title || ''} [Alumni ${currentYear}]`,
+                teamId: null, // Clear classroom team so next batch can occupy it
+                role: 'ALUMNI' as any, // Assign dedicated ALUMNI role
+                title: `${(st.title || '').replace(/\[Alumni.*?\]/g, '').trim()} [Alumni ${currentYear}]`,
               },
             });
 
             // Add to Alumni Channel
-            const isMember = await prisma.channelMember.findUnique({
-              where: { channelId_userId: { channelId: alumniChannelId, userId: st.userId } },
-            });
-            if (!isMember) {
-              await prisma.channelMember.create({
-                data: { channelId: alumniChannelId, userId: st.userId, isAdmin: false },
-              });
+            if (st.userId && alumniChannelId) {
+              await prisma.channelMember.upsert({
+                where: { channelId_userId: { channelId: alumniChannelId, userId: st.userId } },
+                create: { channelId: alumniChannelId, userId: st.userId, isAdmin: false },
+                update: {},
+              }).catch(() => {});
             }
             alumniCount++;
           }
@@ -301,6 +310,7 @@ router.post('/execute', async (req, res, next) => {
                 data: {
                   departmentId: unifiedTeam.departmentId,
                   teamId: unifiedTeam.id,
+                  title: `Student - Class 11 - Unified (Stream Selection)`,
                 },
               });
               unifiedCount++;
@@ -308,7 +318,7 @@ router.post('/execute', async (req, res, next) => {
           }
         }
       } else {
-        // Standard Grade 1 ➔ Grade 2, Grade 2 ➔ Grade 3 Promotion
+        // Standard Grade X ➔ Grade Y, Grade 11 Stream ➔ Grade 12 Stream Promotion
         let targetTeam = await prisma.team.findFirst({
           where: { department: { orgId }, name: { mode: 'insensitive', equals: toName } },
         });
@@ -352,6 +362,7 @@ router.post('/execute', async (req, res, next) => {
                 data: {
                   departmentId: targetTeam.departmentId,
                   teamId: targetTeam.id,
+                  title: `Student - ${targetTeam.name}`,
                 },
               });
               promotedCount++;
@@ -430,8 +441,29 @@ router.post('/allocate-stream', async (req, res, next) => {
       data: {
         departmentId: targetTeam.departmentId,
         teamId: targetTeam.id,
+        title: `Student - ${targetTeam.name}`,
       },
     });
+
+    // Auto-sync student to stream department channel (science or commerce)
+    if (updated.userId) {
+      const channelName = targetTeam.name.toLowerCase().includes('science')
+        ? 'science-department'
+        : targetTeam.name.toLowerCase().includes('commerce')
+        ? 'commerce-department'
+        : null;
+
+      if (channelName) {
+        const streamChannel = await prisma.channel.findFirst({ where: { orgId, name: channelName } });
+        if (streamChannel) {
+          await prisma.channelMember.upsert({
+            where: { channelId_userId: { channelId: streamChannel.id, userId: updated.userId } },
+            create: { channelId: streamChannel.id, userId: updated.userId, isAdmin: false },
+            update: {},
+          }).catch(() => {});
+        }
+      }
+    }
 
     const io = req.app.locals.io;
     if (io) {

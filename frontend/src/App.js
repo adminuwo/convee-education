@@ -68,6 +68,9 @@ function RootRedirect() {
   if (isAccountantUser(user, currentOrg)) {
     return <Navigate to="/app/accountant" replace />;
   }
+  if (currentOrg?.role === 'PARENT') {
+    return <Navigate to="/app/parent" replace />;
+  }
   return <Navigate to="/app/home" replace />;
 }
 
@@ -76,15 +79,66 @@ function AppIndexRedirect() {
   if (isAccountantUser(user, currentOrg)) {
     return <Navigate to="accountant" replace />;
   }
+  if (currentOrg?.role === 'PARENT') {
+    return <Navigate to="parent" replace />;
+  }
   return <Navigate to="home" replace />;
 }
 
-function RequireAccountant({ children }) {
+/**
+ * Strict Role-Based Route Guard.
+ * Automatically verifies user role and prevents unauthorized deep-linking or URL tampering.
+ */
+function RequireRole({ allowedRoles = [], fallback, children }) {
   const { user, currentOrg, loading } = useAuth();
+  const location = useLocation();
+
   if (loading) return <PageLoader />;
-  const isAccountant = currentOrg?.role === 'ACCOUNTANT' || user?.systemRole === 'ACCOUNTANT' || user?.email?.toLowerCase().includes('accountant');
-  if (!isAccountant) return <Navigate to="/app/home" replace />;
-  return children;
+  if (!user) return <Navigate to="/login" state={{ from: location }} replace />;
+
+  const role = (currentOrg?.role || user?.systemRole || 'STUDENT').toUpperCase();
+  const isAccountant =
+    role === 'ACCOUNTANT' ||
+    user?.systemRole === 'ACCOUNTANT' ||
+    user?.email?.toLowerCase().includes('accountant');
+  const isParent = role === 'PARENT';
+
+  const defaultFallback = isAccountant
+    ? '/app/accountant'
+    : isParent
+    ? '/app/parent'
+    : '/app/home';
+
+  const targetFallback = fallback || defaultFallback;
+
+  // 1. Accountant Role Isolation
+  if (isAccountant) {
+    if (allowedRoles.includes('ACCOUNTANT') || allowedRoles.includes('*')) {
+      return children;
+    }
+    return <Navigate to="/app/accountant" replace />;
+  }
+
+  // 2. Parent Role Isolation
+  if (isParent) {
+    if (allowedRoles.includes('PARENT') || allowedRoles.includes('*')) {
+      return children;
+    }
+    return <Navigate to="/app/parent" replace />;
+  }
+
+  // 3. Super Admin & Top Leadership full privileges
+  const isAdminTier = ['DIRECTOR', 'OWNER', 'PRINCIPAL', 'ADMIN', 'SUPERADMIN'].includes(role);
+  if (isAdminTier && (allowedRoles.includes('ADMIN') || allowedRoles.includes(role) || allowedRoles.includes('*'))) {
+    return children;
+  }
+
+  // 4. Exact role verification
+  if (allowedRoles.includes(role) || allowedRoles.includes('*')) {
+    return children;
+  }
+
+  return <Navigate to={targetFallback} replace />;
 }
 
 export default function App() {
@@ -108,28 +162,177 @@ export default function App() {
               <Route path="/reset-password" element={<ResetPasswordPage />} />
               <Route path="/app" element={<RequireAuth><AppShell /></RequireAuth>}>
                 <Route index element={<AppIndexRedirect />} />
-                <Route path="home" element={<HomePage />} />
-                <Route path="channels/:channelId" element={<ChannelPage />} />
-                <Route path="tasks" element={<TasksPage />} />
-                <Route path="tasks/:taskId" element={<TasksPage />} />
-                <Route path="homework" element={<HomeworkPage />} />
+
+                {/* Academic & Staff Core Pages */}
+                <Route
+                  path="home"
+                  element={
+                    <RequireRole allowedRoles={['DIRECTOR', 'OWNER', 'PRINCIPAL', 'ADMIN', 'DEAN', 'HOD', 'TEACHER', 'STUDENT']}>
+                      <HomePage />
+                    </RequireRole>
+                  }
+                />
+                <Route
+                  path="channels/:channelId"
+                  element={
+                    <RequireRole allowedRoles={['DIRECTOR', 'OWNER', 'PRINCIPAL', 'ADMIN', 'DEAN', 'HOD', 'TEACHER', 'STUDENT', 'PARENT']}>
+                      <ChannelPage />
+                    </RequireRole>
+                  }
+                />
+                <Route
+                  path="tasks"
+                  element={
+                    <RequireRole allowedRoles={['DIRECTOR', 'OWNER', 'PRINCIPAL', 'ADMIN', 'DEAN', 'HOD', 'TEACHER']}>
+                      <TasksPage />
+                    </RequireRole>
+                  }
+                />
+                <Route
+                  path="tasks/:taskId"
+                  element={
+                    <RequireRole allowedRoles={['DIRECTOR', 'OWNER', 'PRINCIPAL', 'ADMIN', 'DEAN', 'HOD', 'TEACHER']}>
+                      <TasksPage />
+                    </RequireRole>
+                  }
+                />
+                <Route
+                  path="homework"
+                  element={
+                    <RequireRole allowedRoles={['DIRECTOR', 'OWNER', 'PRINCIPAL', 'ADMIN', 'DEAN', 'HOD', 'TEACHER', 'STUDENT', 'PARENT']}>
+                      <HomeworkPage />
+                    </RequireRole>
+                  }
+                />
                 <Route path="ai" element={<AIPage />} />
-                <Route path="meetings" element={<MeetingsPage />} />
-                <Route path="files" element={<FilesPage />} />
-                <Route path="analytics" element={<AnalyticsPage />} />
-                <Route path="admin" element={<AdminPage />} />
-                <Route path="department" element={<DepartmentPage />} />
-                <Route path="classroom" element={<TeacherPage />} />
-                <Route path="parent" element={<ParentPortalPage />} />
-                <Route path="accountant" element={<RequireAccountant><AccountantPage /></RequireAccountant>} />
-                <Route path="timetable" element={<TimetablePage />} />
-                <Route path="my-payslips" element={<MyPayslipPage />} />
-                <Route path="fee-status" element={<StudentFeeStatusPage />} />
-                <Route path="projects/:projectId" element={<ProjectDetailPage />} />
-                <Route path="teams/:teamId" element={<TeamDetailPage />} />
-                <Route path="super-admin" element={<SuperAdminPage />} />
-                <Route path="role-permissions" element={<RolePermissionsPage />} />
-                <Route path="student-id-generator" element={<StudentIDGeneratorPage />} />
+                <Route
+                  path="meetings"
+                  element={
+                    <RequireRole allowedRoles={['DIRECTOR', 'OWNER', 'PRINCIPAL', 'ADMIN', 'DEAN', 'HOD', 'TEACHER', 'STUDENT', 'PARENT']}>
+                      <MeetingsPage />
+                    </RequireRole>
+                  }
+                />
+                <Route
+                  path="files"
+                  element={
+                    <RequireRole allowedRoles={['DIRECTOR', 'OWNER', 'PRINCIPAL', 'ADMIN', 'DEAN', 'HOD', 'TEACHER', 'STUDENT']}>
+                      <FilesPage />
+                    </RequireRole>
+                  }
+                />
+                <Route
+                  path="analytics"
+                  element={
+                    <RequireRole allowedRoles={['DIRECTOR', 'OWNER', 'PRINCIPAL', 'ADMIN', 'DEAN', 'HOD']}>
+                      <AnalyticsPage />
+                    </RequireRole>
+                  }
+                />
+                <Route
+                  path="admin"
+                  element={
+                    <RequireRole allowedRoles={['DIRECTOR', 'OWNER', 'PRINCIPAL', 'ADMIN', 'SUPERADMIN']}>
+                      <AdminPage />
+                    </RequireRole>
+                  }
+                />
+                <Route
+                  path="department"
+                  element={
+                    <RequireRole allowedRoles={['DIRECTOR', 'OWNER', 'PRINCIPAL', 'ADMIN', 'DEAN', 'HOD', 'TEACHER']}>
+                      <DepartmentPage />
+                    </RequireRole>
+                  }
+                />
+                <Route
+                  path="classroom"
+                  element={
+                    <RequireRole allowedRoles={['DIRECTOR', 'OWNER', 'PRINCIPAL', 'ADMIN', 'DEAN', 'HOD', 'TEACHER']}>
+                      <TeacherPage />
+                    </RequireRole>
+                  }
+                />
+                <Route
+                  path="parent"
+                  element={
+                    <RequireRole allowedRoles={['PARENT', 'DIRECTOR', 'OWNER', 'PRINCIPAL', 'ADMIN']}>
+                      <ParentPortalPage />
+                    </RequireRole>
+                  }
+                />
+                <Route
+                  path="accountant"
+                  element={
+                    <RequireRole allowedRoles={['ACCOUNTANT', 'DIRECTOR', 'OWNER', 'PRINCIPAL', 'ADMIN']}>
+                      <AccountantPage />
+                    </RequireRole>
+                  }
+                />
+                <Route
+                  path="timetable"
+                  element={
+                    <RequireRole allowedRoles={['DIRECTOR', 'OWNER', 'PRINCIPAL', 'ADMIN', 'DEAN', 'HOD', 'TEACHER', 'STUDENT']}>
+                      <TimetablePage />
+                    </RequireRole>
+                  }
+                />
+                <Route
+                  path="my-payslips"
+                  element={
+                    <RequireRole allowedRoles={['DIRECTOR', 'OWNER', 'PRINCIPAL', 'ADMIN', 'DEAN', 'HOD', 'TEACHER', 'ACCOUNTANT']}>
+                      <MyPayslipPage />
+                    </RequireRole>
+                  }
+                />
+                <Route
+                  path="fee-status"
+                  element={
+                    <RequireRole allowedRoles={['DIRECTOR', 'OWNER', 'PRINCIPAL', 'ADMIN', 'DEAN', 'HOD', 'ACCOUNTANT']}>
+                      <StudentFeeStatusPage />
+                    </RequireRole>
+                  }
+                />
+                <Route
+                  path="projects/:projectId"
+                  element={
+                    <RequireRole allowedRoles={['DIRECTOR', 'OWNER', 'PRINCIPAL', 'ADMIN', 'DEAN', 'HOD', 'TEACHER']}>
+                      <ProjectDetailPage />
+                    </RequireRole>
+                  }
+                />
+                <Route
+                  path="teams/:teamId"
+                  element={
+                    <RequireRole allowedRoles={['DIRECTOR', 'OWNER', 'PRINCIPAL', 'ADMIN', 'DEAN', 'HOD', 'TEACHER']}>
+                      <TeamDetailPage />
+                    </RequireRole>
+                  }
+                />
+                <Route
+                  path="super-admin"
+                  element={
+                    <RequireRole allowedRoles={['SUPERADMIN', 'DIRECTOR', 'OWNER']}>
+                      <SuperAdminPage />
+                    </RequireRole>
+                  }
+                />
+                <Route
+                  path="role-permissions"
+                  element={
+                    <RequireRole allowedRoles={['SUPERADMIN', 'DIRECTOR', 'OWNER', 'ADMIN', 'PRINCIPAL']}>
+                      <RolePermissionsPage />
+                    </RequireRole>
+                  }
+                />
+                <Route
+                  path="student-id-generator"
+                  element={
+                    <RequireRole allowedRoles={['SUPERADMIN', 'DIRECTOR', 'OWNER', 'ADMIN', 'PRINCIPAL']}>
+                      <StudentIDGeneratorPage />
+                    </RequireRole>
+                  }
+                />
                 <Route path="profile" element={<ProfilePage />} />
               </Route>
               <Route path="*" element={<Navigate to="/" replace />} />

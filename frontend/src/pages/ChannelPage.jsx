@@ -224,12 +224,12 @@ export default function ChannelPage() {
       }
 
       if (addMemberSubTab === 'unassigned') {
-        // Unassigned Students: Role is STUDENT and not assigned to any class/team
-        return om.role === 'STUDENT' && (!om.teamId && !om.team?.id);
+        // Unassigned Students: Role is STUDENT, not ALUMNI, and not assigned to any class/team
+        return om.role === 'STUDENT' && (!om.teamId && !om.team?.id) && om.role !== 'ALUMNI' && !om.title?.includes('Alumni');
       }
 
       // Faculty & Staff (Teachers, HODs, Deans, Admins)
-      return om.role !== 'STUDENT';
+      return om.role !== 'STUDENT' && om.role !== 'ALUMNI' && !om.title?.includes('Alumni');
     });
   }, [orgMembers, channel?.members, addMemberSubTab]);
 
@@ -238,6 +238,8 @@ export default function ChannelPage() {
       (om) =>
         om.role === 'STUDENT' &&
         (!om.teamId && !om.team?.id) &&
+        om.role !== 'ALUMNI' &&
+        !om.title?.includes('Alumni') &&
         !(channel?.members || []).some((cm) => cm.userId === om.userId)
     ).length;
   }, [orgMembers, channel?.members]);
@@ -246,6 +248,8 @@ export default function ChannelPage() {
     return orgMembers.filter(
       (om) =>
         om.role !== 'STUDENT' &&
+        om.role !== 'ALUMNI' &&
+        !om.title?.includes('Alumni') &&
         om.role !== 'PARENT' &&
         !om.user?.email?.includes('parent') &&
         !om.title?.toLowerCase().includes('parent') &&
@@ -710,11 +714,27 @@ export default function ChannelPage() {
     );
   }
 
+  const isAlumniChannel = Boolean(
+    channel?.name?.toLowerCase().includes('alumni') || channel?.topic?.toLowerCase().includes('alumni')
+  );
+
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b border-border px-4 py-3 h-14">
         <div className="flex items-center gap-2 min-w-0">
-          {channel?.type === 'PRIVATE' ? <Lock className="h-4 w-4" /> : channel?.type === 'ANNOUNCEMENT' ? <Volume2 className="h-4 w-4" /> : channel?.type === 'DIRECT' ? <Users className="h-4 w-4" /> : <Hash className="h-4 w-4" />}
+          {isAlumniChannel ? (
+            <div className="w-7 h-7 rounded-lg bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0 shadow-xs">
+              <GraduationCap className="h-4 w-4" />
+            </div>
+          ) : channel?.type === 'PRIVATE' ? (
+            <Lock className="h-4 w-4" />
+          ) : channel?.type === 'ANNOUNCEMENT' ? (
+            <Volume2 className="h-4 w-4" />
+          ) : channel?.type === 'DIRECT' ? (
+            <Users className="h-4 w-4" />
+          ) : (
+            <Hash className="h-4 w-4" />
+          )}
           <div className="font-semibold truncate">
             {channel?.type === 'DIRECT' ? (dmPartner?.fullName || channel?.name) : channel?.name}
           </div>
@@ -726,7 +746,13 @@ export default function ChannelPage() {
               </span>
             </div>
           )}
-          <Badge variant="outline" className="text-[10px] uppercase">{channel?.type}</Badge>
+          {isAlumniChannel ? (
+            <Badge variant="outline" className="text-[10px] uppercase font-bold bg-amber-500/10 text-amber-400 border-amber-500/30">
+              Alumni Network
+            </Badge>
+          ) : (
+            <Badge variant="outline" className="text-[10px] uppercase">{channel?.type}</Badge>
+          )}
           {channel?.type !== 'DIRECT' && (
             <Button
               variant="ghost"
@@ -736,7 +762,7 @@ export default function ChannelPage() {
               data-testid="channel-members-btn"
             >
               <UserPlus className="h-3.5 w-3.5" />
-              <span>{channel?.members?.length || channel?._count?.members || 0} members</span>
+              <span>{channel?.members?.length || channel?._count?.members || 0} {isAlumniChannel ? 'alumni & faculty' : 'members'}</span>
             </Button>
           )}
         </div>
@@ -745,13 +771,17 @@ export default function ChannelPage() {
             variant="outline"
             size="sm"
             onClick={() => { setMaterialsOpen(true); loadStudyFiles(); }}
-            className="gap-1.5 text-xs font-semibold bg-blue-500/10 text-blue-400 border-blue-500/30 hover:bg-blue-500/20"
-            title="Class Files & Study Knowledge Base"
+            className={`gap-1.5 text-xs font-semibold ${
+              isAlumniChannel
+                ? 'bg-amber-500/10 text-amber-400 border-amber-500/30 hover:bg-amber-500/20'
+                : 'bg-blue-500/10 text-blue-400 border-blue-500/30 hover:bg-blue-500/20'
+            }`}
+            title={isAlumniChannel ? 'Alumni Archives, Yearbooks & Batch Records' : 'Class Files & Study Knowledge Base'}
           >
-            <BookOpen className="h-3.5 w-3.5" />
-            Class Files
+            {isAlumniChannel ? <GraduationCap className="h-3.5 w-3.5" /> : <BookOpen className="h-3.5 w-3.5" />}
+            {isAlumniChannel ? 'Alumni & Batch Files' : 'Class Files'}
             {studyFiles.length > 0 && (
-              <Badge variant="secondary" className="ml-1 text-[10px] px-1.5 py-0 bg-blue-500/20 text-blue-300">
+              <Badge variant="secondary" className={`ml-1 text-[10px] px-1.5 py-0 ${isAlumniChannel ? 'bg-amber-500/20 text-amber-300' : 'bg-blue-500/20 text-blue-300'}`}>
                 {studyFiles.length}
               </Badge>
             )}
@@ -784,12 +814,42 @@ export default function ChannelPage() {
 
       <div className="flex-1 overflow-hidden" data-testid="chat-message-list">
         {messages.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-center px-6">
-            <Users className="h-10 w-10 text-muted-foreground" />
-            <h3 className="font-semibold mt-3">
-              {channel?.type === 'DIRECT' ? `Direct message with ${dmPartner?.fullName || 'user'}` : `Welcome to #${channel?.name}`}
-            </h3>
-            <p className="text-sm text-muted-foreground mt-1">This is the start of your direct conversation. Say hello or mention <span className="font-mono">@AI</span> to get help.</p>
+          <div className="h-full flex flex-col items-center justify-center text-center px-6 max-w-lg mx-auto">
+            {isAlumniChannel ? (
+              <div className="flex flex-col items-center animate-in fade-in zoom-in-95 duration-200">
+                <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-amber-500/20 via-amber-500/10 to-orange-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 shadow-lg shadow-amber-500/10 mb-3.5">
+                  <GraduationCap className="h-8 w-8 text-amber-400" />
+                </div>
+                <Badge variant="outline" className="text-[11px] font-bold px-3 py-0.5 bg-amber-500/10 text-amber-400 border-amber-500/30 mb-2 uppercase tracking-wide">
+                  Official Alumni Batch Hub
+                </Badge>
+                <h3 className="text-xl font-bold tracking-tight text-foreground">
+                  Welcome to #{channel?.name}
+                </h3>
+                <p className="text-xs text-muted-foreground mt-2 leading-relaxed max-w-md">
+                  Official networking hub for the Graduating Class. Connect with fellow alumni, share career milestones, reunion announcements, mentorship opportunities, and stay connected with your Alma Mater.
+                </p>
+                <div className="mt-4 flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => { setMaterialsOpen(true); loadStudyFiles(); }}
+                    className="h-8 text-xs font-semibold bg-amber-500/10 text-amber-400 border-amber-500/30 hover:bg-amber-500/20 gap-1.5"
+                  >
+                    <GraduationCap className="h-3.5 w-3.5" />
+                    View Batch Archives & Yearbooks
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <Users className="h-10 w-10 text-muted-foreground" />
+                <h3 className="font-semibold mt-3">
+                  {channel?.type === 'DIRECT' ? `Direct message with ${dmPartner?.fullName || 'user'}` : `Welcome to #${channel?.name}`}
+                </h3>
+                <p className="text-sm text-muted-foreground mt-1">This is the start of your direct conversation. Say hello or mention <span className="font-mono">@AI</span> to get help.</p>
+              </>
+            )}
           </div>
         ) : (
           <Virtuoso
@@ -870,7 +930,13 @@ export default function ChannelPage() {
             <Textarea
               ref={textareaRef}
               className="min-h-[52px] max-h-40 border-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 resize-none"
-              placeholder={channel?.type === 'DIRECT' ? `Message ${dmPartner?.fullName || 'user'}…` : `Message #${channel?.name} — type @ to tag users, team, or project`}
+              placeholder={
+                isAlumniChannel
+                  ? `Post an announcement or message #${channel?.name}… (type @ to tag)`
+                  : channel?.type === 'DIRECT'
+                  ? `Message ${dmPartner?.fullName || 'user'}…`
+                  : `Message #${channel?.name} — type @ to tag users, team, or project`
+              }
               value={text}
               onChange={handleInputChange}
               onKeyDown={(e) => {
@@ -944,37 +1010,60 @@ export default function ChannelPage() {
         </div>
       )}
 
-      {/* Class Study Materials Drawer */}
+      {/* Class Study Materials / Alumni Batch Files Drawer */}
       <Sheet open={materialsOpen} onOpenChange={setMaterialsOpen}>
         <SheetContent className="w-full sm:max-w-md flex flex-col p-0">
           <SheetHeader className="p-4 pr-12 border-b border-border">
             <div className="flex items-center justify-between">
               <SheetTitle className="flex items-center gap-2 text-sm font-bold">
-                <BookOpen className="h-4.5 w-4.5 text-blue-400" /> Class Study Materials
+                {isAlumniChannel ? (
+                  <>
+                    <GraduationCap className="h-4.5 w-4.5 text-amber-400" /> Alumni & Batch Archive
+                  </>
+                ) : (
+                  <>
+                    <BookOpen className="h-4.5 w-4.5 text-blue-400" /> Class Study Materials
+                  </>
+                )}
               </SheetTitle>
               {currentOrg?.role !== 'STUDENT' && (
                 <div className="mr-4">
                   <input type="file" hidden ref={materialInputRef} onChange={(e) => handleUploadStudyMaterial(e.target.files?.[0])} />
-                  <Button size="sm" onClick={() => materialInputRef.current?.click()} disabled={uploadingMaterial} className="h-8 text-xs bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-sm">
-                    <UploadCloud className="h-3.5 w-3.5 mr-1" /> {uploadingMaterial ? 'Uploading…' : 'Upload File'}
+                  <Button
+                    size="sm"
+                    onClick={() => materialInputRef.current?.click()}
+                    disabled={uploadingMaterial}
+                    className={`h-8 text-xs text-white font-semibold shadow-sm ${
+                      isAlumniChannel ? 'bg-amber-600 hover:bg-amber-700' : 'bg-blue-600 hover:bg-blue-700'
+                    }`}
+                  >
+                    <UploadCloud className="h-3.5 w-3.5 mr-1" /> {uploadingMaterial ? 'Uploading…' : isAlumniChannel ? 'Upload Batch File' : 'Upload File'}
                   </Button>
                 </div>
               )}
             </div>
             <p className="text-[11px] text-muted-foreground mt-1">
-              Materials uploaded here are specific to <span className="font-semibold text-foreground">#{channel?.name}</span> and automatically indexed by <span className="font-mono text-amber-400">@AI</span> when tagged in chat.
+              {isAlumniChannel
+                ? `Official archives, batch yearbooks, graduation memorabilia, and event documents for #${channel?.name}.`
+                : `Materials uploaded here are specific to #${channel?.name} and automatically indexed by @AI when tagged in chat.`}
             </p>
           </SheetHeader>
 
           <div className="flex-1 overflow-auto p-4 space-y-2">
             {studyFiles.length === 0 && (
               <div className="text-center py-12 space-y-2">
-                <div className="h-12 w-12 rounded-2xl bg-blue-500/10 text-blue-400 flex items-center justify-center mx-auto border border-blue-500/20">
-                  <BookOpen className="h-6 w-6" />
+                <div className={`h-12 w-12 rounded-2xl flex items-center justify-center mx-auto border ${
+                  isAlumniChannel ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                }`}>
+                  {isAlumniChannel ? <GraduationCap className="h-6 w-6" /> : <BookOpen className="h-6 w-6" />}
                 </div>
-                <div className="text-xs font-semibold text-foreground">No Class Materials Yet</div>
+                <div className="text-xs font-semibold text-foreground">
+                  {isAlumniChannel ? 'No Alumni Documents Yet' : 'No Class Materials Yet'}
+                </div>
                 <p className="text-[11px] text-muted-foreground max-w-xs mx-auto">
-                  Teachers can upload lecture notes, textbook chapters, guides, or study sheets for this class.
+                  {isAlumniChannel
+                    ? 'Administrators and alumni representatives can upload batch yearbooks, graduation programs, newsletters, or directories.'
+                    : 'Teachers can upload lecture notes, textbook chapters, guides, or study sheets for this class.'}
                 </p>
               </div>
             )}

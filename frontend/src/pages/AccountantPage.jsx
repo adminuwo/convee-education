@@ -36,6 +36,12 @@ import {
   ArrowRightLeft,
   Calculator,
   FileBadge,
+  AlertTriangle,
+  UploadCloud,
+  DownloadCloud,
+  Sparkles,
+  ArrowRight,
+  ArrowLeft,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
@@ -94,6 +100,29 @@ export default function AccountantPage() {
   const [tallyConnectedStatus, setTallyConnectedStatus] = useState(false);
   const [isCustomCompany, setIsCustomCompany] = useState(false);
 
+  // Custom Confirmation Modal Popup State
+  const [confirmModal, setConfirmModal] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    confirmText: 'Delete & Purge',
+    cancelText: 'Cancel',
+    tallyImpact: true,
+    onConfirm: null,
+  });
+
+  const askConfirmation = ({ title, message, confirmText = 'Delete & Purge', cancelText = 'Cancel', tallyImpact = true, onConfirm }) => {
+    setConfirmModal({
+      isOpen: true,
+      title,
+      message,
+      confirmText,
+      cancelText,
+      tallyImpact,
+      onConfirm,
+    });
+  };
+
   // New Fee Form
   const [newFee, setNewFee] = useState({
     studentRollNo: '',
@@ -103,8 +132,12 @@ export default function AccountantPage() {
     totalAmount: '',
     paidAmount: '',
     dueDate: '',
+    paymentMode: 'BANK',
     paymentMethod: 'UPI / Online',
-    bankAccountName: 'HDFC Bank Main Account',
+    bankAccountId: '',
+    bankAccountName: '',
+    registerId: '',
+    notes: '',
   });
 
   // New Payroll Form
@@ -117,7 +150,10 @@ export default function AccountantPage() {
     basicPay: '',
     allowances: '',
     deductions: '',
-    bankAccountName: 'HDFC Bank Main Account',
+    paymentMode: 'BANK',
+    bankAccountId: '',
+    bankAccountName: '',
+    registerId: '',
   });
 
   // New Expense Form
@@ -126,8 +162,11 @@ export default function AccountantPage() {
     category: 'MAINTENANCE',
     amount: '',
     expenseDate: new Date().toISOString().split('T')[0],
+    paymentMode: 'BANK',
     paymentMethod: 'BANK_TRANSFER',
-    bankAccountName: 'HDFC Bank Main Account',
+    bankAccountId: '',
+    bankAccountName: '',
+    registerId: '',
     vendorName: '',
     academicYear: '2026-27',
     notes: '',
@@ -154,6 +193,7 @@ export default function AccountantPage() {
     fundDate: new Date().toISOString().split('T')[0],
     isRestricted: false,
     purpose: '',
+    bankAccountId: '',
     notes: '',
   });
 
@@ -219,9 +259,66 @@ export default function AccountantPage() {
     }
   };
 
+  // Two-Way Reconciliation & Diff Workbench States
+  const [reconcileDiff, setReconcileDiff] = useState(null);
+  const [loadingDiff, setLoadingDiff] = useState(false);
+  const [resolvingActionId, setResolvingActionId] = useState(null);
+
+  const fetchReconcileDiff = async () => {
+    setLoadingDiff(true);
+    try {
+      const diff = await financeApi.getReconcileDiff();
+      setReconcileDiff(diff);
+    } catch (e) {
+      console.error('Failed to fetch reconcile diff:', e);
+    } finally {
+      setLoadingDiff(false);
+    }
+  };
+
+  const handleReconcileAction = async (action, payload) => {
+    const actionKey = payload.id || payload.remoteId || payload.voucherNumber;
+    setResolvingActionId(actionKey);
+    try {
+      const res = await financeApi.resolveReconcileAction(action, payload);
+      if (res?.success) {
+        toast.success(res.message);
+        fetchReconcileDiff();
+        fetchFinancialData();
+      } else {
+        toast.error(res?.message || 'Failed to execute action');
+      }
+    } catch (err) {
+      toast.error(err?.response?.data?.error || err.message || 'Error executing action');
+    } finally {
+      setResolvingActionId(null);
+    }
+  };
+
+  const handleBatchReconcile = async (action, items) => {
+    if (!items || items.length === 0) return;
+    setLoadingDiff(true);
+    try {
+      const batchPayload = items.map((item) => ({ action, payload: item }));
+      const res = await financeApi.resolveReconcileAction(action, null, batchPayload);
+      if (res?.success) {
+        toast.success(res.message);
+        fetchReconcileDiff();
+        fetchFinancialData();
+      } else {
+        toast.error(res?.message || 'Failed to process batch');
+      }
+    } catch (err) {
+      toast.error(err?.response?.data?.error || err.message || 'Batch action failed');
+    } finally {
+      setLoadingDiff(false);
+    }
+  };
+
   useEffect(() => {
     fetchFinancialData();
     fetchTallyCompanies();
+    fetchReconcileDiff();
     if (currentOrg?.id) {
       const saved = localStorage.getItem(`tally_company_${currentOrg.id}`);
       if (saved) setSelectedTallyCompany(saved);
@@ -267,17 +364,6 @@ export default function AccountantPage() {
         }
       });
     }
-    // Known student list defaults (only used as fallback when map is still empty)
-    if (map.size === 0) {
-      const defaults = [
-        { name: 'Alex Rivera (Student)', email: 'student@demo.edu', rollNo: 'STU-2026-100001' },
-      ];
-      defaults.forEach((d) => {
-        if (!map.has(d.name.toLowerCase())) {
-          map.set(d.name.toLowerCase(), d);
-        }
-      });
-    }
     return Array.from(map.values());
   }, [orgMembers, fees]);
 
@@ -297,21 +383,6 @@ export default function AccountantPage() {
         });
       }
     });
-    if (orgMembers.length === 0 && map.size === 0) {
-      const defaults = [
-        { name: 'Dr. Arthur Vance (Director)', empId: 'EMP-FAC-001', role: 'DIRECTOR' },
-        { name: 'Dr. Eleanor Vance (Principal)', empId: 'EMP-FAC-002', role: 'PRINCIPAL' },
-        { name: 'Dr. Robert Vance (Dean)', empId: 'EMP-FAC-003', role: 'DEAN' },
-        { name: 'Prof. Alan Turing (HOD)', empId: 'EMP-FAC-004', role: 'HOD' },
-        { name: 'Dr. Marie Curie (HOD)', empId: 'EMP-FAC-005', role: 'HOD' },
-        { name: 'Sarah Chen (Teacher)', empId: 'EMP-FAC-006', role: 'TEACHER' },
-        { name: 'Mike Johnson (Teacher)', empId: 'EMP-FAC-007', role: 'TEACHER' },
-        { name: 'Dr. Emily Watson (Teacher)', empId: 'EMP-FAC-008', role: 'TEACHER' },
-      ];
-      defaults.forEach((d) => {
-        if (!map.has(d.name.toLowerCase())) map.set(d.name.toLowerCase(), d);
-      });
-    }
     return Array.from(map.values());
   }, [orgMembers]);
 
@@ -330,17 +401,56 @@ export default function AccountantPage() {
         financeApi.getFixedAssets().catch(() => ({ fixedAssets: [] })),
       ]);
 
-      if (overviewRes?.summary) setOverview(overviewRes.summary);
-      setFees(feesRes?.fees || []);
-      setPayrolls(payrollRes?.payrolls || []);
-      setExpenses(expensesRes?.expenses || []);
-      setBankAccounts(bankAccountsRes?.bankAccounts || []);
-      setSocietyFunds(fundsRes?.societyFunds || []);
-      setCashRegisters(registersRes?.cashRegisters || []);
+      const feesList = feesRes?.fees || [];
+      const payrollsList = payrollRes?.payrolls || [];
+      const expensesList = expensesRes?.expenses || [];
+      const bankList = bankAccountsRes?.bankAccounts || [];
+      const fundsList = fundsRes?.societyFunds || [];
+      const cashList = registersRes?.cashRegisters || [];
+      const assetsList = assetsRes?.fixedAssets || [];
+
+      // Dynamic metrics computation
+      const totalFeesCollected = feesList.reduce((sum, f) => sum + (parseFloat(f.paidAmount) || 0), 0);
+      const totalPendingDues = feesList.reduce((sum, f) => sum + (parseFloat(f.pendingBalance) || 0), 0);
+      const totalBankBalances = bankList.reduce((sum, b) => sum + (parseFloat(b.currentBalance) || 0), 0);
+      const totalCashInHand = cashList.reduce((sum, c) => sum + (parseFloat(c.currentBalance) || 0), 0);
+      const totalLiquidFunds = totalBankBalances + totalCashInHand;
+      const totalSocietyFunds = fundsList.reduce((sum, s) => sum + (parseFloat(s.amount) || 0), 0);
+      const totalFixedAssetsBookValue = assetsList.reduce((sum, a) => sum + (parseFloat(a.currentBookValue || a.purchasePrice) || 0), 0);
+      const institutionalNetWorth = totalLiquidFunds + totalFixedAssetsBookValue;
+      const paidCount = feesList.filter((f) => f.status === 'PAID').length;
+      const pendingCount = feesList.filter((f) => f.status === 'PENDING' || f.status === 'OVERDUE' || f.status === 'PARTIAL').length;
+
+      const fallbackSummary = {
+        totalFeesCollected,
+        totalPendingDues,
+        totalBankBalances,
+        totalCashInHand,
+        totalLiquidFunds,
+        totalSocietyFunds,
+        totalFixedAssetsBookValue,
+        institutionalNetWorth,
+        totalStudentsBilled: feesList.length,
+        totalBankAccounts: bankList.length,
+        totalCashRegistersCount: cashList.length,
+        totalSocietyFundsCount: fundsList.length,
+        totalFixedAssetsCount: assetsList.length,
+        paidCount,
+        pendingCount,
+      };
+
+      setOverview(overviewRes?.summary && Object.keys(overviewRes.summary).length > 0 ? { ...fallbackSummary, ...overviewRes.summary } : fallbackSummary);
+      setFees(feesList);
+      setPayrolls(payrollsList);
+      setExpenses(expensesList);
+      setBankAccounts(bankList);
+      setSocietyFunds(fundsList);
+      setCashRegisters(cashList);
       setCashTransactions(transactionsRes?.cashTransactions || []);
-      setFixedAssets(assetsRes?.fixedAssets || []);
-      if (!selectedRegisterId && registersRes?.cashRegisters?.length > 0) {
-        setSelectedRegisterId(registersRes.cashRegisters[0].id);
+      setFixedAssets(assetsList);
+
+      if (!selectedRegisterId && cashList.length > 0) {
+        setSelectedRegisterId(cashList[0].id);
       }
     } catch (err) {
       console.error('Error loading financial data:', err);
@@ -351,9 +461,16 @@ export default function AccountantPage() {
 
   const handleCreateSocietyFund = async (e) => {
     e.preventDefault();
+    if (!newSocietyFund.bankAccountId && bankAccounts.length > 0) {
+      toast.error('Please select the Bank Account where the Corpus Fund was deposited');
+      return;
+    }
     try {
-      await financeApi.createSocietyFund(newSocietyFund);
-      toast.success('Society / Corpus Fund recorded successfully & staged for Tally!');
+      await financeApi.createSocietyFund({
+        ...newSocietyFund,
+        bankAccountId: newSocietyFund.bankAccountId || bankAccounts[0]?.id,
+      });
+      toast.success('Society / Corpus Fund recorded & deposited into Bank Account!');
       setShowAddSocietyFundModal(false);
       setNewSocietyFund({
         fundName: '',
@@ -363,6 +480,7 @@ export default function AccountantPage() {
         fundDate: new Date().toISOString().split('T')[0],
         isRestricted: false,
         purpose: '',
+        bankAccountId: bankAccounts[0]?.id || '',
         notes: '',
       });
       fetchFinancialData();
@@ -372,16 +490,23 @@ export default function AccountantPage() {
     }
   };
 
-  const handleDeleteSocietyFund = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this Society Fund record?')) return;
-    try {
-      await financeApi.deleteSocietyFund(id);
-      toast.success('Society fund record deleted');
-      fetchFinancialData();
-    } catch (err) {
-      console.error('Error deleting society fund:', err);
-      toast.error('Failed to delete society fund');
-    }
+  const handleDeleteSocietyFund = (id) => {
+    askConfirmation({
+      title: 'Delete Society Fund Record?',
+      message: 'Are you sure you want to delete this society corpus / capital fund entry? This will permanently remove the fund ledger.',
+      confirmText: 'Delete & Purge',
+      tallyImpact: true,
+      onConfirm: async () => {
+        try {
+          await financeApi.deleteSocietyFund(id);
+          toast.success('Society fund record deleted & purged from Tally Prime');
+          fetchFinancialData();
+        } catch (err) {
+          console.error('Error deleting society fund:', err);
+          toast.error('Failed to delete society fund');
+        }
+      },
+    });
   };
 
   const handleCreateCashTransaction = async (e) => {
@@ -449,22 +574,46 @@ export default function AccountantPage() {
     }
   };
 
-  const handleDeleteFixedAsset = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this Fixed Asset record?')) return;
-    try {
-      await financeApi.deleteFixedAsset(id);
-      toast.success('Fixed asset removed from register');
-      fetchFinancialData();
-    } catch (err) {
-      console.error('Error deleting fixed asset:', err);
-      toast.error('Failed to delete fixed asset');
-    }
+  const handleDeleteFixedAsset = (id) => {
+    askConfirmation({
+      title: 'Delete Fixed Asset?',
+      message: 'Are you sure you want to remove this Fixed Asset from the school capital register?',
+      confirmText: 'Delete & Purge',
+      tallyImpact: true,
+      onConfirm: async () => {
+        try {
+          await financeApi.deleteFixedAsset(id);
+          toast.success('Fixed asset removed from register & purged from Tally');
+          fetchFinancialData();
+        } catch (err) {
+          console.error('Error deleting fixed asset:', err);
+          toast.error('Failed to delete fixed asset');
+        }
+      },
+    });
   };
 
   const handleCreateExpense = async (e) => {
     e.preventDefault();
+    const targetBankId = newExpense.bankAccountId || bankAccounts[0]?.id;
+    const targetRegisterId = newExpense.registerId || cashRegisters[0]?.id;
+
+    if (newExpense.paymentMode === 'BANK' && !targetBankId && bankAccounts.length > 0) {
+      toast.error('Please select the Bank Account for this expense/donation');
+      return;
+    }
+    if (newExpense.paymentMode === 'CASH' && !targetRegisterId && cashRegisters.length > 0) {
+      toast.error('Please select the Cash Drawer for this expense/donation');
+      return;
+    }
     try {
-      await financeApi.createExpense(newExpense);
+      const selBank = bankAccounts.find((b) => b.id === targetBankId);
+      await financeApi.createExpense({
+        ...newExpense,
+        bankAccountId: newExpense.paymentMode === 'BANK' ? targetBankId : null,
+        bankAccountName: newExpense.paymentMode === 'BANK' ? (selBank?.accountName || newExpense.bankAccountName || bankAccounts[0]?.accountName) : null,
+        registerId: newExpense.paymentMode === 'CASH' ? targetRegisterId : null,
+      });
       toast.success('New expense / donation record added successfully!');
       setShowAddExpenseModal(false);
       setNewExpense({
@@ -472,8 +621,11 @@ export default function AccountantPage() {
         category: 'MAINTENANCE',
         amount: '',
         expenseDate: new Date().toISOString().split('T')[0],
+        paymentMode: 'BANK',
         paymentMethod: 'BANK_TRANSFER',
-        bankAccountName: bankAccounts[0]?.accountName || 'HDFC Bank Main Account',
+        bankAccountId: bankAccounts[0]?.id || '',
+        bankAccountName: bankAccounts[0]?.accountName || '',
+        registerId: cashRegisters[0]?.id || '',
         vendorName: '',
         academicYear: '2026-27',
         notes: '',
@@ -481,20 +633,28 @@ export default function AccountantPage() {
       fetchFinancialData();
     } catch (err) {
       console.error('Error creating expense record:', err);
-      toast.error('Failed to record expense');
+      const errMsg = err.response?.data?.error || err.message || 'Failed to record expense';
+      toast.error(errMsg);
     }
   };
 
-  const handleDeleteExpense = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this expense record?')) return;
-    try {
-      await financeApi.deleteExpense(id);
-      toast.success('Expense record deleted');
-      fetchFinancialData();
-    } catch (err) {
-      console.error('Error deleting expense record:', err);
-      toast.error('Failed to delete expense record');
-    }
+  const handleDeleteExpense = (id) => {
+    askConfirmation({
+      title: 'Delete Expense Record?',
+      message: 'Are you sure you want to delete this expense / donation entry?',
+      confirmText: 'Delete & Purge',
+      tallyImpact: true,
+      onConfirm: async () => {
+        try {
+          await financeApi.deleteExpense(id);
+          toast.success('Expense record deleted & purged from Tally Prime');
+          fetchFinancialData();
+        } catch (err) {
+          console.error('Error deleting expense record:', err);
+          toast.error('Failed to delete expense record');
+        }
+      },
+    });
   };
 
   const handleCreateBankAccount = async (e) => {
@@ -520,18 +680,81 @@ export default function AccountantPage() {
     }
   };
 
-  const handleDeleteBankAccount = async (id) => {
-    if (!window.confirm('Are you sure you want to deactivate this bank account?')) return;
-    try {
-      await financeApi.deleteBankAccount(id);
-      toast.success('Bank account deactivated');
-      fetchFinancialData();
-    } catch (err) {
-      console.error('Error deactivating bank account:', err);
-      toast.error('Failed to deactivate bank account');
-    }
+  const handleDeleteBankAccount = (id) => {
+    askConfirmation({
+      title: 'Deactivate Bank Account?',
+      message: 'Are you sure you want to deactivate this school bank account from active ledgers?',
+      confirmText: 'Deactivate Account',
+      tallyImpact: false,
+      onConfirm: async () => {
+        try {
+          await financeApi.deleteBankAccount(id);
+          toast.success('Bank account deactivated');
+          fetchFinancialData();
+        } catch (err) {
+          console.error('Error deactivating bank account:', err);
+          toast.error('Failed to deactivate bank account');
+        }
+      },
+    });
   };
 
+  const handleDeleteFee = (id) => {
+    askConfirmation({
+      title: 'Delete Student Fee Ledger?',
+      message: 'Are you sure you want to delete this student fee record? This action will permanently delete the voucher.',
+      confirmText: 'Delete & Purge',
+      tallyImpact: true,
+      onConfirm: async () => {
+        try {
+          await financeApi.deleteFee(id);
+          toast.success('Student fee record deleted & purged from Tally Prime');
+          fetchFinancialData();
+        } catch (err) {
+          console.error('Error deleting fee record:', err);
+          toast.error('Failed to delete fee record');
+        }
+      },
+    });
+  };
+
+  const handleDeletePayroll = (id) => {
+    askConfirmation({
+      title: 'Delete Faculty Payroll Voucher?',
+      message: 'Are you sure you want to delete this payroll disbursement record? This action will permanently remove the voucher.',
+      confirmText: 'Delete & Purge',
+      tallyImpact: true,
+      onConfirm: async () => {
+        try {
+          await financeApi.deletePayroll(id);
+          toast.success('Payroll record deleted & purged from Tally Prime');
+          fetchFinancialData();
+        } catch (err) {
+          console.error('Error deleting payroll record:', err);
+          toast.error('Failed to delete payroll record');
+        }
+      },
+    });
+  };
+
+  const handleDeleteCashTransaction = (id) => {
+    askConfirmation({
+      title: 'Delete Cash Transaction?',
+      message: 'Are you sure you want to delete this cash transaction voucher and reverse the drawer float balance?',
+      confirmText: 'Delete & Purge',
+      tallyImpact: true,
+      onConfirm: async () => {
+        try {
+          await financeApi.deleteCashTransaction(id);
+          toast.success('Cash transaction deleted & purged from Tally Prime');
+          fetchFinancialData();
+        } catch (err) {
+          console.error('Error deleting cash transaction:', err);
+          toast.error('Failed to delete cash transaction');
+        }
+      },
+    });
+  };
 
   const handleRunTallySync = async () => {
     setSyncing(true);
@@ -591,6 +814,9 @@ export default function AccountantPage() {
   const [showUpdateFeeModal, setShowUpdateFeeModal] = useState(false);
   const [updatingFeeRecord, setUpdatingFeeRecord] = useState(null);
   const [newPaymentReceived, setNewPaymentReceived] = useState('');
+  const [updatePaymentMode, setUpdatePaymentMode] = useState('BANK');
+  const [updateBankAccountId, setUpdateBankAccountId] = useState('');
+  const [updateRegisterId, setUpdateRegisterId] = useState('');
   const [updatePaymentMethod, setUpdatePaymentMethod] = useState('UPI / Online');
   const [updateNotes, setUpdateNotes] = useState('');
 
@@ -598,11 +824,16 @@ export default function AccountantPage() {
     setNewFee({
       studentRollNo: '',
       studentName: '',
-      feeHeader: '',
+      feeHeader: 'Tuition Fee - Term 1',
+      academicYear: '2026-27',
       totalAmount: '',
       paidAmount: '',
       dueDate: '',
+      paymentMode: 'BANK',
       paymentMethod: 'UPI / Online',
+      bankAccountId: bankAccounts[0]?.id || '',
+      bankAccountName: bankAccounts[0]?.accountName || '',
+      registerId: cashRegisters[0]?.id || '',
       notes: '',
     });
     setShowAddFeeModal(true);
@@ -611,6 +842,10 @@ export default function AccountantPage() {
   const handleOpenUpdateFeeModal = (feeRecord) => {
     setUpdatingFeeRecord(feeRecord);
     setNewPaymentReceived('');
+    const isCashMethod = (feeRecord.paymentMethod || '').toUpperCase().includes('CASH');
+    setUpdatePaymentMode(isCashMethod ? 'CASH' : 'BANK');
+    setUpdateBankAccountId(bankAccounts[0]?.id || '');
+    setUpdateRegisterId(cashRegisters[0]?.id || '');
     setUpdatePaymentMethod(feeRecord.paymentMethod || 'UPI / Online');
     setUpdateNotes(feeRecord.notes || '');
     setShowUpdateFeeModal(true);
@@ -618,18 +853,46 @@ export default function AccountantPage() {
 
   const handleCreateFee = async (e) => {
     e.preventDefault();
+    const paid = parseFloat(newFee.paidAmount || 0);
+    const targetBankId = newFee.bankAccountId || bankAccounts[0]?.id;
+    const targetRegisterId = newFee.registerId || cashRegisters[0]?.id;
+
+    if (paid > 0) {
+      if (newFee.paymentMode === 'BANK' && !targetBankId && !newFee.bankAccountName && bankAccounts.length > 0) {
+        toast.error('Please select the Bank Account to receive this fee payment');
+        return;
+      }
+      if (newFee.paymentMode === 'CASH' && !targetRegisterId && cashRegisters.length > 0) {
+        toast.error('Please select the Cash Drawer / Register to receive this fee payment');
+        return;
+      }
+    }
     try {
-      await financeApi.createFee(newFee);
+      const selBank = bankAccounts.find((b) => b.id === targetBankId);
+      const payload = {
+        ...newFee,
+        bankAccountId: newFee.paymentMode === 'BANK' ? targetBankId : null,
+        bankAccountName: newFee.paymentMode === 'BANK'
+          ? (selBank?.accountName || newFee.bankAccountName || bankAccounts[0]?.accountName)
+          : null,
+        registerId: newFee.paymentMode === 'CASH' ? targetRegisterId : null,
+      };
+      await financeApi.createFee(payload);
       toast.success('New student fee record created successfully!');
       setShowAddFeeModal(false);
       setNewFee({
         studentRollNo: '',
         studentName: '',
-        feeHeader: '',
+        feeHeader: 'Tuition Fee - Term 1',
+        academicYear: '2026-27',
         totalAmount: '',
         paidAmount: '',
         dueDate: '',
+        paymentMode: 'BANK',
         paymentMethod: 'UPI / Online',
+        bankAccountId: bankAccounts[0]?.id || '',
+        bankAccountName: bankAccounts[0]?.accountName || '',
+        registerId: cashRegisters[0]?.id || '',
         notes: '',
       });
       fetchFinancialData();
@@ -656,12 +919,28 @@ export default function AccountantPage() {
       return;
     }
 
+    const targetBankId = updateBankAccountId || bankAccounts[0]?.id;
+    const targetRegisterId = updateRegisterId || cashRegisters[0]?.id;
+
+    if (updatePaymentMode === 'BANK' && !targetBankId && bankAccounts.length > 0) {
+      toast.error('Please select the Bank Account receiving this installment');
+      return;
+    }
+    if (updatePaymentMode === 'CASH' && !targetRegisterId && cashRegisters.length > 0) {
+      toast.error('Please select the Cash Drawer receiving this installment');
+      return;
+    }
+
     const newTotalPaid = previousPaid + addedPayment;
 
     try {
+      const selBank = bankAccounts.find((b) => b.id === targetBankId);
       await financeApi.updateFee(updatingFeeRecord.id, {
         paidAmount: newTotalPaid,
-        paymentMethod: updatePaymentMethod,
+        paymentMethod: updatePaymentMode === 'CASH' ? 'Cash' : updatePaymentMethod,
+        bankAccountId: updatePaymentMode === 'BANK' ? targetBankId : null,
+        bankAccountName: updatePaymentMode === 'BANK' ? (selBank?.accountName || bankAccounts[0]?.accountName || 'HDFC Bank Main Account') : null,
+        registerId: updatePaymentMode === 'CASH' ? targetRegisterId : null,
         notes: updateNotes,
       });
       toast.success(`Recorded ${formatCurrency(addedPayment)} payment for ${updatingFeeRecord.studentName}!`);
@@ -677,9 +956,26 @@ export default function AccountantPage() {
 
   const handleCreatePayroll = async (e) => {
     e.preventDefault();
+    const targetBankId = newPayroll.bankAccountId || bankAccounts[0]?.id;
+    const targetRegisterId = newPayroll.registerId || cashRegisters[0]?.id;
+
+    if (newPayroll.paymentMode === 'BANK' && !targetBankId && bankAccounts.length > 0) {
+      toast.error('Please select the disbursement Bank Account');
+      return;
+    }
+    if (newPayroll.paymentMode === 'CASH' && !targetRegisterId && cashRegisters.length > 0) {
+      toast.error('Please select the disbursement Cash Drawer');
+      return;
+    }
     try {
-      await financeApi.createPayroll(newPayroll);
-      toast.success('Payroll record added successfully!');
+      const selBank = bankAccounts.find((b) => b.id === targetBankId);
+      await financeApi.createPayroll({
+        ...newPayroll,
+        bankAccountId: newPayroll.paymentMode === 'BANK' ? targetBankId : null,
+        bankAccountName: newPayroll.paymentMode === 'BANK' ? (selBank?.accountName || bankAccounts[0]?.accountName || 'HDFC Bank Main Account') : null,
+        registerId: newPayroll.paymentMode === 'CASH' ? targetRegisterId : null,
+      });
+      toast.success('Payroll salary voucher disbursed successfully!');
       setShowAddPayrollModal(false);
       setNewPayroll({
         employeeId: '',
@@ -690,10 +986,15 @@ export default function AccountantPage() {
         basicPay: '',
         allowances: '',
         deductions: '',
+        paymentMode: 'BANK',
+        bankAccountId: bankAccounts[0]?.id || '',
+        bankAccountName: bankAccounts[0]?.accountName || '',
+        registerId: cashRegisters[0]?.id || '',
       });
       fetchFinancialData();
     } catch (err) {
-      toast.error('Failed to add payroll record');
+      const errMsg = err.response?.data?.error || err.message || 'Failed to add payroll record';
+      toast.error(errMsg, { duration: 6000 });
     }
   };
 
@@ -715,27 +1016,51 @@ export default function AccountantPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 p-6 space-y-6">
+    <div className="min-h-screen bg-background text-foreground p-6 space-y-6 transition-colors">
       {/* Top Bar Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-card border border-border p-6 rounded-2xl shadow-xl">
         <div className="flex items-center gap-4">
           <div className="p-3 bg-blue-600/20 text-blue-400 rounded-xl border border-blue-500/30">
             <IndianRupee className="w-8 h-8" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold tracking-tight text-white">Financial & Accounting Portal</h1>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-2xl font-bold tracking-tight text-foreground">Financial & Accounting Portal</h1>
               <span className="px-2.5 py-0.5 text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-full flex items-center gap-1">
                 <ShieldCheck className="w-3 h-3" /> ACCOUNTANT
               </span>
+              <button
+                onClick={() => setActiveTab('connector')}
+                className={`px-2.5 py-0.5 text-xs font-semibold rounded-full border flex items-center gap-1.5 transition-all hover:opacity-90 ${
+                  tallyConnectedStatus
+                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                    : 'bg-rose-500/10 text-rose-400 border-rose-500/30'
+                }`}
+                title={tallyConnectedStatus ? `Tally Prime is connected live on Port 9000 (${selectedTallyCompany})` : 'Tally Server is offline on Port 9000. Click to configure.'}
+              >
+                <span className={`w-2 h-2 rounded-full ${tallyConnectedStatus ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'}`} />
+                {tallyConnectedStatus ? `🟢 Tally Live: ${selectedTallyCompany || 'Port 9000'}` : '🔴 Tally Offline (Port 9000)'}
+              </button>
             </div>
-            <p className="text-sm text-slate-400 mt-1">
+            <p className="text-sm text-muted-foreground mt-1">
               Tally Prime & Busy Sync Engine • Student Fee Management • Faculty Payroll
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-2.5 flex-wrap">
+          <button
+            onClick={() => {
+              fetchFinancialData();
+              toast.info('Refreshed live financial metrics');
+            }}
+            disabled={loading}
+            className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-muted text-foreground text-xs font-semibold rounded-xl border border-border shadow-md transition-all disabled:opacity-50"
+            title="Reload financial records and metrics"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+            {loading ? 'Refreshing...' : 'Refresh Data'}
+          </button>
           <button
             onClick={handleRunTallySync}
             disabled={syncing}
@@ -784,7 +1109,7 @@ export default function AccountantPage() {
           </button>
           <button
             onClick={handleOpenAddFeeModal}
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold rounded-xl transition-all"
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-muted text-foreground border border-border text-xs font-semibold rounded-xl transition-all"
           >
             <Plus className="w-3.5 h-3.5" /> Add Fee
           </button>
@@ -794,7 +1119,7 @@ export default function AccountantPage() {
       {/* KPI Overview Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
         {/* Net Worth */}
-        <div className="bg-gradient-to-br from-slate-900 to-indigo-950/60 border border-indigo-500/30 p-5 rounded-2xl shadow-lg relative overflow-hidden">
+        <div className="bg-gradient-to-br from-indigo-50/70 via-card to-indigo-100/40 dark:from-slate-900 dark:to-indigo-950/60 border border-indigo-500/30 p-5 rounded-2xl shadow-lg relative overflow-hidden">
           <div className="flex items-center justify-between text-indigo-300 text-xs font-semibold">
             <span>INSTITUTIONAL NET WORTH</span>
             <Building2 className="w-4 h-4 text-indigo-400" />
@@ -806,76 +1131,76 @@ export default function AccountantPage() {
         </div>
 
         {/* Fixed Assets */}
-        <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl">
-          <div className="flex items-center justify-between text-slate-400 text-xs font-medium">
+        <div className="bg-card border border-border p-5 rounded-2xl">
+          <div className="flex items-center justify-between text-muted-foreground text-xs font-medium">
             <span>FIXED ASSETS (BOOK VALUE)</span>
             <Layers className="w-4 h-4 text-cyan-400" />
           </div>
           <div className="text-2xl font-bold text-cyan-400 mt-2">
             {formatCurrency(overview?.totalFixedAssetsBookValue || 0)}
           </div>
-          <div className="text-xs text-slate-500 mt-1">{fixedAssets.length} active registered assets</div>
+          <div className="text-xs text-muted-foreground mt-1">{fixedAssets.length} active registered assets</div>
         </div>
 
         {/* Liquid Funds */}
-        <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl">
-          <div className="flex items-center justify-between text-slate-400 text-xs font-medium">
+        <div className="bg-card border border-border p-5 rounded-2xl">
+          <div className="flex items-center justify-between text-muted-foreground text-xs font-medium">
             <span>LIQUID FUNDS (BANK + CASH)</span>
             <Landmark className="w-4 h-4 text-teal-400" />
           </div>
           <div className="text-2xl font-bold text-teal-400 mt-2">
             {formatCurrency(overview?.totalLiquidFunds || ((overview?.totalBankBalances || 0) + (overview?.totalCashInHand || 0)))}
           </div>
-          <div className="text-xs text-slate-500 mt-1">
+          <div className="text-xs text-muted-foreground mt-1">
             Cash Drawer: {formatCurrency(overview?.totalCashInHand || 0)}
           </div>
         </div>
 
         {/* Society Funds */}
-        <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl">
-          <div className="flex items-center justify-between text-slate-400 text-xs font-medium">
+        <div className="bg-card border border-border p-5 rounded-2xl">
+          <div className="flex items-center justify-between text-muted-foreground text-xs font-medium">
             <span>SOCIETY & CORPUS FUNDS</span>
             <Building className="w-4 h-4 text-indigo-400" />
           </div>
           <div className="text-2xl font-bold text-indigo-400 mt-2">
             {formatCurrency(overview?.totalSocietyFunds || 0)}
           </div>
-          <div className="text-xs text-slate-500 mt-1">{societyFunds.length} corpus & endowment reserves</div>
+          <div className="text-xs text-muted-foreground mt-1">{societyFunds.length} corpus & endowment reserves</div>
         </div>
 
         {/* Fee Collection */}
-        <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl">
-          <div className="flex items-center justify-between text-slate-400 text-xs font-medium">
+        <div className="bg-card border border-border p-5 rounded-2xl">
+          <div className="flex items-center justify-between text-muted-foreground text-xs font-medium">
             <span>FEES COLLECTED</span>
             <TrendingUp className="w-4 h-4 text-emerald-400" />
           </div>
           <div className="text-2xl font-bold text-emerald-400 mt-2">
             {formatCurrency(overview?.totalFeesCollected)}
           </div>
-          <div className="text-xs text-slate-500 mt-1">{overview?.paidCount || 0} student fee receipts</div>
+          <div className="text-xs text-muted-foreground mt-1">{overview?.paidCount || 0} student fee receipts</div>
         </div>
 
         {/* Pending Dues */}
-        <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl">
-          <div className="flex items-center justify-between text-slate-400 text-xs font-medium">
+        <div className="bg-card border border-border p-5 rounded-2xl">
+          <div className="flex items-center justify-between text-muted-foreground text-xs font-medium">
             <span>OUTSTANDING DUES</span>
             <AlertCircle className="w-4 h-4 text-amber-400" />
           </div>
           <div className="text-2xl font-bold text-amber-400 mt-2">
             {formatCurrency(overview?.totalPendingDues)}
           </div>
-          <div className="text-xs text-slate-500 mt-1">{overview?.pendingCount || 0} overdue fee accounts</div>
+          <div className="text-xs text-muted-foreground mt-1">{overview?.pendingCount || 0} overdue fee accounts</div>
         </div>
       </div>
 
       {/* Navigation Tabs */}
-      <div className="flex items-center gap-2 border-b border-slate-800 pb-2 overflow-x-auto">
+      <div className="flex items-center gap-2 border-b border-border pb-2 overflow-x-auto">
         <button
           onClick={() => setActiveTab('overview')}
           className={`px-4 py-2 text-sm font-medium rounded-lg transition-all whitespace-nowrap ${
             activeTab === 'overview'
               ? 'bg-blue-600 text-white shadow-md'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+              : 'text-muted-foreground hover:text-foreground hover:bg-card'
           }`}
         >
           Overview & Metrics
@@ -885,7 +1210,7 @@ export default function AccountantPage() {
           className={`px-4 py-2 text-sm font-medium rounded-lg transition-all whitespace-nowrap ${
             activeTab === 'fees'
               ? 'bg-blue-600 text-white shadow-md'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+              : 'text-muted-foreground hover:text-foreground hover:bg-card'
           }`}
         >
           Student Fee Ledgers ({fees.length})
@@ -895,7 +1220,7 @@ export default function AccountantPage() {
           className={`px-4 py-2 text-sm font-medium rounded-lg transition-all whitespace-nowrap ${
             activeTab === 'payroll'
               ? 'bg-blue-600 text-white shadow-md'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+              : 'text-muted-foreground hover:text-foreground hover:bg-card'
           }`}
         >
           Faculty Payroll ({payrolls.length})
@@ -905,7 +1230,7 @@ export default function AccountantPage() {
           className={`px-4 py-2 text-sm font-medium rounded-lg transition-all whitespace-nowrap ${
             activeTab === 'expenses'
               ? 'bg-purple-600 text-white shadow-md'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+              : 'text-muted-foreground hover:text-foreground hover:bg-card'
           }`}
         >
           Other Expenses & Donations ({expenses.length})
@@ -915,7 +1240,7 @@ export default function AccountantPage() {
           className={`px-4 py-2 text-sm font-medium rounded-lg transition-all whitespace-nowrap ${
             activeTab === 'bank-accounts'
               ? 'bg-teal-600 text-white shadow-md'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+              : 'text-muted-foreground hover:text-foreground hover:bg-card'
           }`}
         >
           Bank Accounts ({bankAccounts.length})
@@ -925,7 +1250,7 @@ export default function AccountantPage() {
           className={`px-4 py-2 text-sm font-medium rounded-lg transition-all whitespace-nowrap ${
             activeTab === 'society-funds'
               ? 'bg-indigo-600 text-white shadow-md'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+              : 'text-muted-foreground hover:text-foreground hover:bg-card'
           }`}
         >
           🏛️ Society & Corpus Funds ({societyFunds.length})
@@ -935,7 +1260,7 @@ export default function AccountantPage() {
           className={`px-4 py-2 text-sm font-medium rounded-lg transition-all whitespace-nowrap ${
             activeTab === 'cash-in-hand'
               ? 'bg-amber-600 text-white shadow-md'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+              : 'text-muted-foreground hover:text-foreground hover:bg-card'
           }`}
         >
           💵 Cash in Hand & Float ({cashRegisters.length})
@@ -945,107 +1270,177 @@ export default function AccountantPage() {
           className={`px-4 py-2 text-sm font-medium rounded-lg transition-all whitespace-nowrap ${
             activeTab === 'fixed-assets'
               ? 'bg-cyan-600 text-white shadow-md'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+              : 'text-muted-foreground hover:text-foreground hover:bg-card'
           }`}
         >
           🏢 Fixed Asset Register ({fixedAssets.length})
         </button>
         <button
           onClick={() => setActiveTab('connector')}
-          className={`px-4 py-2 text-sm font-medium rounded-lg transition-all whitespace-nowrap ${
+          className={`px-4 py-2 text-sm font-medium rounded-lg transition-all whitespace-nowrap flex items-center gap-2 ${
             activeTab === 'connector'
               ? 'bg-blue-600 text-white shadow-md'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+              : 'text-muted-foreground hover:text-foreground hover:bg-card'
           }`}
         >
-          Tally & Busy Connector Settings
+          <span>Tally & Busy Connector</span>
+          <span className={`w-2 h-2 rounded-full ${tallyConnectedStatus ? 'bg-emerald-400' : 'bg-rose-400'}`} />
+        </button>
+        <button
+          onClick={() => {
+            setActiveTab('reconcile');
+            fetchReconcileDiff();
+          }}
+          className={`px-4 py-2 text-sm font-medium rounded-lg transition-all whitespace-nowrap flex items-center gap-2 ${
+            activeTab === 'reconcile'
+              ? 'bg-gradient-to-r from-amber-600 to-orange-600 text-white shadow-md font-semibold'
+              : 'text-amber-400 hover:text-amber-300 hover:bg-card border border-amber-500/20'
+          }`}
+        >
+          <ArrowRightLeft className="w-4 h-4" />
+          <span>Sync & Reconciliation Workbench</span>
+          {((reconcileDiff?.onlyInConveeCount || 0) + (reconcileDiff?.onlyInTallyCount || 0)) > 0 ? (
+            <span className="px-1.5 py-0.5 text-[10px] bg-amber-400/20 text-amber-300 font-bold rounded-full border border-amber-400/30">
+              {(reconcileDiff?.onlyInConveeCount || 0) + (reconcileDiff?.onlyInTallyCount || 0)} diffs
+            </span>
+          ) : (
+            <span className="px-1.5 py-0.5 text-[10px] bg-emerald-400/20 text-emerald-300 font-bold rounded-full">
+              In Sync
+            </span>
+          )}
         </button>
       </div>
 
       {/* TAB 1: OVERVIEW */}
       {activeTab === 'overview' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 bg-slate-900 border border-slate-800 p-6 rounded-2xl space-y-4">
-            <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+          <div className="lg:col-span-2 bg-card border border-border p-6 rounded-2xl space-y-4">
+            <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
               <Building2 className="w-5 h-5 text-blue-400" /> Fee Collection Breakdown
             </h3>
             <div className="grid grid-cols-3 gap-4">
-              <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 text-center">
-                <div className="text-xs text-slate-400">Total Billed</div>
-                <div className="text-xl font-bold text-slate-100 mt-1">
+              <div className="bg-muted/40 p-4 rounded-xl border border-border text-center">
+                <div className="text-xs text-muted-foreground">Total Billed</div>
+                <div className="text-xl font-bold text-foreground mt-1">
                   {formatCurrency((overview?.totalFeesCollected || 0) + (overview?.totalPendingDues || 0))}
                 </div>
               </div>
-              <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 text-center">
-                <div className="text-xs text-slate-400">Collected</div>
+              <div className="bg-muted/40 p-4 rounded-xl border border-border text-center">
+                <div className="text-xs text-muted-foreground">Collected</div>
                 <div className="text-xl font-bold text-emerald-400 mt-1">
                   {formatCurrency(overview?.totalFeesCollected)}
                 </div>
               </div>
-              <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 text-center">
-                <div className="text-xs text-slate-400">Pending Dues</div>
+              <div className="bg-muted/40 p-4 rounded-xl border border-border text-center">
+                <div className="text-xs text-muted-foreground">Pending Dues</div>
                 <div className="text-xl font-bold text-amber-400 mt-1">
                   {formatCurrency(overview?.totalPendingDues)}
                 </div>
               </div>
             </div>
 
-            <div className="pt-4 border-t border-slate-800">
-              <h4 className="text-sm font-semibold text-slate-300 mb-3">Recent Tally & Busy Sync Log</h4>
+            <div className="pt-4 border-t border-border">
+              <h4 className="text-sm font-semibold text-foreground/90 mb-3">Recent Tally & Busy Sync Log</h4>
               <div className="space-y-2">
-                <div className="flex items-center justify-between bg-slate-950 p-3 rounded-xl text-xs text-slate-300 border border-slate-800">
+                <div className="flex items-center justify-between bg-muted/40 p-3 rounded-xl text-xs text-foreground/90 border border-border">
                   <div className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                    <span>Synced 5 Student Ledgers & 4 Payroll Vouchers from Tally Prime</span>
+                    <span>Real-time Dual-Write active on all 7 finance modules</span>
                   </div>
-                  <span className="text-slate-500">Just now</span>
+                  <span className="text-muted-foreground">Live</span>
                 </div>
-                <div className="flex items-center justify-between bg-slate-950 p-3 rounded-xl text-xs text-slate-300 border border-slate-800">
+                <div className="flex items-center justify-between bg-muted/40 p-3 rounded-xl text-xs text-foreground/90 border border-border">
                   <div className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                    <span>Busy Accounting XML Import executed via Local Agent</span>
+                    <span>Tally Voucher Deletion & Anti-Resurrection Guard active</span>
                   </div>
-                  <span className="text-slate-500">Today, 10:30 AM</span>
+                  <span className="text-muted-foreground">Active</span>
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl space-y-4">
-            <h3 className="text-lg font-semibold text-white flex items-center gap-2">
-              <Sliders className="w-5 h-5 text-teal-400" /> Accountant Actions
-            </h3>
-            <div className="space-y-3">
-              <button
-                onClick={() => setShowAddFeeModal(true)}
-                className="w-full flex items-center justify-between p-3.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-sm font-medium transition-all"
-              >
-                <div className="flex items-center gap-2">
-                  <Plus className="w-4 h-4 text-blue-400" />
-                  <span>Record New Student Fee</span>
+          <div className="space-y-6">
+            {/* Live Tally Prime Status Card */}
+            <div className="bg-card border border-border p-6 rounded-2xl space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
+                  <Database className="w-5 h-5 text-blue-400" /> Tally Prime Status
+                </h3>
+                <span className={`px-2.5 py-0.5 text-xs font-semibold rounded-full border flex items-center gap-1.5 ${
+                  tallyConnectedStatus
+                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                    : 'bg-rose-500/10 text-rose-400 border-rose-500/30'
+                }`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${tallyConnectedStatus ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'}`} />
+                  {tallyConnectedStatus ? 'Live Online' : 'Offline'}
+                </span>
+              </div>
+
+              <div className={`p-3.5 rounded-xl border text-xs space-y-2 ${
+                tallyConnectedStatus
+                  ? 'bg-emerald-500/5 border-emerald-500/20 text-emerald-300'
+                  : 'bg-rose-500/5 border-rose-500/20 text-rose-300'
+              }`}>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">API Server:</span>
+                  <span className="font-mono text-foreground font-medium">http://localhost:9000</span>
                 </div>
-                <ArrowUpRight className="w-4 h-4 text-slate-500" />
-              </button>
-              <button
-                onClick={() => setShowAddPayrollModal(true)}
-                className="w-full flex items-center justify-between p-3.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-sm font-medium transition-all"
-              >
-                <div className="flex items-center gap-2">
-                  <Plus className="w-4 h-4 text-emerald-400" />
-                  <span>Generate Faculty Salary Voucher</span>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Target Company:</span>
+                  <span className="font-semibold text-foreground truncate max-w-[150px]">{selectedTallyCompany || 'Convee Education'}</span>
                 </div>
-                <ArrowUpRight className="w-4 h-4 text-slate-500" />
-              </button>
-              <button
-                onClick={() => setActiveTab('connector')}
-                className="w-full flex items-center justify-between p-3.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-sm font-medium transition-all"
-              >
-                <div className="flex items-center gap-2">
-                  <Database className="w-4 h-4 text-teal-400" />
-                  <span>Configure Tally XML API Endpoint</span>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Sync Engine:</span>
+                  <span className="font-semibold text-emerald-400">⚡ Real-time Dual-Write</span>
                 </div>
-                <ArrowUpRight className="w-4 h-4 text-slate-500" />
-              </button>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleRunTallySync}
+                  disabled={syncing}
+                  className="flex-1 px-3 py-2 bg-gradient-to-r from-blue-600 to-teal-600 hover:from-blue-500 hover:to-teal-500 text-white text-xs font-semibold rounded-xl shadow transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
+                  {syncing ? 'Syncing...' : 'Sync Tally Now'}
+                </button>
+                <button
+                  onClick={() => setActiveTab('connector')}
+                  className="px-3 py-2 bg-slate-800 hover:bg-muted text-foreground border border-border text-xs font-semibold rounded-xl transition-all"
+                >
+                  Settings
+                </button>
+              </div>
+            </div>
+
+            {/* Accountant Quick Actions */}
+            <div className="bg-card border border-border p-6 rounded-2xl space-y-4">
+              <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
+                <Sliders className="w-4 h-4 text-teal-400" /> Quick Actions
+              </h3>
+              <div className="space-y-2.5">
+                <button
+                  onClick={() => setShowAddFeeModal(true)}
+                  className="w-full flex items-center justify-between p-3 bg-background hover:bg-muted/80 border border-border rounded-xl text-xs font-medium transition-all"
+                >
+                  <div className="flex items-center gap-2">
+                    <Plus className="w-3.5 h-3.5 text-blue-400" />
+                    <span>Record New Student Fee</span>
+                  </div>
+                  <ArrowUpRight className="w-3.5 h-3.5 text-muted-foreground" />
+                </button>
+                <button
+                  onClick={() => setShowAddPayrollModal(true)}
+                  className="w-full flex items-center justify-between p-3 bg-background hover:bg-muted/80 border border-border rounded-xl text-xs font-medium transition-all"
+                >
+                  <div className="flex items-center gap-2">
+                    <Plus className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Issue Salary Disbursement Voucher</span>
+                  </div>
+                  <ArrowUpRight className="w-3.5 h-3.5 text-muted-foreground" />
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -1053,23 +1448,23 @@ export default function AccountantPage() {
 
       {/* TAB 2: STUDENT FEE LEDGERS */}
       {activeTab === 'fees' && (
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
+        <div className="bg-card border border-border rounded-2xl p-6 space-y-4">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="relative flex-1">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+              <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-3" />
               <input
                 type="text"
                 placeholder="Search by student name, roll number, or receipt..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-4 py-2 text-sm text-slate-200 focus:outline-none focus:border-blue-500"
+                className="w-full bg-background border border-border rounded-xl pl-9 pr-4 py-2 text-sm text-foreground focus:outline-none focus:border-blue-500"
               />
             </div>
             <div className="flex items-center gap-2">
               <select
                 value={feeStatusFilter}
                 onChange={(e) => setFeeStatusFilter(e.target.value)}
-                className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none"
+                className="bg-background border border-border rounded-xl px-3 py-2 text-sm text-foreground focus:outline-none"
               >
                 <option value="ALL">All Statuses</option>
                 <option value="PAID">Paid</option>
@@ -1086,9 +1481,9 @@ export default function AccountantPage() {
             </div>
           </div>
 
-          <div className="overflow-x-auto rounded-xl border border-slate-800">
-            <table className="w-full text-left text-sm text-slate-300">
-              <thead className="bg-slate-950 text-slate-400 uppercase text-xs font-semibold">
+          <div className="overflow-x-auto rounded-xl border border-border">
+            <table className="w-full text-left text-sm text-foreground/90">
+              <thead className="bg-background text-muted-foreground uppercase text-xs font-semibold">
                 <tr>
                   <th className="p-3.5">Student ID & Name</th>
                   <th className="p-3.5">Fee Header</th>
@@ -1101,22 +1496,22 @@ export default function AccountantPage() {
                   <th className="p-3.5 text-right">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800">
+              <tbody className="divide-y divide-border">
                 {filteredFees.length === 0 ? (
                   <tr>
-                    <td colSpan="9" className="p-6 text-center text-slate-500">
+                    <td colSpan="9" className="p-6 text-center text-muted-foreground">
                       No fee records found matching your filters.
                     </td>
                   </tr>
                 ) : (
                   filteredFees.map((f) => (
                     <tr key={f.id} className="hover:bg-slate-850 transition-all">
-                      <td className="p-3.5 font-medium text-white">
+                      <td className="p-3.5 font-medium text-foreground">
                         <div>{f.studentName}</div>
-                        <div className="text-xs text-slate-500 font-mono">{f.studentRollNo}</div>
+                        <div className="text-xs text-muted-foreground font-mono">{f.studentRollNo}</div>
                       </td>
-                      <td className="p-3.5 text-slate-300">{f.feeHeader}</td>
-                      <td className="p-3.5 font-semibold text-slate-100">{formatCurrency(f.totalAmount)}</td>
+                      <td className="p-3.5 text-foreground/90">{f.feeHeader}</td>
+                      <td className="p-3.5 font-semibold text-foreground">{formatCurrency(f.totalAmount)}</td>
                       <td className="p-3.5 text-emerald-400 font-medium">{formatCurrency(f.paidAmount)}</td>
                       <td className="p-3.5 text-amber-400 font-medium">{formatCurrency(f.pendingBalance)}</td>
                       <td className="p-3.5">
@@ -1145,21 +1540,28 @@ export default function AccountantPage() {
                           </span>
                         )}
                       </td>
-                      <td className="p-3.5 font-mono text-xs text-slate-400">{f.receiptNo}</td>
+                      <td className="p-3.5 font-mono text-xs text-muted-foreground">{f.receiptNo}</td>
                       <td className="p-3.5 text-right">
                         <div className="flex items-center justify-end gap-2">
                           <button
                             onClick={() => setPrintableVoucher({ type: 'FEE', data: f })}
-                            className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-slate-700 text-xs font-medium rounded-lg transition-all flex items-center gap-1.5"
+                            className="px-2.5 py-1.5 bg-slate-800 hover:bg-muted text-emerald-400 border border-border text-xs font-medium rounded-lg transition-all flex items-center gap-1.5"
                             title="Download / Print Official Fee Receipt"
                           >
                             <Printer className="w-3.5 h-3.5" /> Receipt
                           </button>
                           <button
                             onClick={() => handleOpenUpdateFeeModal(f)}
-                            className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-blue-400 border border-slate-700 text-xs font-medium rounded-lg transition-all"
+                            className="px-2.5 py-1.5 bg-slate-800 hover:bg-muted text-blue-400 border border-border text-xs font-medium rounded-lg transition-all"
                           >
                             Update
+                          </button>
+                          <button
+                            onClick={() => handleDeleteFee(f.id)}
+                            className="p-1.5 bg-slate-800 hover:bg-rose-500/10 text-muted-foreground hover:text-rose-400 border border-border text-xs rounded-lg transition-all"
+                            title="Delete Fee Record & Purge from Tally"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         </div>
                       </td>
@@ -1174,9 +1576,9 @@ export default function AccountantPage() {
 
       {/* TAB 3: FACULTY PAYROLL */}
       {activeTab === 'payroll' && (
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
+        <div className="bg-card border border-border rounded-2xl p-6 space-y-4">
           <div className="flex items-center justify-between">
-            <h3 className="text-lg font-semibold text-white">Faculty & Staff Payroll Disbursements</h3>
+            <h3 className="text-lg font-semibold text-foreground">Faculty & Staff Payroll Disbursements</h3>
             <button
               onClick={() => setShowAddPayrollModal(true)}
               className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium rounded-xl flex items-center gap-1.5"
@@ -1185,9 +1587,9 @@ export default function AccountantPage() {
             </button>
           </div>
 
-          <div className="overflow-x-auto rounded-xl border border-slate-800">
-            <table className="w-full text-left text-sm text-slate-300">
-              <thead className="bg-slate-950 text-slate-400 uppercase text-xs font-semibold">
+          <div className="overflow-x-auto rounded-xl border border-border">
+            <table className="w-full text-left text-sm text-foreground/90">
+              <thead className="bg-background text-muted-foreground uppercase text-xs font-semibold">
                 <tr>
                   <th className="p-3.5">Emp ID & Name</th>
                   <th className="p-3.5">Designation</th>
@@ -1197,37 +1599,58 @@ export default function AccountantPage() {
                   <th className="p-3.5">Deductions</th>
                   <th className="p-3.5">Net Salary</th>
                   <th className="p-3.5">Status</th>
+                  <th className="p-3.5">Tally Sync Status</th>
                   <th className="p-3.5 text-right">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800">
+              <tbody className="divide-y divide-border">
                 {payrolls.map((p) => (
                   <tr key={p.id} className="hover:bg-slate-850 transition-all">
-                    <td className="p-3.5 font-medium text-white">
+                    <td className="p-3.5 font-medium text-foreground">
                       <div>{p.employeeName}</div>
-                      <div className="text-xs text-slate-500 font-mono">{p.employeeId}</div>
+                      <div className="text-xs text-muted-foreground font-mono">{p.employeeId}</div>
                     </td>
-                    <td className="p-3.5 text-slate-400">{p.designation}</td>
-                    <td className="p-3.5 text-slate-200">
+                    <td className="p-3.5 text-muted-foreground">{p.designation}</td>
+                    <td className="p-3.5 text-foreground">
                       {p.month} {p.year}
                     </td>
                     <td className="p-3.5">{formatCurrency(p.basicPay)}</td>
                     <td className="p-3.5 text-emerald-400">+{formatCurrency(p.allowances)}</td>
                     <td className="p-3.5 text-rose-400">-{formatCurrency(p.deductions)}</td>
-                    <td className="p-3.5 font-bold text-white">{formatCurrency(p.netSalary)}</td>
+                    <td className="p-3.5 font-bold text-foreground">{formatCurrency(p.netSalary)}</td>
                     <td className="p-3.5">
                       <span className="px-2.5 py-1 text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-full">
                         {p.status}
                       </span>
                     </td>
+                    <td className="p-3.5">
+                      {p.tallyVoucherId || p.syncedAt || p.status === 'DISBURSED' ? (
+                        <span className="px-2.5 py-1 text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-full inline-flex items-center gap-1 whitespace-nowrap">
+                          🟢 Tally Master Synced
+                        </span>
+                      ) : (
+                        <span className="px-2.5 py-1 text-[11px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/30 rounded-full inline-flex items-center gap-1 whitespace-nowrap">
+                          🟡 Staged for Tally
+                        </span>
+                      )}
+                    </td>
                     <td className="p-3.5 text-right">
-                      <button
-                        onClick={() => setPrintableVoucher({ type: 'PAYROLL', data: p })}
-                        className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-teal-400 border border-slate-700 text-xs font-medium rounded-lg transition-all flex items-center gap-1.5 ml-auto"
-                        title="Download / Print Faculty Payslip Voucher"
-                      >
-                        <Printer className="w-3.5 h-3.5" /> Payslip
-                      </button>
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => setPrintableVoucher({ type: 'PAYROLL', data: p })}
+                          className="px-2.5 py-1.5 bg-slate-800 hover:bg-muted text-teal-400 border border-border text-xs font-medium rounded-lg transition-all flex items-center gap-1.5"
+                          title="Download / Print Faculty Payslip Voucher"
+                        >
+                          <Printer className="w-3.5 h-3.5" /> Payslip
+                        </button>
+                        <button
+                          onClick={() => handleDeletePayroll(p.id)}
+                          className="p-1.5 bg-slate-800 hover:bg-rose-500/10 text-muted-foreground hover:text-rose-400 border border-border text-xs rounded-lg transition-all"
+                          title="Delete Payroll Record & Purge from Tally"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -1239,7 +1662,7 @@ export default function AccountantPage() {
 
       {/* TAB 4: OTHER EXPENSES & DONATIONS */}
       {activeTab === 'expenses' && (
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
+        <div className="bg-card border border-border rounded-2xl p-6 space-y-4">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="flex items-center gap-2 overflow-x-auto pb-1">
               {['ALL', 'MAINTENANCE', 'DONATION', 'UTILITIES', 'LAB_INFRA', 'EVENTS', 'OTHER'].map((cat) => (
@@ -1249,7 +1672,7 @@ export default function AccountantPage() {
                   className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all whitespace-nowrap ${
                     expenseCategoryFilter === cat
                       ? 'bg-purple-600 text-white shadow-md'
-                      : 'bg-slate-950 text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-800'
+                      : 'bg-background text-muted-foreground hover:text-white hover:bg-muted/80 border border-border'
                   }`}
                 >
                   {cat === 'ALL' ? 'All Categories' : cat.replace('_', ' ')}
@@ -1259,13 +1682,13 @@ export default function AccountantPage() {
 
             <div className="flex items-center gap-2">
               <div className="relative flex-1 md:w-64">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-3" />
                 <input
                   type="text"
                   placeholder="Search by title, vendor, receipt..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-4 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500"
+                  className="w-full bg-background border border-border rounded-xl pl-9 pr-4 py-2 text-sm text-foreground focus:outline-none focus:border-purple-500"
                 />
               </div>
               <button
@@ -1277,9 +1700,9 @@ export default function AccountantPage() {
             </div>
           </div>
 
-          <div className="overflow-x-auto rounded-xl border border-slate-800">
-            <table className="w-full text-left text-sm text-slate-300">
-              <thead className="bg-slate-950 text-slate-400 uppercase text-xs font-semibold">
+          <div className="overflow-x-auto rounded-xl border border-border">
+            <table className="w-full text-left text-sm text-foreground/90">
+              <thead className="bg-background text-muted-foreground uppercase text-xs font-semibold">
                 <tr>
                   <th className="p-3.5">Expense Title & Date</th>
                   <th className="p-3.5">Category</th>
@@ -1288,14 +1711,14 @@ export default function AccountantPage() {
                   <th className="p-3.5">Bank Account</th>
                   <th className="p-3.5">Payment Method</th>
                   <th className="p-3.5">Receipt / Voucher</th>
-                  <th className="p-3.5">Tally Status</th>
+                  <th className="p-3.5">Tally Sync Status</th>
                   <th className="p-3.5 text-right">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800">
+              <tbody className="divide-y divide-border">
                 {expenses.length === 0 ? (
                   <tr>
-                    <td colSpan="9" className="p-6 text-center text-slate-500">
+                    <td colSpan="9" className="p-6 text-center text-muted-foreground">
                       No expense records found matching your filter.
                     </td>
                   </tr>
@@ -1311,9 +1734,9 @@ export default function AccountantPage() {
                     })
                     .map((e) => (
                       <tr key={e.id} className="hover:bg-slate-850 transition-all">
-                        <td className="p-3.5 font-medium text-white">
+                        <td className="p-3.5 font-medium text-foreground">
                           <div>{e.title}</div>
-                          <div className="text-xs text-slate-500">{new Date(e.expenseDate).toLocaleDateString('en-IN')}</div>
+                          <div className="text-xs text-muted-foreground">{new Date(e.expenseDate).toLocaleDateString('en-IN')}</div>
                         </td>
                         <td className="p-3.5">
                           <span
@@ -1322,7 +1745,7 @@ export default function AccountantPage() {
                                 ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
                                 : e.category === 'MAINTENANCE'
                                 ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
-                                : e.category === 'LAB_INFRA'
+                                : e.category === 'UTILITIES'
                                 ? 'bg-blue-500/10 text-blue-400 border-blue-500/30'
                                 : 'bg-purple-500/10 text-purple-400 border-purple-500/30'
                             }`}
@@ -1330,23 +1753,23 @@ export default function AccountantPage() {
                             {e.category}
                           </span>
                         </td>
-                        <td className="p-3.5 text-slate-300">{e.vendorName || '-'}</td>
+                        <td className="p-3.5 text-foreground/90">{e.vendorName || '-'}</td>
                         <td className={`p-3.5 font-bold ${e.category === 'DONATION' ? 'text-emerald-400' : 'text-purple-300'}`}>
                           {e.category === 'DONATION' ? '+' : '-'}{formatCurrency(e.amount)}
                         </td>
                         <td className="p-3.5 text-xs text-teal-400 font-mono">{e.bankAccountName || 'HDFC Bank Main Account'}</td>
-                        <td className="p-3.5 text-xs text-slate-400">{e.paymentMethod || 'BANK_TRANSFER'}</td>
-                        <td className="p-3.5 font-mono text-xs text-slate-400">{e.receiptNo}</td>
+                        <td className="p-3.5 text-xs text-muted-foreground">{e.paymentMethod || 'BANK_TRANSFER'}</td>
+                        <td className="p-3.5 font-mono text-xs text-muted-foreground">{e.receiptNo}</td>
                         <td className="p-3.5">
                           <span className="px-2.5 py-1 text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-full whitespace-nowrap inline-flex items-center gap-1">
-                            🟢 Synced Tally
+                            🟢 Tally Master Synced
                           </span>
                         </td>
                         <td className="p-3.5 text-right">
                           <div className="flex items-center justify-end gap-2">
                             <button
                               onClick={() => setPrintableVoucher({ type: 'EXPENSE', data: e })}
-                              className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-purple-400 border border-slate-700 text-xs font-medium rounded-lg transition-all flex items-center gap-1.5"
+                              className="px-2.5 py-1.5 bg-slate-800 hover:bg-muted text-purple-400 border border-border text-xs font-medium rounded-lg transition-all flex items-center gap-1.5"
                               title="Download / Print Expense Voucher"
                             >
                               <Printer className="w-3.5 h-3.5" /> Voucher
@@ -1371,11 +1794,11 @@ export default function AccountantPage() {
 
       {/* TAB 5: SCHOOL BANK ACCOUNTS */}
       {activeTab === 'bank-accounts' && (
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6">
+        <div className="bg-card border border-border rounded-2xl p-6 space-y-6">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-lg font-semibold text-white">School & Campus Bank Accounts</h3>
-              <p className="text-xs text-slate-400">Configure bank ledgers for fees receipt, payroll disbursement, and operational expenses</p>
+              <h3 className="text-lg font-semibold text-foreground">School & Campus Bank Accounts</h3>
+              <p className="text-xs text-muted-foreground">Configure bank ledgers for fees receipt, payroll disbursement, and operational expenses</p>
             </div>
             <button
               onClick={() => setShowAddBankModal(true)}
@@ -1387,11 +1810,11 @@ export default function AccountantPage() {
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {bankAccounts.map((b) => (
-              <div key={b.id} className="bg-slate-950 border border-slate-800 hover:border-teal-500/40 p-5 rounded-2xl space-y-3 relative transition-all">
+              <div key={b.id} className="bg-background border border-border hover:border-teal-500/40 p-5 rounded-2xl space-y-3 relative transition-all">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Landmark className="w-5 h-5 text-teal-400" />
-                    <span className="font-bold text-white text-base">{b.bankName}</span>
+                    <span className="font-bold text-foreground text-base">{b.bankName}</span>
                   </div>
                   {b.isPrimary ? (
                     <span className="px-2.5 py-0.5 text-[10px] font-extrabold bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 rounded-full">
@@ -1400,7 +1823,7 @@ export default function AccountantPage() {
                   ) : (
                     <button
                       onClick={() => handleDeleteBankAccount(b.id)}
-                      className="p-1 text-slate-500 hover:text-rose-400 transition-all"
+                      className="p-1 text-muted-foreground hover:text-rose-400 transition-all"
                       title="Deactivate Account"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -1409,19 +1832,24 @@ export default function AccountantPage() {
                 </div>
 
                 <div className="space-y-1">
-                  <div className="text-xs text-slate-300 font-medium">{b.accountName}</div>
-                  <div className="text-sm font-mono text-slate-200 tracking-wider">
+                  <div className="text-xs text-foreground/90 font-medium">{b.accountName}</div>
+                  <div className="text-sm font-mono text-foreground tracking-wider">
                     •••• •••• •••• {b.accountNumber.slice(-4) || '1039'}
                   </div>
-                  <div className="text-xs text-slate-500">IFSC: {b.ifscCode} • {b.branchName || 'Main Branch'}</div>
+                  <div className="text-xs text-muted-foreground">IFSC: {b.ifscCode} • {b.branchName || 'Main Branch'}</div>
+                  <div className="pt-1">
+                    <span className="px-2 py-0.5 text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-full inline-flex items-center gap-1">
+                      🟢 Tally Master Synced
+                    </span>
+                  </div>
                 </div>
 
                 <div className="pt-2 border-t border-slate-900 flex items-center justify-between text-xs">
                   <div>
-                    <span className="text-slate-500 block">Current Balance:</span>
+                    <span className="text-muted-foreground block">Current Balance:</span>
                     <span className="font-bold text-emerald-400 text-base">{formatCurrency(b.currentBalance || b.openingBalance)}</span>
                   </div>
-                  <span className="px-2 py-0.5 bg-slate-800 text-slate-300 rounded font-mono text-[10px]">
+                  <span className="px-2 py-0.5 bg-slate-800 text-foreground/90 rounded font-mono text-[10px]">
                     {b.accountType}
                   </span>
                 </div>
@@ -1433,16 +1861,16 @@ export default function AccountantPage() {
 
       {/* TAB 6: SOCIETY & CORPUS FUNDS */}
       {activeTab === 'society-funds' && (
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6">
+        <div className="bg-card border border-border rounded-2xl p-6 space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="text-lg font-semibold text-white">Society & Corpus Capital Funds</h3>
+                <h3 className="text-lg font-semibold text-foreground">Society & Corpus Capital Funds</h3>
                 <span className="px-2.5 py-0.5 text-xs font-semibold bg-indigo-500/10 text-indigo-400 border border-indigo-500/30 rounded-full">
                   Capital Account Ledgers
                 </span>
               </div>
-              <p className="text-xs text-slate-400 mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 Manage society corpus capital, trust endowments, restricted grants, and development reserves synced with Tally.
               </p>
             </div>
@@ -1456,43 +1884,43 @@ export default function AccountantPage() {
 
           {/* Stat Summary Cards */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
-              <div className="text-xs text-slate-400 font-medium">TOTAL CORPUS CAPITAL</div>
+            <div className="bg-muted/40 p-4 rounded-xl border border-border">
+              <div className="text-xs text-muted-foreground font-medium">TOTAL CORPUS CAPITAL</div>
               <div className="text-2xl font-bold text-indigo-400 mt-1">
                 {formatCurrency(societyFunds.reduce((sum, f) => sum + (f.amount || 0), 0))}
               </div>
-              <div className="text-[11px] text-slate-500 mt-0.5">{societyFunds.length} total active reserve funds</div>
+              <div className="text-[11px] text-muted-foreground mt-0.5">{societyFunds.length} total active reserve funds</div>
             </div>
 
-            <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
-              <div className="text-xs text-slate-400 font-medium">RESTRICTED ENDOWMENTS</div>
+            <div className="bg-muted/40 p-4 rounded-xl border border-border">
+              <div className="text-xs text-muted-foreground font-medium">RESTRICTED ENDOWMENTS</div>
               <div className="text-2xl font-bold text-amber-400 mt-1">
                 {formatCurrency(societyFunds.filter((f) => f.isRestricted).reduce((sum, f) => sum + (f.amount || 0), 0))}
               </div>
-              <div className="text-[11px] text-slate-500 mt-0.5">Earmarked grants & scholarship funds</div>
+              <div className="text-[11px] text-muted-foreground mt-0.5">Earmarked grants & scholarship funds</div>
             </div>
 
-            <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
-              <div className="text-xs text-slate-400 font-medium">UNRESTRICTED RESERVES</div>
+            <div className="bg-muted/40 p-4 rounded-xl border border-border">
+              <div className="text-xs text-muted-foreground font-medium">UNRESTRICTED RESERVES</div>
               <div className="text-2xl font-bold text-emerald-400 mt-1">
                 {formatCurrency(societyFunds.filter((f) => !f.isRestricted).reduce((sum, f) => sum + (f.amount || 0), 0))}
               </div>
-              <div className="text-[11px] text-slate-500 mt-0.5">General institutional advancement</div>
+              <div className="text-[11px] text-muted-foreground mt-0.5">General institutional advancement</div>
             </div>
 
-            <div className="bg-slate-950 p-4 rounded-xl border border-indigo-500/30">
+            <div className="bg-muted/40 p-4 rounded-xl border border-indigo-500/30">
               <div className="text-xs text-indigo-300 font-semibold flex items-center gap-1">
                 <Database className="w-3.5 h-3.5" /> TALLY PRIME STATUS
               </div>
-              <div className="text-base font-bold text-white mt-1">Capital Account</div>
+              <div className="text-base font-bold text-foreground mt-1">Capital Account</div>
               <div className="text-[11px] text-indigo-300/80 mt-0.5">Auto-generates Capital Receipts</div>
             </div>
           </div>
 
           {/* Funds List Table */}
-          <div className="overflow-x-auto rounded-xl border border-slate-800">
+          <div className="overflow-x-auto rounded-xl border border-border">
             <table className="w-full text-left text-sm">
-              <thead className="bg-slate-950 text-slate-400 text-xs uppercase font-medium">
+              <thead className="bg-background text-muted-foreground text-xs uppercase font-medium">
                 <tr>
                   <th className="p-3.5">Fund Name & Purpose</th>
                   <th className="p-3.5 whitespace-nowrap">Type & Classification</th>
@@ -1500,22 +1928,23 @@ export default function AccountantPage() {
                   <th className="p-3.5 whitespace-nowrap">Receipt No & Date</th>
                   <th className="p-3.5 whitespace-nowrap">Restriction Status</th>
                   <th className="p-3.5 text-right whitespace-nowrap">Fund Amount</th>
+                  <th className="p-3.5 text-center whitespace-nowrap">Tally Sync Status</th>
                   <th className="p-3.5 text-center whitespace-nowrap">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/60 text-slate-300">
+              <tbody className="divide-y divide-border/60 text-foreground/90">
                 {societyFunds.length === 0 ? (
                   <tr>
-                    <td colSpan="7" className="p-8 text-center text-slate-500">
+                    <td colSpan="8" className="p-8 text-center text-muted-foreground">
                       No Society or Corpus funds recorded yet. Click "+ Record Society Fund" to add one.
                     </td>
                   </tr>
                 ) : (
                   societyFunds.map((fund) => (
-                    <tr key={fund.id} className="hover:bg-slate-800/40 transition-colors">
+                    <tr key={fund.id} className="hover:bg-muted/80/40 transition-colors">
                       <td className="p-3.5 min-w-[200px]">
-                        <div className="font-semibold text-white">{fund.fundName}</div>
-                        {fund.purpose && <div className="text-xs text-slate-400 mt-0.5">{fund.purpose}</div>}
+                        <div className="font-semibold text-foreground">{fund.fundName}</div>
+                        {fund.purpose && <div className="text-xs text-muted-foreground mt-0.5">{fund.purpose}</div>}
                       </td>
                       <td className="p-3.5 whitespace-nowrap">
                         <span className={`px-2.5 py-1 text-[11px] font-bold rounded-md inline-block ${
@@ -1528,11 +1957,11 @@ export default function AccountantPage() {
                         </span>
                       </td>
                       <td className="p-3.5 min-w-[180px]">
-                        <div className="font-medium text-slate-200">{fund.contributingBody}</div>
+                        <div className="font-medium text-foreground">{fund.contributingBody}</div>
                       </td>
                       <td className="p-3.5 whitespace-nowrap">
-                        <div className="font-mono text-xs text-slate-200 font-semibold">{fund.receiptNo || 'SOC/2026-27/001'}</div>
-                        <div className="text-[11px] text-slate-500">{new Date(fund.fundDate || fund.createdAt).toLocaleDateString('en-IN')}</div>
+                        <div className="font-mono text-xs text-foreground font-semibold">{fund.receiptNo || 'SOC/2026-27/001'}</div>
+                        <div className="text-[11px] text-muted-foreground">{new Date(fund.fundDate || fund.createdAt).toLocaleDateString('en-IN')}</div>
                       </td>
                       <td className="p-3.5 whitespace-nowrap">
                         {fund.isRestricted ? (
@@ -1548,18 +1977,23 @@ export default function AccountantPage() {
                       <td className="p-3.5 text-right font-mono font-bold text-indigo-300 text-base whitespace-nowrap">
                         {formatCurrency(fund.amount)}
                       </td>
+                      <td className="p-3.5 text-center whitespace-nowrap">
+                        <span className="px-2.5 py-1 text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-full inline-flex items-center gap-1 whitespace-nowrap">
+                          🟢 Tally Master Synced
+                        </span>
+                      </td>
                       <td className="p-3.5 text-center">
                         <div className="flex items-center justify-center gap-1.5">
                           <button
                             onClick={() => setPrintableVoucher({ type: 'SOCIETY_FUND', data: fund })}
-                            className="p-1.5 text-slate-400 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg transition-all"
+                            className="p-1.5 text-muted-foreground hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg transition-all"
                             title="Print Fund Receipt Voucher"
                           >
                             <Printer className="w-4 h-4" />
                           </button>
                           <button
                             onClick={() => handleDeleteSocietyFund(fund.id)}
-                            className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-all"
+                            className="p-1.5 text-muted-foreground hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-all"
                             title="Delete Fund Record"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -1577,16 +2011,16 @@ export default function AccountantPage() {
 
       {/* TAB 7: CASH IN HAND & CASH DRAWERS */}
       {activeTab === 'cash-in-hand' && (
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6">
+        <div className="bg-card border border-border rounded-2xl p-6 space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="text-lg font-semibold text-white">Cash in Hand & Counter Cash Drawers</h3>
+                <h3 className="text-lg font-semibold text-foreground">Cash in Hand & Counter Cash Drawers</h3>
                 <span className="px-2.5 py-0.5 text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/30 rounded-full">
                   F4 Contra & Petty Cash
                 </span>
               </div>
-              <p className="text-xs text-slate-400 mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 Track physical cash registers, counter collections, bank float withdrawals, and petty cash disbursements.
               </p>
             </div>
@@ -1606,8 +2040,8 @@ export default function AccountantPage() {
                 onClick={() => setSelectedRegisterId(reg.id)}
                 className={`p-5 rounded-2xl border transition-all cursor-pointer ${
                   selectedRegisterId === reg.id
-                    ? 'bg-slate-950 border-amber-500 ring-1 ring-amber-500/40 shadow-lg'
-                    : 'bg-slate-950 border-slate-800 hover:border-slate-700'
+                    ? 'bg-background border-amber-500 ring-1 ring-amber-500/40 shadow-lg'
+                    : 'bg-background border-border hover:border-border'
                 }`}
               >
                 <div className="flex items-center justify-between">
@@ -1616,8 +2050,8 @@ export default function AccountantPage() {
                       <Coins className="w-5 h-5" />
                     </div>
                     <div>
-                      <div className="font-bold text-white text-sm">{reg.registerName}</div>
-                      <div className="text-[11px] text-slate-400">Custodian: {reg.custodianName || 'Cashier'}</div>
+                      <div className="font-bold text-foreground text-sm">{reg.registerName}</div>
+                      <div className="text-[11px] text-muted-foreground">Custodian: {reg.custodianName || 'Cashier'}</div>
                     </div>
                   </div>
                   {reg.isDefault && (
@@ -1629,7 +2063,7 @@ export default function AccountantPage() {
 
                 <div className="pt-3 mt-3 border-t border-slate-900 flex items-center justify-between">
                   <div>
-                    <span className="text-[10px] text-slate-500 block uppercase font-semibold">Live Drawer Balance</span>
+                    <span className="text-[10px] text-muted-foreground block uppercase font-semibold">Live Drawer Balance</span>
                     <span className="text-xl font-bold text-emerald-400 font-mono">
                       {formatCurrency(reg.currentBalance || reg.openingBalance)}
                     </span>
@@ -1644,7 +2078,7 @@ export default function AccountantPage() {
             <div className="bg-gradient-to-br from-slate-950 to-amber-950/30 border border-amber-500/30 p-5 rounded-2xl flex flex-col justify-between">
               <div>
                 <span className="text-xs font-semibold text-amber-300 uppercase">Total Cash in Hand Across Campus</span>
-                <div className="text-2xl font-bold text-white font-mono mt-1">
+                <div className="text-2xl font-bold text-foreground font-mono mt-1">
                   {formatCurrency(cashRegisters.reduce((sum, r) => sum + (r.currentBalance || 0), 0))}
                 </div>
               </div>
@@ -1658,7 +2092,7 @@ export default function AccountantPage() {
           {/* Cash Transactions Table */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+              <h4 className="text-sm font-semibold text-foreground flex items-center gap-2">
                 <Clock className="w-4 h-4 text-amber-400" /> Cash Daybook & Transaction Log
               </h4>
               {selectedRegisterId && (
@@ -1671,9 +2105,9 @@ export default function AccountantPage() {
               )}
             </div>
 
-            <div className="overflow-x-auto rounded-xl border border-slate-800">
+            <div className="overflow-x-auto rounded-xl border border-border">
               <table className="w-full text-left text-sm">
-                <thead className="bg-slate-950 text-slate-400 text-xs uppercase font-medium">
+                <thead className="bg-background text-muted-foreground text-xs uppercase font-medium">
                   <tr>
                     <th className="p-3.5 whitespace-nowrap">Date & Voucher</th>
                     <th className="p-3.5 whitespace-nowrap">Cash Register</th>
@@ -1681,13 +2115,14 @@ export default function AccountantPage() {
                     <th className="p-3.5">Payer / Beneficiary</th>
                     <th className="p-3.5 whitespace-nowrap">Category</th>
                     <th className="p-3.5 text-right whitespace-nowrap">Amount (₹)</th>
+                    <th className="p-3.5 text-center whitespace-nowrap">Tally Sync Status</th>
                     <th className="p-3.5 text-center whitespace-nowrap">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-800/60 text-slate-300">
+                <tbody className="divide-y divide-border/60 text-foreground/90">
                   {cashTransactions.length === 0 ? (
                     <tr>
-                      <td colSpan="7" className="p-8 text-center text-slate-500">
+                      <td colSpan="8" className="p-8 text-center text-muted-foreground">
                         No cash transactions recorded yet. Click "+ Record Cash In/Out / Transfer" to post a cash entry.
                       </td>
                     </tr>
@@ -1698,13 +2133,13 @@ export default function AccountantPage() {
                         const isOutflow = ['CASH_OUT', 'BANK_DEPOSIT', 'EXPENSE_PAYMENT'].includes(tx.transactionType);
                         const regName = cashRegisters.find((r) => r.id === tx.registerId)?.registerName || 'Cash Box';
                         return (
-                          <tr key={tx.id} className="hover:bg-slate-800/40 transition-colors">
+                          <tr key={tx.id} className="hover:bg-muted/80/40 transition-colors">
                             <td className="p-3.5 whitespace-nowrap">
-                              <div className="font-mono text-xs font-bold text-white">{tx.voucherNumber || `CSH-${tx.id.slice(0, 6)}`}</div>
-                              <div className="text-[11px] text-slate-500">{new Date(tx.transactionDate || tx.createdAt).toLocaleDateString('en-IN')}</div>
+                              <div className="font-mono text-xs font-bold text-foreground">{tx.voucherNumber || `CSH-${tx.id.slice(0, 6)}`}</div>
+                              <div className="text-[11px] text-muted-foreground">{new Date(tx.transactionDate || tx.createdAt).toLocaleDateString('en-IN')}</div>
                             </td>
                             <td className="p-3.5 whitespace-nowrap">
-                              <div className="font-medium text-slate-200 text-xs">{regName}</div>
+                              <div className="font-medium text-foreground text-xs">{regName}</div>
                             </td>
                             <td className="p-3.5 whitespace-nowrap">
                               <span className={`px-2.5 py-1 text-[10px] font-extrabold rounded-md inline-block ${
@@ -1716,11 +2151,11 @@ export default function AccountantPage() {
                               </span>
                             </td>
                             <td className="p-3.5 min-w-[180px]">
-                              <div className="font-medium text-slate-200">{tx.recipientOrPayer || '-'}</div>
-                              {tx.notes && <div className="text-[11px] text-slate-400 italic">{tx.notes}</div>}
+                              <div className="font-medium text-foreground">{tx.recipientOrPayer || '-'}</div>
+                              {tx.notes && <div className="text-[11px] text-muted-foreground italic">{tx.notes}</div>}
                             </td>
                             <td className="p-3.5 whitespace-nowrap">
-                              <span className="px-2.5 py-1 bg-slate-800 text-slate-300 rounded text-xs font-mono inline-block">
+                              <span className="px-2.5 py-1 bg-slate-800 text-foreground/90 rounded text-xs font-mono inline-block">
                                 {tx.category || 'PETTY_EXPENSE'}
                               </span>
                             </td>
@@ -1728,13 +2163,27 @@ export default function AccountantPage() {
                               {isOutflow ? '-' : '+'}{formatCurrency(tx.amount)}
                             </td>
                             <td className="p-3.5 text-center whitespace-nowrap">
-                              <button
-                                onClick={() => setPrintableVoucher({ type: 'CASH_TRANSACTION', data: { ...tx, registerName: regName } })}
-                                className="p-1.5 text-slate-400 hover:text-amber-400 hover:bg-amber-500/10 rounded-lg transition-all"
-                                title="Print Cash Voucher"
-                              >
-                                <Printer className="w-4 h-4" />
-                              </button>
+                              <span className="px-2.5 py-1 text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-full inline-flex items-center gap-1 whitespace-nowrap">
+                                🟢 Tally Master Synced
+                              </span>
+                            </td>
+                            <td className="p-3.5 text-center whitespace-nowrap">
+                              <div className="flex items-center justify-center gap-1.5">
+                                <button
+                                  onClick={() => setPrintableVoucher({ type: 'CASH_TRANSACTION', data: { ...tx, registerName: regName } })}
+                                  className="p-1.5 text-muted-foreground hover:text-amber-400 hover:bg-amber-500/10 rounded-lg transition-all"
+                                  title="Print Cash Voucher"
+                                >
+                                  <Printer className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteCashTransaction(tx.id)}
+                                  className="p-1.5 text-muted-foreground hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-all"
+                                  title="Delete Cash Transaction & Purge from Tally"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         );
@@ -1749,16 +2198,16 @@ export default function AccountantPage() {
 
       {/* TAB 8: FIXED ASSET REGISTER & DEPRECIATION */}
       {activeTab === 'fixed-assets' && (
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6">
+        <div className="bg-card border border-border rounded-2xl p-6 space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="text-lg font-semibold text-white">Fixed Asset Register & Depreciation</h3>
+                <h3 className="text-lg font-semibold text-foreground">Fixed Asset Register & Depreciation</h3>
                 <span className="px-2.5 py-0.5 text-xs font-semibold bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 rounded-full">
                   Balance Sheet Capital Assets
                 </span>
               </div>
-              <p className="text-xs text-slate-400 mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 Track academic block buildings, IT computer labs, school buses, lab equipment, and live annual depreciation journal vouchers.
               </p>
             </div>
@@ -1772,20 +2221,20 @@ export default function AccountantPage() {
 
           {/* Asset Summary Cards */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
-              <div className="text-xs text-slate-400 font-medium">TOTAL ASSET PURCHASE COST</div>
-              <div className="text-2xl font-bold text-white mt-1">
+            <div className="bg-muted/40 p-4 rounded-xl border border-border">
+              <div className="text-xs text-muted-foreground font-medium">TOTAL ASSET PURCHASE COST</div>
+              <div className="text-2xl font-bold text-foreground mt-1">
                 {formatCurrency(fixedAssets.reduce((sum, a) => sum + (a.purchasePrice || 0), 0))}
               </div>
-              <div className="text-[11px] text-slate-500 mt-0.5">Historical acquisition value</div>
+              <div className="text-[11px] text-muted-foreground mt-0.5">Historical acquisition value</div>
             </div>
 
-            <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
-              <div className="text-xs text-slate-400 font-medium">ACCUMULATED DEPRECIATION</div>
+            <div className="bg-muted/40 p-4 rounded-xl border border-border">
+              <div className="text-xs text-muted-foreground font-medium">ACCUMULATED DEPRECIATION</div>
               <div className="text-2xl font-bold text-rose-400 mt-1">
                 -{formatCurrency(fixedAssets.reduce((sum, a) => sum + (a.accumulatedDepreciation || 0), 0))}
               </div>
-              <div className="text-[11px] text-slate-500 mt-0.5">Total written-down value reduction</div>
+              <div className="text-[11px] text-muted-foreground mt-0.5">Total written-down value reduction</div>
             </div>
 
             <div className="bg-gradient-to-br from-slate-950 to-cyan-950/40 p-4 rounded-xl border border-cyan-500/30">
@@ -1796,12 +2245,12 @@ export default function AccountantPage() {
               <div className="text-[11px] text-cyan-300/70 mt-0.5">Balance Sheet asset balance</div>
             </div>
 
-            <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 flex flex-col justify-between">
+            <div className="bg-muted/40 p-4 rounded-xl border border-border flex flex-col justify-between">
               <div>
-                <div className="text-xs text-slate-400 font-medium">TALLY PRIME JOURNAL VOUCHERS</div>
+                <div className="text-xs text-muted-foreground font-medium">TALLY PRIME JOURNAL VOUCHERS</div>
                 <div className="text-sm font-bold text-emerald-400 mt-1">Auto Journal Posting Active</div>
               </div>
-              <div className="text-[11px] text-slate-500">Dr. Depreciation A/c | Cr. Asset A/c</div>
+              <div className="text-[11px] text-muted-foreground">Dr. Depreciation A/c | Cr. Asset A/c</div>
             </div>
           </div>
 
@@ -1814,7 +2263,7 @@ export default function AccountantPage() {
                 className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all whitespace-nowrap ${
                   assetCategoryFilter === cat
                     ? 'bg-cyan-600 text-white shadow-md'
-                    : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
+                    : 'bg-background text-muted-foreground hover:text-white border border-border'
                 }`}
               >
                 {cat.replace('_', ' ')}
@@ -1823,9 +2272,9 @@ export default function AccountantPage() {
           </div>
 
           {/* Fixed Asset Register Table */}
-          <div className="overflow-x-auto rounded-xl border border-slate-800">
+          <div className="overflow-x-auto rounded-xl border border-border">
             <table className="w-full text-left text-sm">
-              <thead className="bg-slate-950 text-slate-400 text-xs uppercase font-medium">
+              <thead className="bg-background text-muted-foreground text-xs uppercase font-medium">
                 <tr>
                   <th className="p-3.5 whitespace-nowrap">Asset Name & Code</th>
                   <th className="p-3.5 whitespace-nowrap">Category & Location</th>
@@ -1834,13 +2283,14 @@ export default function AccountantPage() {
                   <th className="p-3.5 text-center whitespace-nowrap">Depreciation Rate</th>
                   <th className="p-3.5 text-right whitespace-nowrap">Accumulated Dep.</th>
                   <th className="p-3.5 text-right whitespace-nowrap">Current Book Value</th>
+                  <th className="p-3.5 text-center whitespace-nowrap">Tally Sync Status</th>
                   <th className="p-3.5 text-center whitespace-nowrap">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/60 text-slate-300">
+              <tbody className="divide-y divide-border/60 text-foreground/90">
                 {fixedAssets.length === 0 ? (
                   <tr>
-                    <td colSpan="8" className="p-8 text-center text-slate-500">
+                    <td colSpan="9" className="p-8 text-center text-muted-foreground">
                       No Fixed Assets recorded yet. Click "+ Add Fixed Asset" to register school capital assets.
                     </td>
                   </tr>
@@ -1848,22 +2298,22 @@ export default function AccountantPage() {
                   fixedAssets
                     .filter((a) => assetCategoryFilter === 'ALL' || a.category === assetCategoryFilter)
                     .map((asset) => (
-                      <tr key={asset.id} className="hover:bg-slate-800/40 transition-colors">
+                      <tr key={asset.id} className="hover:bg-muted/80/40 transition-colors">
                         <td className="p-3.5 min-w-[200px]">
-                          <div className="font-semibold text-white">{asset.assetName}</div>
+                          <div className="font-semibold text-foreground">{asset.assetName}</div>
                           <div className="font-mono text-xs text-cyan-400 font-bold mt-0.5">{asset.assetCode || 'AST-001'}</div>
                         </td>
                         <td className="p-3.5 whitespace-nowrap">
-                          <span className="px-2 py-0.5 text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-700 rounded-md inline-block">
+                          <span className="px-2 py-0.5 text-[10px] font-bold bg-slate-800 text-foreground/90 border border-border rounded-md inline-block">
                             {asset.category}
                           </span>
-                          <div className="text-xs text-slate-400 mt-1">{asset.location || 'Main Campus'}</div>
+                          <div className="text-xs text-muted-foreground mt-1">{asset.location || 'Main Campus'}</div>
                         </td>
                         <td className="p-3.5 whitespace-nowrap">
-                          <div className="text-xs text-slate-200">{new Date(asset.purchaseDate || asset.createdAt).toLocaleDateString('en-IN')}</div>
-                          <div className="text-[11px] text-slate-400">{asset.vendorName || 'Direct Vendor'}</div>
+                          <div className="text-xs text-foreground">{new Date(asset.purchaseDate || asset.createdAt).toLocaleDateString('en-IN')}</div>
+                          <div className="text-[11px] text-muted-foreground">{asset.vendorName || 'Direct Vendor'}</div>
                         </td>
-                        <td className="p-3.5 text-right font-mono font-medium text-slate-200 whitespace-nowrap">
+                        <td className="p-3.5 text-right font-mono font-medium text-foreground whitespace-nowrap">
                           {formatCurrency(asset.purchasePrice)}
                         </td>
                         <td className="p-3.5 text-center whitespace-nowrap">
@@ -1878,6 +2328,11 @@ export default function AccountantPage() {
                           {formatCurrency(asset.currentBookValue)}
                         </td>
                         <td className="p-3.5 text-center whitespace-nowrap">
+                          <span className="px-2.5 py-1 text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-full inline-flex items-center gap-1 whitespace-nowrap">
+                            🟢 Tally Master Synced
+                          </span>
+                        </td>
+                        <td className="p-3.5 text-center whitespace-nowrap">
                           <div className="flex items-center justify-center gap-1.5">
                             <button
                               onClick={() => handleDepreciateAsset(asset.id)}
@@ -1888,14 +2343,14 @@ export default function AccountantPage() {
                             </button>
                             <button
                               onClick={() => setPrintableVoucher({ type: 'FIXED_ASSET', data: asset })}
-                              className="p-1.5 text-slate-400 hover:text-cyan-400 hover:bg-cyan-500/10 rounded-lg transition-all"
+                              className="p-1.5 text-muted-foreground hover:text-cyan-400 hover:bg-cyan-500/10 rounded-lg transition-all"
                               title="Print Asset Tag / Register Card"
                             >
                               <Printer className="w-4 h-4" />
                             </button>
                             <button
                               onClick={() => handleDeleteFixedAsset(asset.id)}
-                              className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-all"
+                              className="p-1.5 text-muted-foreground hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-all"
                               title="Delete Asset"
                             >
                               <Trash2 className="w-4 h-4" />
@@ -1915,15 +2370,15 @@ export default function AccountantPage() {
       {activeTab === 'connector' && (
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl space-y-4">
+          <div className="bg-card border border-border p-6 rounded-2xl space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="p-3 bg-blue-600/20 text-blue-400 rounded-xl border border-blue-500/30">
                   <Database className="w-6 h-6" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-semibold text-white">Local Tally Prime XML Connector</h3>
-                  <p className="text-xs text-slate-400">Connects to Tally.ERP 9 / Tally Prime via HTTP XML API</p>
+                  <h3 className="text-lg font-semibold text-foreground">Local Tally Prime XML Connector</h3>
+                  <p className="text-xs text-muted-foreground">Connects to Tally.ERP 9 / Tally Prime via HTTP XML API</p>
                 </div>
               </div>
               <span className={`px-2.5 py-1 text-[11px] font-semibold rounded-full border ${
@@ -1954,7 +2409,7 @@ export default function AccountantPage() {
               )}
 
               {/* Target Tally Company Selector Card */}
-              <div className="bg-slate-950 p-4 rounded-xl border border-blue-500/30 space-y-3">
+              <div className="bg-muted/40 p-4 rounded-xl border border-blue-500/30 space-y-3">
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-semibold text-blue-400 uppercase tracking-wider flex items-center gap-1.5">
                     <Building2 className="w-4 h-4" /> Target Tally Company
@@ -1962,7 +2417,7 @@ export default function AccountantPage() {
                   <button
                     onClick={fetchTallyCompanies}
                     disabled={loadingTallyCompanies}
-                    className="text-[11px] text-slate-400 hover:text-blue-400 font-medium flex items-center gap-1 transition-all"
+                    className="text-[11px] text-muted-foreground hover:text-blue-400 font-medium flex items-center gap-1 transition-all"
                   >
                     <RefreshCw className={`w-3 h-3 ${loadingTallyCompanies ? 'animate-spin' : ''}`} />
                     Fetch Open Companies
@@ -1980,7 +2435,7 @@ export default function AccountantPage() {
                         handleSelectTallyCompany(e.target.value);
                       }
                     }}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-sm text-white font-medium focus:border-blue-500 focus:outline-none"
+                    className="w-full bg-card border border-border rounded-xl p-2.5 text-sm text-white font-medium focus:border-blue-500 focus:outline-none"
                   >
                     {tallyCompanyOptions.length > 0 ? (
                       <optgroup label="Connected Tally Companies">
@@ -2006,12 +2461,12 @@ export default function AccountantPage() {
                       placeholder="Type exact Tally company name..."
                       value={selectedTallyCompany}
                       onChange={(e) => handleSelectTallyCompany(e.target.value)}
-                      className="w-full bg-slate-900 border border-blue-500/50 rounded-xl p-2.5 text-sm text-white focus:outline-none"
+                      className="w-full bg-card border border-blue-500/50 rounded-xl p-2.5 text-sm text-white focus:outline-none"
                     />
                   </div>
                 )}
 
-                <div className="text-[11px] text-slate-400 flex items-center justify-between pt-1 border-t border-slate-900">
+                <div className="text-[11px] text-muted-foreground flex items-center justify-between pt-1 border-t border-slate-900">
                   <span>Sync Destination:</span>
                   <span className="font-bold text-teal-400 bg-teal-950/60 px-2 py-0.5 rounded border border-teal-500/30">
                     {selectedTallyCompany || 'Convee Education'}
@@ -2020,7 +2475,7 @@ export default function AccountantPage() {
               </div>
 
               {/* Tally Group & Year Isolation Preview Card */}
-              <div className="bg-slate-950 p-4 rounded-xl border border-teal-500/30 space-y-3">
+              <div className="bg-muted/40 p-4 rounded-xl border border-teal-500/30 space-y-3">
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-semibold text-teal-400 uppercase tracking-wider flex items-center gap-1.5">
                     <Sliders className="w-4 h-4" /> Tally Group & Financial Year Rules
@@ -2029,39 +2484,39 @@ export default function AccountantPage() {
                     Year Auto-Suffix Active
                   </span>
                 </div>
-                <div className="grid grid-cols-2 gap-2 text-xs text-slate-300">
-                  <div className="bg-slate-900 p-2.5 rounded-lg border border-slate-800">
-                    <div className="text-[10px] text-slate-400 uppercase font-semibold">Student Fees Group</div>
+                <div className="grid grid-cols-2 gap-2 text-xs text-foreground/90">
+                  <div className="bg-card p-2.5 rounded-lg border border-border">
+                    <div className="text-[10px] text-muted-foreground uppercase font-semibold">Student Fees Group</div>
                     <div className="font-mono text-emerald-400 font-medium text-[11px] mt-0.5">Student Fee Income [YYYY-YY]</div>
                   </div>
-                  <div className="bg-slate-900 p-2.5 rounded-lg border border-slate-800">
-                    <div className="text-[10px] text-slate-400 uppercase font-semibold">Donations & Grants</div>
+                  <div className="bg-card p-2.5 rounded-lg border border-border">
+                    <div className="text-[10px] text-muted-foreground uppercase font-semibold">Donations & Grants</div>
                     <div className="font-mono text-teal-400 font-medium text-[11px] mt-0.5">Donations & Grants [YYYY-YY]</div>
                   </div>
-                  <div className="bg-slate-900 p-2.5 rounded-lg border border-slate-800">
-                    <div className="text-[10px] text-slate-400 uppercase font-semibold">Faculty Payroll Group</div>
+                  <div className="bg-card p-2.5 rounded-lg border border-border">
+                    <div className="text-[10px] text-muted-foreground uppercase font-semibold">Faculty Payroll Group</div>
                     <div className="font-mono text-amber-400 font-medium text-[11px] mt-0.5">Faculty Salary Exp [YYYY-YY]</div>
                   </div>
-                  <div className="bg-slate-900 p-2.5 rounded-lg border border-slate-800">
-                    <div className="text-[10px] text-slate-400 uppercase font-semibold">Maintenance & Ops</div>
+                  <div className="bg-card p-2.5 rounded-lg border border-border">
+                    <div className="text-[10px] text-muted-foreground uppercase font-semibold">Maintenance & Ops</div>
                     <div className="font-mono text-blue-400 font-medium text-[11px] mt-0.5">Campus Maintenance [YYYY-YY]</div>
                   </div>
                 </div>
               </div>
 
               <div>
-                <label className="text-xs text-slate-400 block mb-1">Local Tally Server URL</label>
+                <label className="text-xs text-muted-foreground block mb-1">Local Tally Server URL</label>
                 <input
                   type="text"
                   readOnly
                   value="http://localhost:9000"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-slate-200 font-mono"
+                  className="w-full bg-background border border-border rounded-xl p-2.5 text-sm text-foreground font-mono"
                 />
               </div>
 
               <div>
-                <label className="text-xs text-slate-400 block mb-1">Supported Voucher Types</label>
-                <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 text-xs text-slate-300 space-y-1">
+                <label className="text-xs text-muted-foreground block mb-1">Supported Voucher Types</label>
+                <div className="bg-muted/40 p-3 rounded-xl border border-border text-xs text-foreground/90 space-y-1">
                   <div>✔ Student Fee Invoices (`Journal` Vouchers)</div>
                   <div>✔ Fee Collection Payments (`Receipt` Vouchers)</div>
                   <div>✔ Donations & Grants (`Receipt` Vouchers)</div>
@@ -2088,21 +2543,352 @@ export default function AccountantPage() {
             </div>
           </div>
 
-          <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl space-y-4">
+          <div className="bg-card border border-border p-6 rounded-2xl space-y-4">
             <div className="flex items-center gap-3">
               <div className="p-3 bg-teal-600/20 text-teal-400 rounded-xl border border-teal-500/30">
                 <FileSpreadsheet className="w-6 h-6" />
               </div>
               <div>
-                <h3 className="text-lg font-semibold text-white">Busy Accounting File Import</h3>
-                <p className="text-xs text-slate-400">Import Busy XML / Excel fee ledgers directly</p>
+                <h3 className="text-lg font-semibold text-foreground">Busy Accounting File Import</h3>
+                <p className="text-xs text-muted-foreground">Import Busy XML / Excel fee ledgers directly</p>
               </div>
             </div>
 
-            <div className="border-2 border-dashed border-slate-800 hover:border-teal-500/50 p-8 rounded-xl text-center space-y-2 transition-all cursor-pointer">
-              <FileSpreadsheet className="w-10 h-10 text-slate-500 mx-auto" />
-              <div className="text-sm font-medium text-slate-200">Drag & Drop Busy XML or Excel Sheet</div>
-              <div className="text-xs text-slate-500">Supports .xml, .xlsx, .csv exported from Busy 21/24</div>
+            <div className="border-2 border-dashed border-border hover:border-teal-500/50 p-8 rounded-xl text-center space-y-2 transition-all cursor-pointer">
+              <FileSpreadsheet className="w-10 h-10 text-muted-foreground mx-auto" />
+              <div className="text-sm font-medium text-foreground">Drag & Drop Busy XML or Excel Sheet</div>
+              <div className="text-xs text-muted-foreground">Supports .xml, .xlsx, .csv exported from Busy 21/24</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB: TWO-WAY RECONCILIATION & DIFF WORKBENCH */}
+      {activeTab === 'reconcile' && (
+        <div className="space-y-6">
+          {/* Header & Status Card */}
+          <div className="bg-gradient-to-r from-slate-900 via-card to-amber-950/40 border border-amber-500/30 rounded-2xl p-6 shadow-xl relative overflow-hidden">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 bg-amber-500/20 text-amber-400 rounded-xl border border-amber-500/30">
+                    <ArrowRightLeft className="w-5 h-5" />
+                  </div>
+                  <h2 className="text-xl font-bold text-foreground">Two-Way Sync & Reconciliation Workbench</h2>
+                  <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                    Live Diff Engine
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Detect discrepancies between Convee database and Tally Prime vouchers with granular Push, Import, and Purge controls.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={fetchReconcileDiff}
+                  disabled={loadingDiff}
+                  className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-foreground text-xs font-semibold rounded-xl border border-border shadow-md transition-all disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${loadingDiff ? 'animate-spin' : ''}`} />
+                  {loadingDiff ? 'Scanning...' : 'Refresh Diff'}
+                </button>
+                {reconcileDiff?.onlyInConvee?.length > 0 && (
+                  <button
+                    onClick={() => handleBatchReconcile('PUSH_TO_TALLY', reconcileDiff.onlyInConvee)}
+                    disabled={loadingDiff}
+                    className="flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl shadow-lg transition-all disabled:opacity-50"
+                  >
+                    <UploadCloud className="w-3.5 h-3.5" />
+                    Push All to Tally ({reconcileDiff.onlyInConvee.length})
+                  </button>
+                )}
+                {reconcileDiff?.onlyInTally?.length > 0 && (
+                  <>
+                    <button
+                      onClick={() => handleBatchReconcile('IMPORT_TO_CONVEE', reconcileDiff.onlyInTally)}
+                      disabled={loadingDiff}
+                      className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-lg transition-all disabled:opacity-50"
+                    >
+                      <DownloadCloud className="w-3.5 h-3.5" />
+                      Import All to Convee ({reconcileDiff.onlyInTally.length})
+                    </button>
+                    <button
+                      onClick={() => {
+                        askConfirmation({
+                          title: 'Purge All Unmatched Tally Vouchers?',
+                          message: `Are you sure you want to permanently erase ${reconcileDiff.onlyInTally.length} voucher(s) from Tally Prime? This action cannot be undone.`,
+                          confirmText: 'Purge All from Tally',
+                          tallyImpact: true,
+                          onConfirm: () => handleBatchReconcile('PURGE_FROM_TALLY', reconcileDiff.onlyInTally),
+                        });
+                      }}
+                      disabled={loadingDiff}
+                      className="flex items-center gap-1.5 px-3.5 py-2 bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30 text-xs font-bold rounded-xl transition-all disabled:opacity-50"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      Purge All from Tally
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Reconciliation Stats Ribbon */}
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 mt-5">
+              <div className="bg-card/80 border border-border/80 p-3.5 rounded-xl">
+                <div className="text-[11px] font-semibold text-muted-foreground uppercase">Tally Prime Status</div>
+                <div className="text-sm font-bold text-foreground flex items-center gap-1.5 mt-1">
+                  <span className={`w-2 h-2 rounded-full ${reconcileDiff?.tallyConnected ? 'bg-emerald-400' : 'bg-rose-400'}`} />
+                  {reconcileDiff?.tallyConnected ? `Online (${reconcileDiff.activeCompany || 'Convee'})` : 'Offline'}
+                </div>
+              </div>
+              <div className="bg-emerald-950/20 border border-emerald-500/30 p-3.5 rounded-xl">
+                <div className="text-[11px] font-semibold text-emerald-400 uppercase">100% In Sync & Matched</div>
+                <div className="text-xl font-bold text-emerald-300 mt-0.5">
+                  {reconcileDiff?.matchedCount || 0} Records
+                </div>
+              </div>
+              <div className="bg-blue-950/20 border border-blue-500/30 p-3.5 rounded-xl">
+                <div className="text-[11px] font-semibold text-blue-400 uppercase">Only in Convee (Pending Push)</div>
+                <div className="text-xl font-bold text-blue-300 mt-0.5">
+                  {reconcileDiff?.onlyInConveeCount || 0} Records
+                </div>
+              </div>
+              <div className="bg-purple-950/20 border border-purple-500/30 p-3.5 rounded-xl">
+                <div className="text-[11px] font-semibold text-purple-400 uppercase">Only in Tally (Direct / Orphan)</div>
+                <div className="text-xl font-bold text-purple-300 mt-0.5">
+                  {reconcileDiff?.onlyInTallyCount || 0} Vouchers
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* If 100% Balanced */}
+          {reconcileDiff && reconcileDiff.onlyInConveeCount === 0 && reconcileDiff.onlyInTallyCount === 0 && (
+            <div className="bg-emerald-950/30 border border-emerald-500/40 p-8 rounded-2xl text-center space-y-3 shadow-lg">
+              <div className="w-12 h-12 bg-emerald-500/20 text-emerald-400 rounded-full flex items-center justify-center mx-auto border border-emerald-500/30">
+                <CheckCircle2 className="w-6 h-6" />
+              </div>
+              <h3 className="text-lg font-bold text-emerald-300">Perfect Reconciliation: All Records Balanced</h3>
+              <p className="text-xs text-muted-foreground max-w-md mx-auto">
+                Every single active student fee ledger, faculty payroll slip, and operational expense is matched 1-to-1 in Tally Prime.
+              </p>
+            </div>
+          )}
+
+          {/* Two-Column Split Layout */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Left Column: Only in Convee Database */}
+            <div className="bg-card border border-border rounded-2xl p-5 space-y-4">
+              <div className="flex items-center justify-between border-b border-border pb-3">
+                <div>
+                  <h3 className="text-base font-bold text-foreground flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-blue-400" />
+                    Only in Convee Database ({reconcileDiff?.onlyInConvee?.length || 0})
+                  </h3>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Records existing in Convee that are not yet created in Tally Prime.
+                  </p>
+                </div>
+                {reconcileDiff?.onlyInConvee?.length > 0 && (
+                  <button
+                    onClick={() => handleBatchReconcile('PUSH_TO_TALLY', reconcileDiff.onlyInConvee)}
+                    disabled={loadingDiff}
+                    className="px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 text-xs font-semibold rounded-lg transition-all"
+                  >
+                    Push All
+                  </button>
+                )}
+              </div>
+
+              {reconcileDiff?.onlyInConvee?.length === 0 ? (
+                <div className="py-12 text-center text-muted-foreground text-xs">
+                  <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto mb-2 opacity-60" />
+                  All Convee records are pushed to Tally Prime.
+                </div>
+              ) : (
+                <div className="space-y-3 max-h-[600px] overflow-y-auto pr-1">
+                  {reconcileDiff?.onlyInConvee?.map((item) => {
+                    const isBusy = resolvingActionId === item.id;
+                    return (
+                      <div
+                        key={item.id}
+                        className="bg-background border border-border/80 hover:border-blue-500/40 p-4 rounded-xl space-y-3 transition-all"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className={`px-2 py-0.5 text-[10px] font-bold rounded-md uppercase ${
+                                item.type === 'FEE' ? 'bg-blue-500/20 text-blue-300' :
+                                item.type === 'PAYROLL' ? 'bg-emerald-500/20 text-emerald-300' :
+                                'bg-purple-500/20 text-purple-300'
+                              }`}>
+                                {item.type}
+                              </span>
+                              <span className="font-semibold text-sm text-foreground">{item.partyName}</span>
+                            </div>
+                            <div className="text-xs text-muted-foreground mt-0.5 font-mono">
+                              {item.identifier} • {item.title} {item.academicYear ? `[${item.academicYear}]` : ''}
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className="font-bold text-sm text-foreground">{formatCurrency(item.amount)}</div>
+                            <div className="text-[11px] text-muted-foreground">{item.date || 'Active'}</div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2 pt-1 border-t border-border/50">
+                          <button
+                            onClick={() => {
+                              askConfirmation({
+                                title: `Delete '${item.partyName}' from Convee?`,
+                                message: `Are you sure you want to delete this ${item.type.toLowerCase()} record from Convee database?`,
+                                confirmText: 'Delete from Database',
+                                tallyImpact: false,
+                                onConfirm: () => handleReconcileAction('DELETE_FROM_CONVEE', item),
+                              });
+                            }}
+                            disabled={isBusy || loadingDiff}
+                            className="px-2.5 py-1 text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-950/30 rounded-lg transition-all flex items-center gap-1"
+                            title="Remove this record from Convee database"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            Delete
+                          </button>
+                          <button
+                            onClick={() => handleReconcileAction('PUSH_TO_TALLY', item)}
+                            disabled={isBusy || loadingDiff}
+                            className="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-lg shadow transition-all flex items-center gap-1.5 disabled:opacity-50"
+                          >
+                            {isBusy ? (
+                              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <ArrowRight className="w-3.5 h-3.5" />
+                            )}
+                            Push to Tally
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Right Column: Only in Tally Prime */}
+            <div className="bg-card border border-border rounded-2xl p-5 space-y-4">
+              <div className="flex items-center justify-between border-b border-border pb-3">
+                <div>
+                  <h3 className="text-base font-bold text-foreground flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-purple-400" />
+                    Only in Tally Prime ({reconcileDiff?.onlyInTally?.length || 0})
+                  </h3>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Vouchers created directly in Tally Prime or orphaned after database cleanup.
+                  </p>
+                </div>
+                {reconcileDiff?.onlyInTally?.length > 0 && (
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => handleBatchReconcile('IMPORT_TO_CONVEE', reconcileDiff.onlyInTally)}
+                      disabled={loadingDiff}
+                      className="px-2.5 py-1 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 text-xs font-semibold rounded-lg transition-all"
+                    >
+                      Import All
+                    </button>
+                    <button
+                      onClick={() => {
+                        askConfirmation({
+                          title: 'Purge All Unmatched Tally Vouchers?',
+                          message: `Are you sure you want to purge all ${reconcileDiff.onlyInTally.length} unmatched voucher(s) from Tally Prime?`,
+                          confirmText: 'Purge from Tally',
+                          tallyImpact: true,
+                          onConfirm: () => handleBatchReconcile('PURGE_FROM_TALLY', reconcileDiff.onlyInTally),
+                        });
+                      }}
+                      disabled={loadingDiff}
+                      className="px-2.5 py-1 bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30 text-xs font-semibold rounded-lg transition-all"
+                    >
+                      Purge All
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {reconcileDiff?.onlyInTally?.length === 0 ? (
+                <div className="py-12 text-center text-muted-foreground text-xs">
+                  <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto mb-2 opacity-60" />
+                  No orphaned or unmapped vouchers in Tally Prime.
+                </div>
+              ) : (
+                <div className="space-y-3 max-h-[600px] overflow-y-auto pr-1">
+                  {reconcileDiff?.onlyInTally?.map((item) => {
+                    const isBusy = resolvingActionId === (item.remoteId || item.voucherNumber || item.id);
+                    return (
+                      <div
+                        key={item.id}
+                        className="bg-background border border-border/80 hover:border-purple-500/40 p-4 rounded-xl space-y-3 transition-all"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="px-2 py-0.5 text-[10px] font-bold rounded-md uppercase bg-purple-500/20 text-purple-300">
+                                {item.voucherType} #{item.voucherNumber}
+                              </span>
+                              {item.isConveeOrphan && (
+                                <span className="px-1.5 py-0.5 text-[9px] font-mono bg-amber-500/20 text-amber-300 rounded border border-amber-500/30">
+                                  Orphaned
+                                </span>
+                              )}
+                              <span className="font-semibold text-sm text-foreground">{item.partyLedger || 'Tally Voucher'}</span>
+                            </div>
+                            <div className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
+                              {item.narration || item.partyLedger}
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className="font-bold text-sm text-foreground">{formatCurrency(item.amount)}</div>
+                            <div className="text-[11px] text-muted-foreground font-mono">{item.date || 'Tally Entry'}</div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2 pt-1 border-t border-border/50">
+                          <button
+                            onClick={() => {
+                              askConfirmation({
+                                title: `Purge Voucher #${item.voucherNumber} from Tally?`,
+                                message: `Permanently delete voucher #${item.voucherNumber} (${item.partyLedger}) from Tally Prime?`,
+                                confirmText: 'Purge from Tally',
+                                tallyImpact: true,
+                                onConfirm: () => handleReconcileAction('PURGE_FROM_TALLY', item),
+                              });
+                            }}
+                            disabled={isBusy || loadingDiff}
+                            className="px-2.5 py-1 text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-950/30 rounded-lg transition-all flex items-center gap-1"
+                            title="Delete this voucher from Tally Prime Day Book"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            Purge from Tally
+                          </button>
+                          <button
+                            onClick={() => handleReconcileAction('IMPORT_TO_CONVEE', item)}
+                            disabled={isBusy || loadingDiff}
+                            className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-lg shadow transition-all flex items-center gap-1.5 disabled:opacity-50"
+                          >
+                            {isBusy ? (
+                              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <ArrowLeft className="w-3.5 h-3.5" />
+                            )}
+                            Import to Convee
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -2111,12 +2897,12 @@ export default function AccountantPage() {
       {/* Modal: Add Fee (Clean & Blank) */}
       {showAddFeeModal && renderPortal(
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-[9999]">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-md w-full space-y-4 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <h3 className="text-lg font-semibold text-white">Record New Student Fee</h3>
+          <div className="bg-card border border-border rounded-2xl p-6 max-w-md w-full space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-border pb-3">
+              <h3 className="text-lg font-semibold text-foreground">Record New Student Fee</h3>
               <button
                 onClick={() => setShowAddFeeModal(false)}
-                className="text-slate-400 hover:text-slate-200 text-sm font-bold p-1"
+                className="text-muted-foreground hover:text-foreground text-sm font-bold p-1"
               >
                 ✕
               </button>
@@ -2124,7 +2910,7 @@ export default function AccountantPage() {
             <form onSubmit={handleCreateFee} className="space-y-3">
               {/* Searchable Student ID Dropdown */}
               <div className={`relative ${isRollNoDropdownOpen ? 'z-30' : 'z-10'}`}>
-                <label className="text-xs text-slate-400 font-medium block mb-1">Student ID</label>
+                <label className="text-xs text-muted-foreground font-medium block mb-1">Student ID</label>
                 <div className="relative">
                   <input
                     type="text"
@@ -2140,9 +2926,9 @@ export default function AccountantPage() {
                       setIsRollNoDropdownOpen(true);
                       setIsStudentDropdownOpen(false);
                     }}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 pl-9 text-sm text-slate-200 focus:border-blue-500 focus:outline-none"
+                    className="w-full bg-background border border-border rounded-xl p-2.5 pl-9 text-sm text-foreground focus:border-blue-500 focus:outline-none"
                   />
-                  <Search className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
+                  <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-3" />
                 </div>
 
                 {isRollNoDropdownOpen && (
@@ -2151,7 +2937,7 @@ export default function AccountantPage() {
                       className="fixed inset-0 z-40"
                       onClick={() => setIsRollNoDropdownOpen(false)}
                     />
-                    <div className="absolute left-0 right-0 top-full mt-1.5 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl max-h-48 overflow-y-auto z-50 divide-y divide-slate-800">
+                    <div className="absolute left-0 right-0 top-full mt-1.5 bg-card border border-border rounded-xl shadow-2xl max-h-48 overflow-y-auto z-50 divide-y divide-border">
                       {studentOptions
                         .filter((s) =>
                           (s.rollNo || '').toLowerCase().includes((newFee.studentRollNo || '').toLowerCase()) ||
@@ -2169,19 +2955,19 @@ export default function AccountantPage() {
                               });
                               setIsRollNoDropdownOpen(false);
                             }}
-                            className="p-2.5 hover:bg-slate-800 cursor-pointer flex items-center justify-between transition-colors text-xs"
+                            className="p-2.5 hover:bg-muted/80 cursor-pointer flex items-center justify-between transition-colors text-xs"
                           >
                             <div className="font-mono font-bold text-blue-400">
                               {s.rollNo}
                             </div>
                             <div className="text-right">
-                              <div className="font-semibold text-white">{s.name}</div>
-                              {s.email && <div className="text-[10px] text-slate-400">{s.email}</div>}
+                              <div className="font-semibold text-foreground">{s.name}</div>
+                              {s.email && <div className="text-[10px] text-muted-foreground">{s.email}</div>}
                             </div>
                           </div>
                         ))}
                       {studentOptions.filter((s) => (s.rollNo || '').toLowerCase().includes((newFee.studentRollNo || '').toLowerCase())).length === 0 && (
-                        <div className="p-3 text-xs text-slate-400 text-center">
+                        <div className="p-3 text-xs text-muted-foreground text-center">
                           Custom Student ID: <span className="text-white font-semibold">{newFee.studentRollNo}</span>
                         </div>
                       )}
@@ -2191,7 +2977,7 @@ export default function AccountantPage() {
               </div>
               {/* Searchable Student Name Dropdown */}
               <div className={`relative ${isStudentDropdownOpen ? 'z-30' : 'z-0'}`}>
-                <label className="text-xs text-slate-400 font-medium block mb-1">Student Name</label>
+                <label className="text-xs text-muted-foreground font-medium block mb-1">Student Name</label>
                 <div className="relative">
                   <input
                     type="text"
@@ -2207,9 +2993,9 @@ export default function AccountantPage() {
                       setIsStudentDropdownOpen(true);
                       setIsRollNoDropdownOpen(false);
                     }}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 pl-9 text-sm text-slate-200 focus:border-blue-500 focus:outline-none"
+                    className="w-full bg-background border border-border rounded-xl p-2.5 pl-9 text-sm text-foreground focus:border-blue-500 focus:outline-none"
                   />
-                  <Search className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
+                  <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-3" />
                 </div>
 
                 {isStudentDropdownOpen && (
@@ -2218,7 +3004,7 @@ export default function AccountantPage() {
                       className="fixed inset-0 z-40"
                       onClick={() => setIsStudentDropdownOpen(false)}
                     />
-                    <div className="absolute left-0 right-0 top-full mt-1.5 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl max-h-48 overflow-y-auto z-50 divide-y divide-slate-800">
+                    <div className="absolute left-0 right-0 top-full mt-1.5 bg-card border border-border rounded-xl shadow-2xl max-h-48 overflow-y-auto z-50 divide-y divide-border">
                       {studentOptions
                         .filter((s) => s.name.toLowerCase().includes((newFee.studentName || '').toLowerCase()))
                         .map((s, idx) => (
@@ -2232,11 +3018,11 @@ export default function AccountantPage() {
                               });
                               setIsStudentDropdownOpen(false);
                             }}
-                            className="p-2.5 hover:bg-slate-800 cursor-pointer flex items-center justify-between transition-colors text-xs"
+                            className="p-2.5 hover:bg-muted/80 cursor-pointer flex items-center justify-between transition-colors text-xs"
                           >
                             <div>
-                              <div className="font-semibold text-white">{s.name}</div>
-                              {s.email && <div className="text-[10px] text-slate-400">{s.email}</div>}
+                              <div className="font-semibold text-foreground">{s.name}</div>
+                              {s.email && <div className="text-[10px] text-muted-foreground">{s.email}</div>}
                             </div>
                             <div className="font-mono text-[11px] text-blue-400 font-bold bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20">
                               {s.rollNo}
@@ -2244,7 +3030,7 @@ export default function AccountantPage() {
                           </div>
                         ))}
                       {studentOptions.filter((s) => s.name.toLowerCase().includes((newFee.studentName || '').toLowerCase())).length === 0 && (
-                        <div className="p-3 text-xs text-slate-400 text-center">
+                        <div className="p-3 text-xs text-muted-foreground text-center">
                           Custom Student: <span className="text-white font-semibold">{newFee.studentName}</span>
                         </div>
                       )}
@@ -2254,11 +3040,11 @@ export default function AccountantPage() {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs text-slate-400 font-medium block mb-1">Financial / Academic Year</label>
+                  <label className="text-xs text-muted-foreground font-medium block mb-1">Financial / Academic Year</label>
                   <select
                     value={newFee.academicYear}
                     onChange={(e) => setNewFee({ ...newFee, academicYear: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-blue-500 focus:outline-none"
+                    className="w-full bg-background border border-border rounded-xl p-2.5 text-xs text-foreground focus:border-blue-500 focus:outline-none"
                   >
                     <option value="2026-27">2026-27 (Current Year)</option>
                     <option value="2025-26">2025-26 (Previous Year Dues)</option>
@@ -2268,11 +3054,11 @@ export default function AccountantPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="text-xs text-slate-400 font-medium block mb-1">Fee Category / Header</label>
+                  <label className="text-xs text-muted-foreground font-medium block mb-1">Fee Category / Header</label>
                   <select
                     value={newFee.feeHeader}
                     onChange={(e) => setNewFee({ ...newFee, feeHeader: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-blue-500 focus:outline-none"
+                    className="w-full bg-background border border-border rounded-xl p-2.5 text-xs text-foreground focus:border-blue-500 focus:outline-none"
                   >
                     <option value="Tuition Fee - Term 1">Tuition Fee - Term 1</option>
                     <option value="Tuition Fee - Term 2">Tuition Fee - Term 2</option>
@@ -2286,32 +3072,132 @@ export default function AccountantPage() {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs text-slate-400">Total Fee (₹)</label>
+                  <label className="text-xs text-muted-foreground">Total Fee (₹) *</label>
                   <input
                     type="number"
                     required
                     placeholder="85000"
                     value={newFee.totalAmount}
                     onChange={(e) => setNewFee({ ...newFee, totalAmount: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-slate-200 focus:border-blue-500 focus:outline-none"
+                    className="w-full bg-background border border-border rounded-xl p-2.5 text-sm text-foreground focus:border-blue-500 focus:outline-none font-bold"
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-slate-400">Paid Amount (₹)</label>
+                  <label className="text-xs text-muted-foreground">Paid Amount (₹)</label>
                   <input
                     type="number"
                     placeholder="0"
                     value={newFee.paidAmount}
                     onChange={(e) => setNewFee({ ...newFee, paidAmount: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-slate-200 focus:border-blue-500 focus:outline-none"
+                    className="w-full bg-background border border-border rounded-xl p-2.5 text-sm text-foreground focus:border-blue-500 focus:outline-none"
                   />
                 </div>
               </div>
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+
+              {/* Conditional Bank / Cash Account Selection when Paid Amount > 0 */}
+              {parseFloat(newFee.paidAmount || 0) > 0 && (
+                <div className="bg-muted/40 p-3 rounded-xl border border-blue-500/30 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-blue-400 block">
+                      Receiving Account / Drawer *
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setNewFee({ ...newFee, paymentMode: 'BANK' })}
+                        className={`px-2.5 py-1 text-[11px] font-semibold rounded-lg transition-all ${
+                          newFee.paymentMode === 'BANK'
+                            ? 'bg-blue-600 text-white shadow-sm'
+                            : 'bg-muted text-muted-foreground hover:text-foreground'
+                        }`}
+                      >
+                        🏦 Bank Account
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setNewFee({ ...newFee, paymentMode: 'CASH' })}
+                        className={`px-2.5 py-1 text-[11px] font-semibold rounded-lg transition-all ${
+                          newFee.paymentMode === 'CASH'
+                            ? 'bg-emerald-600 text-white shadow-sm'
+                            : 'bg-muted text-muted-foreground hover:text-foreground'
+                        }`}
+                      >
+                        💵 Cash Register
+                      </button>
+                    </div>
+                  </div>
+
+                  {newFee.paymentMode === 'BANK' ? (
+                    <div>
+                      <select
+                        required
+                        value={newFee.bankAccountId || bankAccounts[0]?.id || ''}
+                        onChange={(e) => {
+                          const b = bankAccounts.find((acc) => acc.id === e.target.value);
+                          setNewFee({ ...newFee, bankAccountId: e.target.value, bankAccountName: b?.accountName || '' });
+                        }}
+                        className="w-full bg-card border border-border rounded-xl p-2.5 text-xs text-white focus:border-blue-500 focus:outline-none font-medium"
+                      >
+                        {bankAccounts.map((b) => (
+                          <option key={b.id} value={b.id}>
+                            {b.accountName} ({b.bankName}) - Avail: {formatCurrency(b.currentBalance)}
+                          </option>
+                        ))}
+                        {bankAccounts.length === 0 && <option value="">No bank accounts found</option>}
+                      </select>
+                    </div>
+                  ) : (
+                    <div>
+                      <select
+                        required
+                        value={newFee.registerId || cashRegisters[0]?.id || ''}
+                        onChange={(e) => setNewFee({ ...newFee, registerId: e.target.value })}
+                        className="w-full bg-card border border-border rounded-xl p-2.5 text-xs text-white focus:border-emerald-500 focus:outline-none font-medium"
+                      >
+                        {cashRegisters.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.registerName} - Avail: {formatCurrency(c.currentBalance)}
+                          </option>
+                        ))}
+                        {cashRegisters.length === 0 && <option value="">No cash registers found</option>}
+                      </select>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <div>
+                      <label className="text-[10px] text-muted-foreground block mb-1">Payment Method</label>
+                      <select
+                        value={newFee.paymentMethod}
+                        onChange={(e) => setNewFee({ ...newFee, paymentMethod: e.target.value })}
+                        className="w-full bg-card border border-border rounded-xl p-2 text-xs text-foreground focus:outline-none"
+                      >
+                        <option value="UPI / Online">UPI / Online / QR</option>
+                        <option value="Bank Transfer">Bank Transfer / NEFT</option>
+                        <option value="Cash">Cash Receipt</option>
+                        <option value="Cheque">Bank Cheque</option>
+                        <option value="Debit Card">Debit / Credit Card</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-muted-foreground block mb-1">Receipt Notes / Voucher #</label>
+                      <input
+                        type="text"
+                        placeholder="Optional remarks"
+                        value={newFee.notes}
+                        onChange={(e) => setNewFee({ ...newFee, notes: e.target.value })}
+                        className="w-full bg-card border border-border rounded-xl p-2 text-xs text-foreground focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-border">
                 <button
                   type="button"
                   onClick={() => setShowAddFeeModal(false)}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium rounded-xl transition-all"
+                  className="px-4 py-2 bg-slate-800 hover:bg-muted text-foreground/90 text-sm font-medium rounded-xl transition-all"
                 >
                   Cancel
                 </button>
@@ -2339,15 +3225,15 @@ export default function AccountantPage() {
 
         return (
           <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-[9999]">
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-md w-full space-y-4 shadow-2xl">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+            <div className="bg-card border border-border rounded-2xl p-6 max-w-md w-full space-y-4 shadow-2xl">
+              <div className="flex items-center justify-between border-b border-border pb-3">
                 <div>
-                  <h3 className="text-lg font-semibold text-white">Record Fee Payment</h3>
-                  <p className="text-xs text-slate-400">Receive new payment installment from student</p>
+                  <h3 className="text-lg font-semibold text-foreground">Record Fee Payment</h3>
+                  <p className="text-xs text-muted-foreground">Receive new payment installment from student</p>
                 </div>
                 <button
                   onClick={() => setShowUpdateFeeModal(false)}
-                  className="text-slate-400 hover:text-slate-200 text-sm font-bold p-1"
+                  className="text-muted-foreground hover:text-foreground text-sm font-bold p-1"
                 >
                   ✕
                 </button>
@@ -2355,9 +3241,9 @@ export default function AccountantPage() {
 
               <form onSubmit={handleSaveUpdatePayment} className="space-y-3.5">
                 {/* READ-ONLY BOXES */}
-                <div className="grid grid-cols-2 gap-3 bg-slate-950/80 p-3 rounded-xl border border-slate-800/80">
+                <div className="grid grid-cols-2 gap-3 bg-muted/30 p-3 rounded-xl border border-border/80">
                   <div>
-                    <label className="text-[10px] uppercase tracking-wider text-slate-400 block font-semibold">
+                    <label className="text-[10px] uppercase tracking-wider text-muted-foreground block font-semibold">
                       Student Roll No
                     </label>
                     <input
@@ -2365,11 +3251,11 @@ export default function AccountantPage() {
                       readOnly
                       disabled
                       value={updatingFeeRecord.studentRollNo || 'N/A'}
-                      className="w-full bg-slate-900/50 border border-slate-800 rounded-lg p-2 text-xs text-slate-300 font-mono cursor-not-allowed opacity-90 mt-1"
+                      className="w-full bg-muted/50 border border-border rounded-lg p-2 text-xs text-foreground/90 font-mono cursor-not-allowed opacity-90 mt-1"
                     />
                   </div>
                   <div>
-                    <label className="text-[10px] uppercase tracking-wider text-slate-400 block font-semibold">
+                    <label className="text-[10px] uppercase tracking-wider text-muted-foreground block font-semibold">
                       Student Name
                     </label>
                     <input
@@ -2377,11 +3263,11 @@ export default function AccountantPage() {
                       readOnly
                       disabled
                       value={updatingFeeRecord.studentName || ''}
-                      className="w-full bg-slate-900/50 border border-slate-800 rounded-lg p-2 text-xs text-white font-medium cursor-not-allowed opacity-90 mt-1"
+                      className="w-full bg-muted/50 border border-border rounded-lg p-2 text-xs text-white font-medium cursor-not-allowed opacity-90 mt-1"
                     />
                   </div>
                   <div>
-                    <label className="text-[10px] uppercase tracking-wider text-slate-400 block font-semibold">
+                    <label className="text-[10px] uppercase tracking-wider text-muted-foreground block font-semibold">
                       Total Billed Fee
                     </label>
                     <input
@@ -2389,7 +3275,7 @@ export default function AccountantPage() {
                       readOnly
                       disabled
                       value={formatCurrency(totalBilled)}
-                      className="w-full bg-slate-900/50 border border-slate-800 rounded-lg p-2 text-xs text-emerald-400 font-bold cursor-not-allowed opacity-90 mt-1"
+                      className="w-full bg-muted/50 border border-border rounded-lg p-2 text-xs text-emerald-400 font-bold cursor-not-allowed opacity-90 mt-1"
                     />
                   </div>
                   <div>
@@ -2409,7 +3295,7 @@ export default function AccountantPage() {
                 {/* EDITABLE PAYMENT INPUT */}
                 <div>
                   <label className="text-xs font-semibold text-emerald-400 block mb-1">
-                    New Payment Received Now (₹)
+                    New Payment Received Now (₹) *
                   </label>
                   <input
                     type="number"
@@ -2419,7 +3305,7 @@ export default function AccountantPage() {
                     placeholder={`Enter payment amount (max ${formatCurrency(remainingDues)})`}
                     value={newPaymentReceived}
                     onChange={(e) => setNewPaymentReceived(e.target.value)}
-                    className={`w-full bg-slate-950 border ${
+                    className={`w-full bg-background border ${
                       isExceeding ? 'border-rose-500 focus:border-rose-500' : 'border-emerald-500/40 focus:border-emerald-400'
                     } rounded-xl p-3 text-base text-white font-bold focus:outline-none focus:ring-1 focus:ring-emerald-400`}
                   />
@@ -2430,47 +3316,126 @@ export default function AccountantPage() {
                       ⚠️ Payment ({formatCurrency(addedPayment)}) cannot exceed remaining dues ({formatCurrency(remainingDues)}).
                     </p>
                   ) : addedPayment > 0 ? (
-                    <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-800 mt-2 text-xs space-y-1 text-slate-300">
+                    <div className="bg-muted/40 p-2.5 rounded-lg border border-border mt-2 text-xs space-y-1 text-foreground/90">
                       <div className="flex justify-between">
                         <span>Previously Paid:</span>
-                        <span className="font-mono text-slate-400">{formatCurrency(previousPaid)}</span>
+                        <span className="font-mono text-muted-foreground">{formatCurrency(previousPaid)}</span>
                       </div>
                       <div className="flex justify-between font-semibold text-emerald-400">
                         <span>New Total Paid:</span>
                         <span className="font-mono">{formatCurrency(newTotalPaid)}</span>
                       </div>
-                      <div className="flex justify-between border-t border-slate-800 pt-1 text-amber-400 font-semibold">
+                      <div className="flex justify-between border-t border-border pt-1 text-amber-400 font-semibold">
                         <span>Remaining Dues After Payment:</span>
                         <span className="font-mono">{formatCurrency(newRemaining)}</span>
                       </div>
                     </div>
                   ) : (
-                    <p className="text-[11px] text-slate-400 mt-1">
+                    <p className="text-[11px] text-muted-foreground mt-1">
                       Enter the installment amount received today (Max: {formatCurrency(remainingDues)})
                     </p>
                   )}
                 </div>
 
-                <div>
-                  <label className="text-xs text-slate-400 block mb-1">Payment Method</label>
-                  <select
-                    value={updatePaymentMethod}
-                    onChange={(e) => setUpdatePaymentMethod(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:outline-none"
-                  >
-                    <option value="UPI / Online">UPI / GPay / PhonePe</option>
-                    <option value="NEFT / NetBanking">NEFT / NetBanking / IMPS</option>
-                    <option value="Credit Card">Credit / Debit Card</option>
-                    <option value="Cash">Cash Receipt</option>
-                    <option value="Cheque">Bank Cheque</option>
-                  </select>
+                {/* Receiving Account: Bank vs Cash Drawer */}
+                <div className="bg-muted/40 p-3 rounded-xl border border-emerald-500/30 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-emerald-400 block">
+                      Receiving Account / Drawer *
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setUpdatePaymentMode('BANK')}
+                        className={`px-2.5 py-1 text-[11px] font-semibold rounded-lg transition-all ${
+                          updatePaymentMode === 'BANK'
+                            ? 'bg-blue-600 text-white shadow-sm'
+                            : 'bg-muted text-muted-foreground hover:text-foreground'
+                        }`}
+                      >
+                        🏦 Bank Account
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setUpdatePaymentMode('CASH')}
+                        className={`px-2.5 py-1 text-[11px] font-semibold rounded-lg transition-all ${
+                          updatePaymentMode === 'CASH'
+                            ? 'bg-emerald-600 text-white shadow-sm'
+                            : 'bg-muted text-muted-foreground hover:text-foreground'
+                        }`}
+                      >
+                        💵 Cash Register
+                      </button>
+                    </div>
+                  </div>
+
+                  {updatePaymentMode === 'BANK' ? (
+                    <div>
+                      <select
+                        required
+                        value={updateBankAccountId || bankAccounts[0]?.id || ''}
+                        onChange={(e) => setUpdateBankAccountId(e.target.value)}
+                        className="w-full bg-card border border-border rounded-xl p-2.5 text-xs text-white focus:border-blue-500 focus:outline-none font-medium"
+                      >
+                        {bankAccounts.map((b) => (
+                          <option key={b.id} value={b.id}>
+                            {b.accountName} ({b.bankName}) - Avail: {formatCurrency(b.currentBalance)}
+                          </option>
+                        ))}
+                        {bankAccounts.length === 0 && <option value="">No bank accounts found</option>}
+                      </select>
+                    </div>
+                  ) : (
+                    <div>
+                      <select
+                        required
+                        value={updateRegisterId || cashRegisters[0]?.id || ''}
+                        onChange={(e) => setUpdateRegisterId(e.target.value)}
+                        className="w-full bg-card border border-border rounded-xl p-2.5 text-xs text-white focus:border-emerald-500 focus:outline-none font-medium"
+                      >
+                        {cashRegisters.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.registerName} - Avail: {formatCurrency(c.currentBalance)}
+                          </option>
+                        ))}
+                        {cashRegisters.length === 0 && <option value="">No cash registers found</option>}
+                      </select>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <div>
+                      <label className="text-[10px] text-muted-foreground block mb-1">Payment Method</label>
+                      <select
+                        value={updatePaymentMethod}
+                        onChange={(e) => setUpdatePaymentMethod(e.target.value)}
+                        className="w-full bg-card border border-border rounded-xl p-2 text-xs text-foreground focus:outline-none"
+                      >
+                        <option value="UPI / Online">UPI / GPay / PhonePe</option>
+                        <option value="NEFT / NetBanking">NEFT / NetBanking / IMPS</option>
+                        <option value="Credit Card">Credit / Debit Card</option>
+                        <option value="Cash">Cash Receipt</option>
+                        <option value="Cheque">Bank Cheque</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-muted-foreground block mb-1">Remarks / Receipt #</label>
+                      <input
+                        type="text"
+                        placeholder="Optional remarks"
+                        value={updateNotes}
+                        onChange={(e) => setUpdateNotes(e.target.value)}
+                        className="w-full bg-card border border-border rounded-xl p-2 text-xs text-foreground focus:outline-none"
+                      />
+                    </div>
+                  </div>
                 </div>
 
-                <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+                <div className="flex items-center justify-end gap-3 pt-3 border-t border-border">
                   <button
                     type="button"
                     onClick={() => setShowUpdateFeeModal(false)}
-                    className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium rounded-xl transition-all"
+                    className="px-4 py-2 bg-slate-800 hover:bg-muted text-foreground/90 text-sm font-medium rounded-xl transition-all"
                   >
                     Cancel
                   </button>
@@ -2481,7 +3446,7 @@ export default function AccountantPage() {
                   >
                     Update & Save Payment
                   </button>
-              </div>
+                </div>
             </form>
           </div>
         </div>
@@ -2491,12 +3456,12 @@ export default function AccountantPage() {
       {/* Modal: Add Payroll */}
       {showAddPayrollModal && renderPortal(
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-[9999]">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-md w-full space-y-4">
-            <h3 className="text-lg font-semibold text-white">Issue Faculty Salary Voucher</h3>
+          <div className="bg-card border border-border rounded-2xl p-6 max-w-md w-full space-y-4">
+            <h3 className="text-lg font-semibold text-foreground">Issue Faculty Salary Voucher</h3>
             <form onSubmit={handleCreatePayroll} className="space-y-3">
               {/* Searchable Employee ID Dropdown */}
               <div className={`relative ${isEmpIdDropdownOpen ? 'z-30' : 'z-10'}`}>
-                <label className="text-xs text-slate-400 font-medium block mb-1">Employee ID</label>
+                <label className="text-xs text-muted-foreground font-medium block mb-1">Employee ID</label>
                 <div className="relative">
                   <input
                     type="text"
@@ -2512,9 +3477,9 @@ export default function AccountantPage() {
                       setIsEmpIdDropdownOpen(true);
                       setIsFacultyDropdownOpen(false);
                     }}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 pl-9 text-sm text-slate-200 focus:border-emerald-500 focus:outline-none"
+                    className="w-full bg-background border border-border rounded-xl p-2.5 pl-9 text-sm text-foreground focus:border-emerald-500 focus:outline-none"
                   />
-                  <Search className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
+                  <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-3" />
                 </div>
 
                 {isEmpIdDropdownOpen && (
@@ -2523,7 +3488,7 @@ export default function AccountantPage() {
                       className="fixed inset-0 z-40"
                       onClick={() => setIsEmpIdDropdownOpen(false)}
                     />
-                    <div className="absolute left-0 right-0 top-full mt-1.5 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl max-h-48 overflow-y-auto z-50 divide-y divide-slate-800">
+                    <div className="absolute left-0 right-0 top-full mt-1.5 bg-card border border-border rounded-xl shadow-2xl max-h-48 overflow-y-auto z-50 divide-y divide-border">
                       {facultyOptions
                         .filter((f) =>
                           (f.empId || '').toLowerCase().includes((newPayroll.employeeId || '').toLowerCase()) ||
@@ -2541,19 +3506,19 @@ export default function AccountantPage() {
                               });
                               setIsEmpIdDropdownOpen(false);
                             }}
-                            className="p-2.5 hover:bg-slate-800 cursor-pointer flex items-center justify-between transition-colors text-xs"
+                            className="p-2.5 hover:bg-muted/80 cursor-pointer flex items-center justify-between transition-colors text-xs"
                           >
                             <div className="font-mono font-bold text-emerald-400">
                               {f.empId}
                             </div>
                             <div className="text-right">
-                              <div className="font-semibold text-white">{f.name}</div>
-                              {f.role && <div className="text-[10px] text-slate-400">{f.role}</div>}
+                              <div className="font-semibold text-foreground">{f.name}</div>
+                              {f.role && <div className="text-[10px] text-muted-foreground">{f.role}</div>}
                             </div>
                           </div>
                         ))}
                       {facultyOptions.filter((f) => (f.empId || '').toLowerCase().includes((newPayroll.employeeId || '').toLowerCase())).length === 0 && (
-                        <div className="p-3 text-xs text-slate-400 text-center">
+                        <div className="p-3 text-xs text-muted-foreground text-center">
                           Custom Employee ID: <span className="text-white font-semibold">{newPayroll.employeeId}</span>
                         </div>
                       )}
@@ -2563,7 +3528,7 @@ export default function AccountantPage() {
               </div>
               {/* Searchable Faculty Name Dropdown */}
               <div className={`relative ${isFacultyDropdownOpen ? 'z-30' : 'z-0'}`}>
-                <label className="text-xs text-slate-400 font-medium block mb-1">Employee / Faculty Name</label>
+                <label className="text-xs text-muted-foreground font-medium block mb-1">Employee / Faculty Name</label>
                 <div className="relative">
                   <input
                     type="text"
@@ -2579,9 +3544,9 @@ export default function AccountantPage() {
                       setIsFacultyDropdownOpen(true);
                       setIsEmpIdDropdownOpen(false);
                     }}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 pl-9 text-sm text-slate-200 focus:border-emerald-500 focus:outline-none"
+                    className="w-full bg-background border border-border rounded-xl p-2.5 pl-9 text-sm text-foreground focus:border-emerald-500 focus:outline-none"
                   />
-                  <Search className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
+                  <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-3" />
                 </div>
 
                 {isFacultyDropdownOpen && (
@@ -2590,7 +3555,7 @@ export default function AccountantPage() {
                       className="fixed inset-0 z-40"
                       onClick={() => setIsFacultyDropdownOpen(false)}
                     />
-                    <div className="absolute left-0 right-0 top-full mt-1.5 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl max-h-48 overflow-y-auto z-50 divide-y divide-slate-800">
+                    <div className="absolute left-0 right-0 top-full mt-1.5 bg-card border border-border rounded-xl shadow-2xl max-h-48 overflow-y-auto z-50 divide-y divide-border">
                       {facultyOptions
                         .filter((f) => f.name.toLowerCase().includes((newPayroll.employeeName || '').toLowerCase()))
                         .map((f, idx) => (
@@ -2605,11 +3570,11 @@ export default function AccountantPage() {
                               });
                               setIsFacultyDropdownOpen(false);
                             }}
-                            className="p-2.5 hover:bg-slate-800 cursor-pointer flex items-center justify-between transition-colors text-xs"
+                            className="p-2.5 hover:bg-muted/80 cursor-pointer flex items-center justify-between transition-colors text-xs"
                           >
                             <div>
-                              <div className="font-semibold text-white">{f.name}</div>
-                              {f.role && <div className="text-[10px] text-slate-400">{f.role}</div>}
+                              <div className="font-semibold text-foreground">{f.name}</div>
+                              {f.role && <div className="text-[10px] text-muted-foreground">{f.role}</div>}
                             </div>
                             <div className="font-mono text-[11px] text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
                               {f.empId}
@@ -2617,7 +3582,7 @@ export default function AccountantPage() {
                           </div>
                         ))}
                       {facultyOptions.filter((f) => f.name.toLowerCase().includes((newPayroll.employeeName || '').toLowerCase())).length === 0 && (
-                        <div className="p-3 text-xs text-slate-400 text-center">
+                        <div className="p-3 text-xs text-muted-foreground text-center">
                           Custom Employee: <span className="text-white font-semibold">{newPayroll.employeeName}</span>
                         </div>
                       )}
@@ -2627,21 +3592,21 @@ export default function AccountantPage() {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs text-slate-400 font-medium block mb-1">Designation</label>
+                  <label className="text-xs text-muted-foreground font-medium block mb-1">Designation</label>
                   <input
                     type="text"
                     placeholder="e.g. Senior HOD, Teacher"
                     value={newPayroll.designation}
                     onChange={(e) => setNewPayroll({ ...newPayroll, designation: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-emerald-500 focus:outline-none"
+                    className="w-full bg-background border border-border rounded-xl p-2.5 text-xs text-foreground focus:border-emerald-500 focus:outline-none"
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-slate-400 font-medium block mb-1">Payroll Month</label>
+                  <label className="text-xs text-muted-foreground font-medium block mb-1">Payroll Month</label>
                   <select
                     value={newPayroll.month}
                     onChange={(e) => setNewPayroll({ ...newPayroll, month: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-emerald-500 focus:outline-none"
+                    className="w-full bg-background border border-border rounded-xl p-2.5 text-xs text-foreground focus:border-emerald-500 focus:outline-none"
                   >
                     {['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'].map((m) => (
                       <option key={m} value={m}>{m}</option>
@@ -2651,48 +3616,145 @@ export default function AccountantPage() {
               </div>
               <div className="grid grid-cols-3 gap-2">
                 <div>
-                  <label className="text-[10px] text-slate-400">Basic Pay (₹)</label>
+                  <label className="text-[10px] text-muted-foreground">Basic Pay (₹)</label>
                   <input
                     type="number"
                     required
                     placeholder="75000"
                     value={newPayroll.basicPay}
                     onChange={(e) => setNewPayroll({ ...newPayroll, basicPay: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-xs text-slate-200 focus:border-emerald-500 focus:outline-none"
+                    className="w-full bg-background border border-border rounded-xl p-2 text-xs text-foreground focus:border-emerald-500 focus:outline-none"
                   />
                 </div>
                 <div>
-                  <label className="text-[10px] text-slate-400">Allowances</label>
+                  <label className="text-[10px] text-muted-foreground">Allowances</label>
                   <input
                     type="number"
                     placeholder="12000"
                     value={newPayroll.allowances}
                     onChange={(e) => setNewPayroll({ ...newPayroll, allowances: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-xs text-slate-200 focus:border-emerald-500 focus:outline-none"
+                    className="w-full bg-background border border-border rounded-xl p-2 text-xs text-foreground focus:border-emerald-500 focus:outline-none"
                   />
                 </div>
                 <div>
-                  <label className="text-[10px] text-slate-400">Deductions</label>
+                  <label className="text-[10px] text-muted-foreground">Deductions</label>
                   <input
                     type="number"
                     placeholder="4500"
                     value={newPayroll.deductions}
                     onChange={(e) => setNewPayroll({ ...newPayroll, deductions: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-xs text-slate-200 focus:border-emerald-500 focus:outline-none"
+                    className="w-full bg-background border border-border rounded-xl p-2 text-xs text-foreground focus:border-emerald-500 focus:outline-none"
                   />
                 </div>
               </div>
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+              {/* Source Account: Bank Account vs Cash Register */}
+              {(() => {
+                const bPay = parseFloat(newPayroll.basicPay || 0);
+                const allw = parseFloat(newPayroll.allowances || 0);
+                const ded = parseFloat(newPayroll.deductions || 0);
+                const netSal = Math.max(0, bPay + allw - ded);
+
+                const selBank = bankAccounts.find((b) => b.id === (newPayroll.bankAccountId || bankAccounts[0]?.id));
+                const selReg = cashRegisters.find((c) => c.id === (newPayroll.registerId || cashRegisters[0]?.id));
+                const availBal = newPayroll.paymentMode === 'BANK' ? (selBank?.currentBalance || 0) : (selReg?.currentBalance || 0);
+                const isInsufficient = netSal > 0 && netSal > availBal;
+
+                return (
+                  <div className="bg-muted/40 p-3 rounded-xl border border-emerald-500/30 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <label className="text-xs font-semibold text-emerald-400 block">
+                          Disbursement Account / Drawer *
+                        </label>
+                        {netSal > 0 && (
+                          <span className="text-[11px] text-foreground/90 font-mono">
+                            Net Payable: <span className="text-emerald-400 font-bold">{formatCurrency(netSal)}</span>
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setNewPayroll({ ...newPayroll, paymentMode: 'BANK' })}
+                          className={`px-2.5 py-1 text-[11px] font-semibold rounded-lg transition-all ${
+                            newPayroll.paymentMode === 'BANK'
+                              ? 'bg-blue-600 text-white shadow-sm'
+                              : 'bg-muted text-muted-foreground hover:text-foreground'
+                          }`}
+                        >
+                          🏦 Bank Account
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setNewPayroll({ ...newPayroll, paymentMode: 'CASH' })}
+                          className={`px-2.5 py-1 text-[11px] font-semibold rounded-lg transition-all ${
+                            newPayroll.paymentMode === 'CASH'
+                              ? 'bg-emerald-600 text-white shadow-sm'
+                              : 'bg-muted text-muted-foreground hover:text-foreground'
+                          }`}
+                        >
+                          💵 Cash Register
+                        </button>
+                      </div>
+                    </div>
+
+                    {newPayroll.paymentMode === 'BANK' ? (
+                      <div>
+                        <select
+                          required
+                          value={newPayroll.bankAccountId || bankAccounts[0]?.id || ''}
+                          onChange={(e) => {
+                            const b = bankAccounts.find((acc) => acc.id === e.target.value);
+                            setNewPayroll({ ...newPayroll, bankAccountId: e.target.value, bankAccountName: b?.accountName || '' });
+                          }}
+                          className="w-full bg-card border border-border rounded-xl p-2.5 text-xs text-white focus:border-blue-500 focus:outline-none font-medium"
+                        >
+                          {bankAccounts.map((b) => (
+                            <option key={b.id} value={b.id}>
+                              {b.accountName} ({b.bankName}) - Available: {formatCurrency(b.currentBalance)}
+                            </option>
+                          ))}
+                          {bankAccounts.length === 0 && <option value="">No active bank accounts found</option>}
+                        </select>
+                      </div>
+                    ) : (
+                      <div>
+                        <select
+                          required
+                          value={newPayroll.registerId || cashRegisters[0]?.id || ''}
+                          onChange={(e) => setNewPayroll({ ...newPayroll, registerId: e.target.value })}
+                          className="w-full bg-card border border-border rounded-xl p-2.5 text-xs text-white focus:border-emerald-500 focus:outline-none font-medium"
+                        >
+                          {cashRegisters.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.registerName} - Available: {formatCurrency(c.currentBalance)}
+                            </option>
+                          ))}
+                          {cashRegisters.length === 0 && <option value="">No cash registers found</option>}
+                        </select>
+                      </div>
+                    )}
+
+                    {isInsufficient && (
+                      <p className="text-[11px] text-rose-400 font-medium flex items-center gap-1">
+                        ⚠️ Insufficient balance in selected account ({formatCurrency(availBal)}). Disbursement requires {formatCurrency(netSal)}.
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-border">
                 <button
                   type="button"
                   onClick={() => setShowAddPayrollModal(false)}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium rounded-xl"
+                  className="px-4 py-2 bg-slate-800 hover:bg-muted text-foreground/90 text-sm font-medium rounded-xl"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium rounded-xl"
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium rounded-xl shadow-lg"
                 >
                   Disburse Voucher
                 </button>
@@ -2705,36 +3767,36 @@ export default function AccountantPage() {
       {/* Modal: Add Expense / Donation */}
       {showAddExpenseModal && renderPortal(
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-[9999]">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-lg w-full space-y-4">
+          <div className="bg-card border border-border rounded-2xl p-6 max-w-lg w-full space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-white">Record Other Expense or Donation</h3>
+              <h3 className="text-lg font-semibold text-foreground">Record Other Expense or Donation</h3>
               <button
                 onClick={() => setShowAddExpenseModal(false)}
-                className="text-slate-400 hover:text-white text-sm"
+                className="text-muted-foreground hover:text-white text-sm"
               >
                 ✕
               </button>
             </div>
             <form onSubmit={handleCreateExpense} className="space-y-3">
               <div>
-                <label className="text-xs text-slate-400 font-medium block mb-1">Expense Title / Ledger Name *</label>
+                <label className="text-xs text-muted-foreground font-medium block mb-1">Expense Title / Ledger Name *</label>
                 <input
                   type="text"
                   required
                   placeholder="e.g. Campus Electrical Maintenance, Alumni Grant..."
                   value={newExpense.title}
                   onChange={(e) => setNewExpense({ ...newExpense, title: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-slate-200 focus:border-purple-500 focus:outline-none"
+                  className="w-full bg-background border border-border rounded-xl p-2.5 text-sm text-foreground focus:border-purple-500 focus:outline-none"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs text-slate-400 font-medium block mb-1">Category *</label>
+                  <label className="text-xs text-muted-foreground font-medium block mb-1">Category *</label>
                   <select
                     value={newExpense.category}
                     onChange={(e) => setNewExpense({ ...newExpense, category: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-purple-500 focus:outline-none"
+                    className="w-full bg-background border border-border rounded-xl p-2.5 text-xs text-foreground focus:border-purple-500 focus:outline-none"
                   >
                     <option value="MAINTENANCE">Maintenance & Repairs</option>
                     <option value="DONATION">Donation & Grant Income</option>
@@ -2745,79 +3807,133 @@ export default function AccountantPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="text-xs text-slate-400 font-medium block mb-1">Amount (₹) *</label>
+                  <label className="text-xs text-muted-foreground font-medium block mb-1">Amount (₹) *</label>
                   <input
                     type="number"
                     required
                     placeholder="e.g. 35000"
                     value={newExpense.amount}
                     onChange={(e) => setNewExpense({ ...newExpense, amount: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-slate-200 focus:border-purple-500 focus:outline-none font-bold"
+                    className="w-full bg-background border border-border rounded-xl p-2.5 text-sm text-foreground focus:border-purple-500 focus:outline-none font-bold"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs text-slate-400 font-medium block mb-1">Vendor / Donor Name</label>
+                  <label className="text-xs text-muted-foreground font-medium block mb-1">Vendor / Donor Name</label>
                   <input
                     type="text"
                     placeholder="e.g. Cooling Engineers, Alumni Trust..."
                     value={newExpense.vendorName}
                     onChange={(e) => setNewExpense({ ...newExpense, vendorName: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-purple-500 focus:outline-none"
+                    className="w-full bg-background border border-border rounded-xl p-2.5 text-xs text-foreground focus:border-purple-500 focus:outline-none"
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-slate-400 font-medium block mb-1">Expense Date</label>
+                  <label className="text-xs text-muted-foreground font-medium block mb-1">Expense Date</label>
                   <input
                     type="date"
                     value={newExpense.expenseDate}
                     onChange={(e) => setNewExpense({ ...newExpense, expenseDate: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-purple-500 focus:outline-none"
+                    className="w-full bg-background border border-border rounded-xl p-2.5 text-xs text-foreground focus:border-purple-500 focus:outline-none"
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              {/* Payment Mode: Bank Account vs Cash Register */}
+              <div className="bg-muted/40 p-3 rounded-xl border border-purple-500/30 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-purple-400 block">
+                    Payment / Inflow Account *
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setNewExpense({ ...newExpense, paymentMode: 'BANK' })}
+                      className={`px-2.5 py-1 text-[11px] font-semibold rounded-lg transition-all ${
+                        newExpense.paymentMode === 'BANK'
+                          ? 'bg-purple-600 text-white shadow-sm'
+                          : 'bg-muted text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      🏦 Bank Account
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setNewExpense({ ...newExpense, paymentMode: 'CASH' })}
+                      className={`px-2.5 py-1 text-[11px] font-semibold rounded-lg transition-all ${
+                        newExpense.paymentMode === 'CASH'
+                          ? 'bg-emerald-600 text-white shadow-sm'
+                          : 'bg-muted text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      💵 Cash Register
+                    </button>
+                  </div>
+                </div>
+
+                {newExpense.paymentMode === 'BANK' ? (
+                  <div>
+                    <select
+                      required
+                      value={newExpense.bankAccountId || bankAccounts[0]?.id || ''}
+                      onChange={(e) => {
+                        const b = bankAccounts.find((acc) => acc.id === e.target.value);
+                        setNewExpense({ ...newExpense, bankAccountId: e.target.value, bankAccountName: b?.accountName || '' });
+                      }}
+                      className="w-full bg-card border border-border rounded-xl p-2.5 text-xs text-white focus:border-purple-500 focus:outline-none font-medium"
+                    >
+                      {bankAccounts.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.accountName} ({b.bankName}) - Available: {formatCurrency(b.currentBalance)}
+                        </option>
+                      ))}
+                      {bankAccounts.length === 0 && <option value="">No active bank accounts found</option>}
+                    </select>
+                  </div>
+                ) : (
+                  <div>
+                    <select
+                      required
+                      value={newExpense.registerId || cashRegisters[0]?.id || ''}
+                      onChange={(e) => setNewExpense({ ...newExpense, registerId: e.target.value })}
+                      className="w-full bg-card border border-border rounded-xl p-2.5 text-xs text-white focus:border-emerald-500 focus:outline-none font-medium"
+                    >
+                      {cashRegisters.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.registerName} - Available: {formatCurrency(c.currentBalance)}
+                        </option>
+                      ))}
+                      {cashRegisters.length === 0 && <option value="">No cash registers found</option>}
+                    </select>
+                  </div>
+                )}
+
                 <div>
-                  <label className="text-xs text-slate-400 font-medium block mb-1">Payment Method</label>
+                  <label className="text-[10px] text-muted-foreground block mb-1">Payment Method / Channel</label>
                   <select
                     value={newExpense.paymentMethod}
                     onChange={(e) => setNewExpense({ ...newExpense, paymentMethod: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-purple-500 focus:outline-none"
+                    className="w-full bg-card border border-border rounded-xl p-2 text-xs text-foreground focus:outline-none"
                   >
                     <option value="BANK_TRANSFER">Bank Transfer / NEFT</option>
-                    <option value="UPI">UPI / GPay</option>
+                    <option value="UPI">UPI / GPay / PhonePe</option>
                     <option value="CHEQUE">Cheque</option>
                     <option value="CASH">Cash</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs text-slate-400 font-medium block mb-1">Bank Account</label>
-                  <select
-                    value={newExpense.bankAccountName}
-                    onChange={(e) => setNewExpense({ ...newExpense, bankAccountName: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-purple-500 focus:outline-none"
-                  >
-                    {bankAccounts.map((b) => (
-                      <option key={b.id} value={b.accountName}>
-                        {b.accountName} ({b.bankName})
-                      </option>
-                    ))}
-                    {bankAccounts.length === 0 && <option value="HDFC Bank Main Account">HDFC Bank Main Account</option>}
+                    <option value="DEBIT_CARD">Debit / Credit Card</option>
                   </select>
                 </div>
               </div>
 
               <div>
-                <label className="text-xs text-slate-400 font-medium block mb-1">Notes / Remarks</label>
+                <label className="text-xs text-muted-foreground font-medium block mb-1">Notes / Remarks</label>
                 <textarea
                   rows="2"
                   placeholder="Additional expense breakdown or voucher details..."
                   value={newExpense.notes}
                   onChange={(e) => setNewExpense({ ...newExpense, notes: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-purple-500 focus:outline-none"
+                  className="w-full bg-background border border-border rounded-xl p-2.5 text-xs text-foreground focus:border-purple-500 focus:outline-none"
                 />
               </div>
 
@@ -2825,7 +3941,7 @@ export default function AccountantPage() {
                 <button
                   type="button"
                   onClick={() => setShowAddExpenseModal(false)}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium rounded-xl"
+                  className="px-4 py-2 bg-slate-800 hover:bg-muted text-foreground/90 text-sm font-medium rounded-xl"
                 >
                   Cancel
                 </button>
@@ -2844,84 +3960,84 @@ export default function AccountantPage() {
       {/* Modal: Add Bank Account */}
       {showAddBankModal && renderPortal(
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-[9999]">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-md w-full space-y-4">
+          <div className="bg-card border border-border rounded-2xl p-6 max-w-md w-full space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-white">Add School Bank Account</h3>
+              <h3 className="text-lg font-semibold text-foreground">Add School Bank Account</h3>
               <button
                 onClick={() => setShowAddBankModal(false)}
-                className="text-slate-400 hover:text-white text-sm"
+                className="text-muted-foreground hover:text-white text-sm"
               >
                 ✕
               </button>
             </div>
             <form onSubmit={handleCreateBankAccount} className="space-y-3">
               <div>
-                <label className="text-xs text-slate-400 font-medium block mb-1">Display Ledger Account Name *</label>
+                <label className="text-xs text-muted-foreground font-medium block mb-1">Display Ledger Account Name *</label>
                 <input
                   type="text"
                   required
                   placeholder="e.g. State Bank of India Operations, ICICI Fee Collection..."
                   value={newBankAccount.accountName}
                   onChange={(e) => setNewBankAccount({ ...newBankAccount, accountName: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-slate-200 focus:border-teal-500 focus:outline-none"
+                  className="w-full bg-background border border-border rounded-xl p-2.5 text-sm text-foreground focus:border-teal-500 focus:outline-none"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs text-slate-400 font-medium block mb-1">Bank Name *</label>
+                  <label className="text-xs text-muted-foreground font-medium block mb-1">Bank Name *</label>
                   <input
                     type="text"
                     required
                     placeholder="e.g. HDFC Bank, SBI..."
                     value={newBankAccount.bankName}
                     onChange={(e) => setNewBankAccount({ ...newBankAccount, bankName: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-teal-500 focus:outline-none"
+                    className="w-full bg-background border border-border rounded-xl p-2.5 text-xs text-foreground focus:border-teal-500 focus:outline-none"
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-slate-400 font-medium block mb-1">Account Number *</label>
+                  <label className="text-xs text-muted-foreground font-medium block mb-1">Account Number *</label>
                   <input
                     type="text"
                     required
                     placeholder="e.g. 50100492810394"
                     value={newBankAccount.accountNumber}
                     onChange={(e) => setNewBankAccount({ ...newBankAccount, accountNumber: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-teal-500 focus:outline-none font-mono"
+                    className="w-full bg-background border border-border rounded-xl p-2.5 text-xs text-foreground focus:border-teal-500 focus:outline-none font-mono"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs text-slate-400 font-medium block mb-1">IFSC Code</label>
+                  <label className="text-xs text-muted-foreground font-medium block mb-1">IFSC Code</label>
                   <input
                     type="text"
                     placeholder="e.g. HDFC0001824"
                     value={newBankAccount.ifscCode}
                     onChange={(e) => setNewBankAccount({ ...newBankAccount, ifscCode: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-teal-500 focus:outline-none uppercase font-mono"
+                    className="w-full bg-background border border-border rounded-xl p-2.5 text-xs text-foreground focus:border-teal-500 focus:outline-none uppercase font-mono"
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-slate-400 font-medium block mb-1">Branch Name</label>
+                  <label className="text-xs text-muted-foreground font-medium block mb-1">Branch Name</label>
                   <input
                     type="text"
                     placeholder="e.g. Main Branch"
                     value={newBankAccount.branchName}
                     onChange={(e) => setNewBankAccount({ ...newBankAccount, branchName: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-teal-500 focus:outline-none"
+                    className="w-full bg-background border border-border rounded-xl p-2.5 text-xs text-foreground focus:border-teal-500 focus:outline-none"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs text-slate-400 font-medium block mb-1">Account Type</label>
+                  <label className="text-xs text-muted-foreground font-medium block mb-1">Account Type</label>
                   <select
                     value={newBankAccount.accountType}
                     onChange={(e) => setNewBankAccount({ ...newBankAccount, accountType: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-teal-500 focus:outline-none"
+                    className="w-full bg-background border border-border rounded-xl p-2.5 text-xs text-foreground focus:border-teal-500 focus:outline-none"
                   >
                     <option value="CURRENT">Current Account</option>
                     <option value="SAVINGS">Savings Account</option>
@@ -2929,13 +4045,13 @@ export default function AccountantPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="text-xs text-slate-400 font-medium block mb-1">Opening Balance (₹)</label>
+                  <label className="text-xs text-muted-foreground font-medium block mb-1">Opening Balance (₹)</label>
                   <input
                     type="number"
                     placeholder="e.g. 500000"
                     value={newBankAccount.openingBalance}
                     onChange={(e) => setNewBankAccount({ ...newBankAccount, openingBalance: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-teal-500 focus:outline-none"
+                    className="w-full bg-background border border-border rounded-xl p-2.5 text-xs text-foreground focus:border-teal-500 focus:outline-none"
                   />
                 </div>
               </div>
@@ -2946,9 +4062,9 @@ export default function AccountantPage() {
                   id="isPrimaryCheck"
                   checked={newBankAccount.isPrimary}
                   onChange={(e) => setNewBankAccount({ ...newBankAccount, isPrimary: e.target.checked })}
-                  className="rounded border-slate-800 bg-slate-950 text-teal-500 focus:ring-0"
+                  className="rounded border-border bg-background text-teal-500 focus:ring-0"
                 />
-                <label htmlFor="isPrimaryCheck" className="text-xs text-slate-300 cursor-pointer font-medium">
+                <label htmlFor="isPrimaryCheck" className="text-xs text-foreground/90 cursor-pointer font-medium">
                   Set as Primary Bank Account for Tally Sync
                 </label>
               </div>
@@ -2957,7 +4073,7 @@ export default function AccountantPage() {
                 <button
                   type="button"
                   onClick={() => setShowAddBankModal(false)}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium rounded-xl"
+                  className="px-4 py-2 bg-slate-800 hover:bg-muted text-foreground/90 text-sm font-medium rounded-xl"
                 >
                   Cancel
                 </button>
@@ -2976,15 +4092,15 @@ export default function AccountantPage() {
       {/* Modal: Add Society Fund */}
       {showAddSocietyFundModal && renderPortal(
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-[9999]">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-lg w-full space-y-4 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+          <div className="bg-card border border-border rounded-2xl p-6 max-w-lg w-full space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-border pb-3">
               <div className="flex items-center gap-2">
                 <Building className="w-5 h-5 text-indigo-400" />
-                <h3 className="text-lg font-semibold text-white">Record Society / Corpus Capital Fund</h3>
+                <h3 className="text-lg font-semibold text-foreground">Record Society / Corpus Capital Fund</h3>
               </div>
               <button
                 onClick={() => setShowAddSocietyFundModal(false)}
-                className="text-slate-400 hover:text-white text-sm"
+                className="text-muted-foreground hover:text-white text-sm"
               >
                 ✕
               </button>
@@ -2992,24 +4108,24 @@ export default function AccountantPage() {
 
             <form onSubmit={handleCreateSocietyFund} className="space-y-3">
               <div>
-                <label className="text-xs text-slate-400 font-medium block mb-1">Fund / Endowment Name *</label>
+                <label className="text-xs text-muted-foreground font-medium block mb-1">Fund / Endowment Name *</label>
                 <input
                   type="text"
                   required
                   placeholder="e.g. General Trust Corpus Fund, Campus Development Grant..."
                   value={newSocietyFund.fundName}
                   onChange={(e) => setNewSocietyFund({ ...newSocietyFund, fundName: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-slate-200 focus:border-indigo-500 focus:outline-none"
+                  className="w-full bg-background border border-border rounded-xl p-2.5 text-sm text-foreground focus:border-indigo-500 focus:outline-none"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs text-slate-400 font-medium block mb-1">Fund Classification</label>
+                  <label className="text-xs text-muted-foreground font-medium block mb-1">Fund Classification</label>
                   <select
                     value={newSocietyFund.fundType}
                     onChange={(e) => setNewSocietyFund({ ...newSocietyFund, fundType: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-indigo-500 focus:outline-none"
+                    className="w-full bg-background border border-border rounded-xl p-2.5 text-xs text-foreground focus:border-indigo-500 focus:outline-none"
                   >
                     <option value="CORPUS">🏛️ Corpus Reserve Fund</option>
                     <option value="INFRASTRUCTURE">🏗️ Infrastructure Grant</option>
@@ -3019,49 +4135,66 @@ export default function AccountantPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="text-xs text-slate-400 font-medium block mb-1">Contributing Body / Donor *</label>
+                  <label className="text-xs text-muted-foreground font-medium block mb-1">Contributing Body / Donor *</label>
                   <input
                     type="text"
                     required
                     placeholder="e.g. Education Trust Society"
                     value={newSocietyFund.contributingBody}
                     onChange={(e) => setNewSocietyFund({ ...newSocietyFund, contributingBody: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-indigo-500 focus:outline-none"
+                    className="w-full bg-background border border-border rounded-xl p-2.5 text-xs text-foreground focus:border-indigo-500 focus:outline-none"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs text-slate-400 font-medium block mb-1">Fund Amount (₹) *</label>
+                  <label className="text-xs text-muted-foreground font-medium block mb-1">Fund Amount (₹) *</label>
                   <input
                     type="number"
                     required
                     placeholder="e.g. 2500000"
                     value={newSocietyFund.amount}
                     onChange={(e) => setNewSocietyFund({ ...newSocietyFund, amount: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-slate-200 focus:border-indigo-500 focus:outline-none font-mono font-bold"
+                    className="w-full bg-background border border-border rounded-xl p-2.5 text-sm text-foreground focus:border-indigo-500 focus:outline-none font-mono font-bold"
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-slate-400 font-medium block mb-1">Inflow Date</label>
+                  <label className="text-xs text-muted-foreground font-medium block mb-1">Inflow Date</label>
                   <input
                     type="date"
                     value={newSocietyFund.fundDate}
                     onChange={(e) => setNewSocietyFund({ ...newSocietyFund, fundDate: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-indigo-500 focus:outline-none"
+                    className="w-full bg-background border border-border rounded-xl p-2.5 text-xs text-foreground focus:border-indigo-500 focus:outline-none"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="text-xs text-slate-400 font-medium block mb-1">Endowment Purpose / Donor Earmarks</label>
+                <label className="text-xs text-muted-foreground font-medium block mb-1">Destination Bank Account *</label>
+                <select
+                  required
+                  value={newSocietyFund.bankAccountId || bankAccounts[0]?.id || ''}
+                  onChange={(e) => setNewSocietyFund({ ...newSocietyFund, bankAccountId: e.target.value })}
+                  className="w-full bg-background border border-border rounded-xl p-2.5 text-xs text-foreground focus:border-indigo-500 focus:outline-none font-medium"
+                >
+                  {bankAccounts.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.accountName} ({b.bankName}) - Available: {formatCurrency(b.currentBalance)}
+                    </option>
+                  ))}
+                  {bankAccounts.length === 0 && <option value="">No active bank accounts found</option>}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs text-muted-foreground font-medium block mb-1">Endowment Purpose / Donor Earmarks</label>
                 <input
                   type="text"
                   placeholder="e.g. Reserved for building 3rd floor science wing & smart robotics lab"
                   value={newSocietyFund.purpose}
                   onChange={(e) => setNewSocietyFund({ ...newSocietyFund, purpose: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-indigo-500 focus:outline-none"
+                  className="w-full bg-background border border-border rounded-xl p-2.5 text-xs text-foreground focus:border-indigo-500 focus:outline-none"
                 />
               </div>
 
@@ -3071,18 +4204,18 @@ export default function AccountantPage() {
                   id="restrictedCheck"
                   checked={newSocietyFund.isRestricted}
                   onChange={(e) => setNewSocietyFund({ ...newSocietyFund, isRestricted: e.target.checked })}
-                  className="rounded border-slate-800 bg-slate-950 text-indigo-500 focus:ring-0"
+                  className="rounded border-border bg-background text-indigo-500 focus:ring-0"
                 />
-                <label htmlFor="restrictedCheck" className="text-xs text-slate-300 cursor-pointer font-medium">
+                <label htmlFor="restrictedCheck" className="text-xs text-foreground/90 cursor-pointer font-medium">
                   🔒 Restricted Fund (Restricted exclusively to specified purpose)
                 </label>
               </div>
 
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-border">
                 <button
                   type="button"
                   onClick={() => setShowAddSocietyFundModal(false)}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium rounded-xl"
+                  className="px-4 py-2 bg-slate-800 hover:bg-muted text-foreground/90 text-sm font-medium rounded-xl"
                 >
                   Cancel
                 </button>
@@ -3101,15 +4234,15 @@ export default function AccountantPage() {
       {/* Modal: Record Cash In/Out & Float Transfer */}
       {showAddCashTransactionModal && renderPortal(
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-[9999]">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-lg w-full space-y-4 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+          <div className="bg-card border border-border rounded-2xl p-6 max-w-lg w-full space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-border pb-3">
               <div className="flex items-center gap-2">
                 <Coins className="w-5 h-5 text-amber-400" />
-                <h3 className="text-lg font-semibold text-white">Record Cash Transaction / Float Transfer</h3>
+                <h3 className="text-lg font-semibold text-foreground">Record Cash Transaction / Float Transfer</h3>
               </div>
               <button
                 onClick={() => setShowAddCashTransactionModal(false)}
-                className="text-slate-400 hover:text-white text-sm"
+                className="text-muted-foreground hover:text-white text-sm"
               >
                 ✕
               </button>
@@ -3118,11 +4251,11 @@ export default function AccountantPage() {
             <form onSubmit={handleCreateCashTransaction} className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs text-slate-400 font-medium block mb-1">Cash Register / Drawer *</label>
+                  <label className="text-xs text-muted-foreground font-medium block mb-1">Cash Register / Drawer *</label>
                   <select
                     value={newCashTransaction.registerId || selectedRegisterId || (cashRegisters[0]?.id || '')}
                     onChange={(e) => setNewCashTransaction({ ...newCashTransaction, registerId: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-amber-500 focus:outline-none"
+                    className="w-full bg-background border border-border rounded-xl p-2.5 text-xs text-foreground focus:border-amber-500 focus:outline-none"
                   >
                     {cashRegisters.map((reg) => (
                       <option key={reg.id} value={reg.id}>
@@ -3132,11 +4265,11 @@ export default function AccountantPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="text-xs text-slate-400 font-medium block mb-1">Transaction Type *</label>
+                  <label className="text-xs text-muted-foreground font-medium block mb-1">Transaction Type *</label>
                   <select
                     value={newCashTransaction.transactionType}
                     onChange={(e) => setNewCashTransaction({ ...newCashTransaction, transactionType: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-amber-500 focus:outline-none font-semibold text-amber-400"
+                    className="w-full bg-background border border-border rounded-xl p-2.5 text-xs text-foreground focus:border-amber-500 focus:outline-none font-semibold text-amber-400"
                   >
                     <option value="CASH_IN">📥 Cash Inflow / Counter Collection</option>
                     <option value="CASH_OUT">📤 Cash Outflow / Petty Expense</option>
@@ -3148,36 +4281,36 @@ export default function AccountantPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs text-slate-400 font-medium block mb-1">Amount (₹) *</label>
+                  <label className="text-xs text-muted-foreground font-medium block mb-1">Amount (₹) *</label>
                   <input
                     type="number"
                     required
                     placeholder="e.g. 15000"
                     value={newCashTransaction.amount}
                     onChange={(e) => setNewCashTransaction({ ...newCashTransaction, amount: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-slate-200 focus:border-amber-500 focus:outline-none font-mono font-bold"
+                    className="w-full bg-background border border-border rounded-xl p-2.5 text-sm text-foreground focus:border-amber-500 focus:outline-none font-mono font-bold"
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-slate-400 font-medium block mb-1">Transaction Date</label>
+                  <label className="text-xs text-muted-foreground font-medium block mb-1">Transaction Date</label>
                   <input
                     type="date"
                     value={newCashTransaction.transactionDate}
                     onChange={(e) => setNewCashTransaction({ ...newCashTransaction, transactionDate: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-amber-500 focus:outline-none"
+                    className="w-full bg-background border border-border rounded-xl p-2.5 text-xs text-foreground focus:border-amber-500 focus:outline-none"
                   />
                 </div>
               </div>
 
               {['BANK_WITHDRAWAL', 'BANK_DEPOSIT'].includes(newCashTransaction.transactionType) && (
-                <div className="bg-slate-950 p-3 rounded-xl border border-amber-500/30 space-y-1">
+                <div className="bg-muted/40 p-3 rounded-xl border border-amber-500/30 space-y-1">
                   <label className="text-xs text-amber-300 font-semibold block flex items-center gap-1">
                     <Landmark className="w-3.5 h-3.5" /> Linked Bank Account for Contra Transfer
                   </label>
                   <select
                     value={newCashTransaction.bankAccountId || (bankAccounts[0]?.id || '')}
                     onChange={(e) => setNewCashTransaction({ ...newCashTransaction, bankAccountId: e.target.value })}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none"
+                    className="w-full bg-card border border-border rounded-lg p-2 text-xs text-foreground focus:outline-none"
                   >
                     {bankAccounts.map((b) => (
                       <option key={b.id} value={b.id}>
@@ -3190,21 +4323,21 @@ export default function AccountantPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs text-slate-400 font-medium block mb-1">Beneficiary / Payer Name</label>
+                  <label className="text-xs text-muted-foreground font-medium block mb-1">Beneficiary / Payer Name</label>
                   <input
                     type="text"
                     placeholder="e.g. Courier boy, Electrician, Admissions desk..."
                     value={newCashTransaction.recipientOrPayer}
                     onChange={(e) => setNewCashTransaction({ ...newCashTransaction, recipientOrPayer: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-amber-500 focus:outline-none"
+                    className="w-full bg-background border border-border rounded-xl p-2.5 text-xs text-foreground focus:border-amber-500 focus:outline-none"
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-slate-400 font-medium block mb-1">Category Header</label>
+                  <label className="text-xs text-muted-foreground font-medium block mb-1">Category Header</label>
                   <select
                     value={newCashTransaction.category}
                     onChange={(e) => setNewCashTransaction({ ...newCashTransaction, category: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-amber-500 focus:outline-none"
+                    className="w-full bg-background border border-border rounded-xl p-2.5 text-xs text-foreground focus:border-amber-500 focus:outline-none"
                   >
                     <option value="PETTY_EXPENSE">Petty Office Expense</option>
                     <option value="FEE_PAYMENT">Fee Collection Inflow</option>
@@ -3216,21 +4349,21 @@ export default function AccountantPage() {
               </div>
 
               <div>
-                <label className="text-xs text-slate-400 font-medium block mb-1">Narration / Notes</label>
+                <label className="text-xs text-muted-foreground font-medium block mb-1">Narration / Notes</label>
                 <input
                   type="text"
                   placeholder="e.g. Urgent plumbing fixtures purchase & postal stamps"
                   value={newCashTransaction.notes}
                   onChange={(e) => setNewCashTransaction({ ...newCashTransaction, notes: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-amber-500 focus:outline-none"
+                  className="w-full bg-background border border-border rounded-xl p-2.5 text-xs text-foreground focus:border-amber-500 focus:outline-none"
                 />
               </div>
 
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-border">
                 <button
                   type="button"
                   onClick={() => setShowAddCashTransactionModal(false)}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium rounded-xl"
+                  className="px-4 py-2 bg-slate-800 hover:bg-muted text-foreground/90 text-sm font-medium rounded-xl"
                 >
                   Cancel
                 </button>
@@ -3249,15 +4382,15 @@ export default function AccountantPage() {
       {/* Modal: Add Fixed Asset */}
       {showAddFixedAssetModal && renderPortal(
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-[9999]">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-lg w-full space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+          <div className="bg-card border border-border rounded-2xl p-6 max-w-lg w-full space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-border pb-3">
               <div className="flex items-center gap-2">
                 <Layers className="w-5 h-5 text-cyan-400" />
-                <h3 className="text-lg font-semibold text-white">Add Fixed Asset to Capital Register</h3>
+                <h3 className="text-lg font-semibold text-foreground">Add Fixed Asset to Capital Register</h3>
               </div>
               <button
                 onClick={() => setShowAddFixedAssetModal(false)}
-                className="text-slate-400 hover:text-white text-sm"
+                className="text-muted-foreground hover:text-white text-sm"
               >
                 ✕
               </button>
@@ -3265,24 +4398,24 @@ export default function AccountantPage() {
 
             <form onSubmit={handleCreateFixedAsset} className="space-y-3">
               <div>
-                <label className="text-xs text-slate-400 font-medium block mb-1">Asset Description / Name *</label>
+                <label className="text-xs text-muted-foreground font-medium block mb-1">Asset Description / Name *</label>
                 <input
                   type="text"
                   required
                   placeholder="e.g. Dell OptiPlex Core i7 Lab PCs (Batch 2), Campus Starbus 42-Seater..."
                   value={newFixedAsset.assetName}
                   onChange={(e) => setNewFixedAsset({ ...newFixedAsset, assetName: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-slate-200 focus:border-cyan-500 focus:outline-none"
+                  className="w-full bg-background border border-border rounded-xl p-2.5 text-sm text-foreground focus:border-cyan-500 focus:outline-none"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs text-slate-400 font-medium block mb-1">Asset Category *</label>
+                  <label className="text-xs text-muted-foreground font-medium block mb-1">Asset Category *</label>
                   <select
                     value={newFixedAsset.category}
                     onChange={(e) => setNewFixedAsset({ ...newFixedAsset, category: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-cyan-500 focus:outline-none font-semibold text-cyan-300"
+                    className="w-full bg-background border border-border rounded-xl p-2.5 text-xs text-foreground focus:border-cyan-500 focus:outline-none font-semibold text-cyan-300"
                   >
                     <option value="IT_HARDWARE">💻 IT Hardware & Computers</option>
                     <option value="LAND_BUILDING">🏛️ Land & Academic Buildings</option>
@@ -3294,92 +4427,92 @@ export default function AccountantPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="text-xs text-slate-400 font-medium block mb-1">Asset Tag / Serial Code</label>
+                  <label className="text-xs text-muted-foreground font-medium block mb-1">Asset Tag / Serial Code</label>
                   <input
                     type="text"
                     placeholder="e.g. AST-IT-2026-009"
                     value={newFixedAsset.assetCode}
                     onChange={(e) => setNewFixedAsset({ ...newFixedAsset, assetCode: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-cyan-500 focus:outline-none font-mono"
+                    className="w-full bg-background border border-border rounded-xl p-2.5 text-xs text-foreground focus:border-cyan-500 focus:outline-none font-mono"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs text-slate-400 font-medium block mb-1">Purchase Price (₹) *</label>
+                  <label className="text-xs text-muted-foreground font-medium block mb-1">Purchase Price (₹) *</label>
                   <input
                     type="number"
                     required
                     placeholder="e.g. 450000"
                     value={newFixedAsset.purchasePrice}
                     onChange={(e) => setNewFixedAsset({ ...newFixedAsset, purchasePrice: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-slate-200 focus:border-cyan-500 focus:outline-none font-mono font-bold"
+                    className="w-full bg-background border border-border rounded-xl p-2.5 text-sm text-foreground focus:border-cyan-500 focus:outline-none font-mono font-bold"
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-slate-400 font-medium block mb-1">Purchase Date</label>
+                  <label className="text-xs text-muted-foreground font-medium block mb-1">Purchase Date</label>
                   <input
                     type="date"
                     value={newFixedAsset.purchaseDate}
                     onChange={(e) => setNewFixedAsset({ ...newFixedAsset, purchaseDate: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-cyan-500 focus:outline-none"
+                    className="w-full bg-background border border-border rounded-xl p-2.5 text-xs text-foreground focus:border-cyan-500 focus:outline-none"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs text-slate-400 font-medium block mb-1">Vendor / Supplier</label>
+                  <label className="text-xs text-muted-foreground font-medium block mb-1">Vendor / Supplier</label>
                   <input
                     type="text"
                     placeholder="e.g. Dell Direct Commercial Sales"
                     value={newFixedAsset.vendorName}
                     onChange={(e) => setNewFixedAsset({ ...newFixedAsset, vendorName: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-cyan-500 focus:outline-none"
+                    className="w-full bg-background border border-border rounded-xl p-2.5 text-xs text-foreground focus:border-cyan-500 focus:outline-none"
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-slate-400 font-medium block mb-1">Invoice / Bill Number</label>
+                  <label className="text-xs text-muted-foreground font-medium block mb-1">Invoice / Bill Number</label>
                   <input
                     type="text"
                     placeholder="e.g. INV-2026-DEL-890"
                     value={newFixedAsset.invoiceNo}
                     onChange={(e) => setNewFixedAsset({ ...newFixedAsset, invoiceNo: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-cyan-500 focus:outline-none font-mono"
+                    className="w-full bg-background border border-border rounded-xl p-2.5 text-xs text-foreground focus:border-cyan-500 focus:outline-none font-mono"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs text-slate-400 font-medium block mb-1">Physical Location</label>
+                  <label className="text-xs text-muted-foreground font-medium block mb-1">Physical Location</label>
                   <input
                     type="text"
                     placeholder="e.g. Science Block Lab 2"
                     value={newFixedAsset.location}
                     onChange={(e) => setNewFixedAsset({ ...newFixedAsset, location: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-cyan-500 focus:outline-none"
+                    className="w-full bg-background border border-border rounded-xl p-2.5 text-xs text-foreground focus:border-cyan-500 focus:outline-none"
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-slate-400 font-medium block mb-1">Annual Depr. Rate (% p.a.)</label>
+                  <label className="text-xs text-muted-foreground font-medium block mb-1">Annual Depr. Rate (% p.a.)</label>
                   <input
                     type="number"
                     step="0.5"
                     placeholder="15.0"
                     value={newFixedAsset.depreciationRate}
                     onChange={(e) => setNewFixedAsset({ ...newFixedAsset, depreciationRate: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:border-cyan-500 focus:outline-none font-mono"
+                    className="w-full bg-background border border-border rounded-xl p-2.5 text-xs text-foreground focus:border-cyan-500 focus:outline-none font-mono"
                   />
                 </div>
               </div>
 
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-border">
                 <button
                   type="button"
                   onClick={() => setShowAddFixedAssetModal(false)}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium rounded-xl"
+                  className="px-4 py-2 bg-slate-800 hover:bg-muted text-foreground/90 text-sm font-medium rounded-xl"
                 >
                   Cancel
                 </button>
@@ -3398,12 +4531,12 @@ export default function AccountantPage() {
       {/* Modal: Official Receipt & Voucher Printable PDF View */}
       {printableVoucher && renderPortal(
         <div className="fixed inset-0 bg-black/85 backdrop-blur-md flex items-start justify-center p-4 sm:p-6 z-[9999] overflow-y-auto">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full p-6 space-y-6 shadow-2xl relative text-slate-100 my-4 sm:my-8">
+          <div className="bg-card border border-border rounded-2xl max-w-2xl w-full p-6 space-y-6 shadow-2xl relative text-foreground my-4 sm:my-8">
             {/* Modal Header Actions */}
-            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+            <div className="flex items-center justify-between border-b border-border pb-4">
               <div className="flex items-center gap-2">
                 <Receipt className="w-5 h-5 text-teal-400" />
-                <h3 className="text-lg font-bold text-white">Voucher & Receipt Document</h3>
+                <h3 className="text-lg font-bold text-foreground">Voucher & Receipt Document</h3>
               </div>
               <div className="flex items-center gap-3">
                 <button
@@ -3414,7 +4547,7 @@ export default function AccountantPage() {
                 </button>
                 <button
                   onClick={() => setPrintableVoucher(null)}
-                  className="p-1.5 text-slate-400 hover:text-white text-sm"
+                  className="p-1.5 text-muted-foreground hover:text-white text-sm"
                 >
                   ✕
                 </button>
@@ -3422,17 +4555,17 @@ export default function AccountantPage() {
             </div>
 
             {/* PRINTABLE RECEIPT CARD CONTENT */}
-            <div id="printable-receipt-content" className="bg-slate-950 border border-slate-800 rounded-xl p-6 space-y-6 text-slate-200">
+            <div id="printable-receipt-content" className="bg-background border border-border rounded-xl p-6 space-y-6 text-foreground">
               {/* Institution Letterhead Header */}
-              <div className="flex items-start justify-between border-b border-slate-800 pb-4">
+              <div className="flex items-start justify-between border-b border-border pb-4">
                 <div className="flex items-center gap-3">
                   <div className="p-3 bg-teal-500/10 text-teal-400 border border-teal-500/30 rounded-xl">
                     <Building2 className="w-8 h-8" />
                   </div>
                   <div>
                     <h2 className="text-xl font-extrabold text-white tracking-tight">{currentOrg?.name || 'Demo International Academy'}</h2>
-                    <p className="text-xs text-slate-400">Department of Finance & Accounts • Institutional ERP</p>
-                    <p className="text-[11px] text-slate-500">Official Accounting & Tally Prime Ledger Document</p>
+                    <p className="text-xs text-muted-foreground">Department of Finance & Accounts • Institutional ERP</p>
+                    <p className="text-[11px] text-muted-foreground">Official Accounting & Tally Prime Ledger Document</p>
                   </div>
                 </div>
                 <div className="text-right">
@@ -3444,12 +4577,12 @@ export default function AccountantPage() {
                     {printableVoucher.type === 'CASH_TRANSACTION' && (printableVoucher.data.voucherNumber || `CSH-VOUCH/${printableVoucher.data.id?.slice(0, 6)}`)}
                     {printableVoucher.type === 'FIXED_ASSET' && (printableVoucher.data.assetCode || `AST-REG/${printableVoucher.data.id?.slice(0, 6)}`)}
                   </div>
-                  <div className="text-[11px] text-slate-400 mt-1">Date: {new Date().toLocaleDateString('en-IN')}</div>
+                  <div className="text-[11px] text-muted-foreground mt-1">Date: {new Date().toLocaleDateString('en-IN')}</div>
                 </div>
               </div>
 
               {/* Voucher Title Banner */}
-              <div className="bg-slate-900 border border-slate-800 p-3 rounded-lg text-center">
+              <div className="bg-card border border-border p-3 rounded-lg text-center">
                 <span className="text-xs font-extrabold uppercase tracking-wider text-teal-400">
                   {printableVoucher.type === 'FEE' && 'Official Student Fee Payment Receipt'}
                   {printableVoucher.type === 'PAYROLL' && 'Official Faculty Salary Disbursement Payslip'}
@@ -3461,32 +4594,32 @@ export default function AccountantPage() {
               </div>
 
               {/* Metadata Grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-xs bg-slate-900/60 p-4 rounded-xl border border-slate-800/80">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-xs bg-card/60 p-4 rounded-xl border border-border/80">
                 {printableVoucher.type === 'FEE' && (
                   <>
                     <div>
-                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Student Name</span>
-                      <span className="font-bold text-white text-sm">{printableVoucher.data.studentName}</span>
+                      <span className="text-[10px] text-muted-foreground block font-semibold uppercase">Student Name</span>
+                      <span className="font-bold text-foreground text-sm">{printableVoucher.data.studentName}</span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Roll Number</span>
-                      <span className="font-mono text-slate-200">{printableVoucher.data.studentRollNo}</span>
+                      <span className="text-[10px] text-muted-foreground block font-semibold uppercase">Roll Number</span>
+                      <span className="font-mono text-foreground">{printableVoucher.data.studentRollNo}</span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Fee Header</span>
-                      <span className="text-slate-200">{printableVoucher.data.feeHeader}</span>
+                      <span className="text-[10px] text-muted-foreground block font-semibold uppercase">Fee Header</span>
+                      <span className="text-foreground">{printableVoucher.data.feeHeader}</span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Payment Method</span>
+                      <span className="text-[10px] text-muted-foreground block font-semibold uppercase">Payment Method</span>
                       <span className="text-emerald-400 font-medium">{printableVoucher.data.paymentMethod || 'UPI / Online'}</span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Bank Account</span>
+                      <span className="text-[10px] text-muted-foreground block font-semibold uppercase">Bank Account</span>
                       <span className="text-teal-300 font-mono">{printableVoucher.data.bankAccountName || 'HDFC Bank Main Account'}</span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Academic Year</span>
-                      <span className="text-slate-200">{printableVoucher.data.academicYear || '2026-27'}</span>
+                      <span className="text-[10px] text-muted-foreground block font-semibold uppercase">Academic Year</span>
+                      <span className="text-foreground">{printableVoucher.data.academicYear || '2026-27'}</span>
                     </div>
                   </>
                 )}
@@ -3494,28 +4627,28 @@ export default function AccountantPage() {
                 {printableVoucher.type === 'PAYROLL' && (
                   <>
                     <div>
-                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Employee Name</span>
-                      <span className="font-bold text-white text-sm">{printableVoucher.data.employeeName}</span>
+                      <span className="text-[10px] text-muted-foreground block font-semibold uppercase">Employee Name</span>
+                      <span className="font-bold text-foreground text-sm">{printableVoucher.data.employeeName}</span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Employee ID</span>
-                      <span className="font-mono text-slate-200">{printableVoucher.data.employeeId}</span>
+                      <span className="text-[10px] text-muted-foreground block font-semibold uppercase">Employee ID</span>
+                      <span className="font-mono text-foreground">{printableVoucher.data.employeeId}</span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Designation</span>
-                      <span className="text-slate-200">{printableVoucher.data.designation}</span>
+                      <span className="text-[10px] text-muted-foreground block font-semibold uppercase">Designation</span>
+                      <span className="text-foreground">{printableVoucher.data.designation}</span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Payroll Period</span>
+                      <span className="text-[10px] text-muted-foreground block font-semibold uppercase">Payroll Period</span>
                       <span className="text-emerald-400 font-medium">{printableVoucher.data.month} {printableVoucher.data.year}</span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Disbursement Mode</span>
+                      <span className="text-[10px] text-muted-foreground block font-semibold uppercase">Disbursement Mode</span>
                       <span className="text-teal-300">Direct Bank Deposit</span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Tally Ref Voucher</span>
-                      <span className="font-mono text-slate-300">{printableVoucher.data.tallyVoucherId || 'PAY-TAL-8801'}</span>
+                      <span className="text-[10px] text-muted-foreground block font-semibold uppercase">Tally Ref Voucher</span>
+                      <span className="font-mono text-foreground/90">{printableVoucher.data.tallyVoucherId || 'PAY-TAL-8801'}</span>
                     </div>
                   </>
                 )}
@@ -3523,28 +4656,28 @@ export default function AccountantPage() {
                 {printableVoucher.type === 'EXPENSE' && (
                   <>
                     <div>
-                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Expense Title</span>
-                      <span className="font-bold text-white text-sm">{printableVoucher.data.title}</span>
+                      <span className="text-[10px] text-muted-foreground block font-semibold uppercase">Expense Title</span>
+                      <span className="font-bold text-foreground text-sm">{printableVoucher.data.title}</span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Category</span>
+                      <span className="text-[10px] text-muted-foreground block font-semibold uppercase">Category</span>
                       <span className="text-purple-300 font-semibold">{printableVoucher.data.category}</span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Vendor / Payee</span>
-                      <span className="text-slate-200">{printableVoucher.data.vendorName || '-'}</span>
+                      <span className="text-[10px] text-muted-foreground block font-semibold uppercase">Vendor / Payee</span>
+                      <span className="text-foreground">{printableVoucher.data.vendorName || '-'}</span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Payment Method</span>
+                      <span className="text-[10px] text-muted-foreground block font-semibold uppercase">Payment Method</span>
                       <span className="text-emerald-400 font-medium">{printableVoucher.data.paymentMethod || 'BANK_TRANSFER'}</span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Bank Account</span>
+                      <span className="text-[10px] text-muted-foreground block font-semibold uppercase">Bank Account</span>
                       <span className="text-teal-300 font-mono">{printableVoucher.data.bankAccountName || 'HDFC Bank Main Account'}</span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Voucher Date</span>
-                      <span className="text-slate-200">{new Date(printableVoucher.data.expenseDate || Date.now()).toLocaleDateString('en-IN')}</span>
+                      <span className="text-[10px] text-muted-foreground block font-semibold uppercase">Voucher Date</span>
+                      <span className="text-foreground">{new Date(printableVoucher.data.expenseDate || Date.now()).toLocaleDateString('en-IN')}</span>
                     </div>
                   </>
                 )}
@@ -3552,28 +4685,28 @@ export default function AccountantPage() {
                 {printableVoucher.type === 'SOCIETY_FUND' && (
                   <>
                     <div>
-                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Fund Name</span>
-                      <span className="font-bold text-white text-sm">{printableVoucher.data.fundName}</span>
+                      <span className="text-[10px] text-muted-foreground block font-semibold uppercase">Fund Name</span>
+                      <span className="font-bold text-foreground text-sm">{printableVoucher.data.fundName}</span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Classification</span>
+                      <span className="text-[10px] text-muted-foreground block font-semibold uppercase">Classification</span>
                       <span className="text-indigo-300 font-semibold">{printableVoucher.data.fundType}</span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Contributing Body</span>
-                      <span className="text-slate-200">{printableVoucher.data.contributingBody}</span>
+                      <span className="text-[10px] text-muted-foreground block font-semibold uppercase">Contributing Body</span>
+                      <span className="text-foreground">{printableVoucher.data.contributingBody}</span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Restriction Type</span>
+                      <span className="text-[10px] text-muted-foreground block font-semibold uppercase">Restriction Type</span>
                       <span className="text-amber-400 font-medium">{printableVoucher.data.isRestricted ? 'Restricted Endowment' : 'Unrestricted Corpus'}</span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Tally Group Parent</span>
+                      <span className="text-[10px] text-muted-foreground block font-semibold uppercase">Tally Group Parent</span>
                       <span className="text-teal-300 font-mono">Capital Account</span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Inflow Date</span>
-                      <span className="text-slate-200">{new Date(printableVoucher.data.fundDate || Date.now()).toLocaleDateString('en-IN')}</span>
+                      <span className="text-[10px] text-muted-foreground block font-semibold uppercase">Inflow Date</span>
+                      <span className="text-foreground">{new Date(printableVoucher.data.fundDate || Date.now()).toLocaleDateString('en-IN')}</span>
                     </div>
                   </>
                 )}
@@ -3581,28 +4714,28 @@ export default function AccountantPage() {
                 {printableVoucher.type === 'CASH_TRANSACTION' && (
                   <>
                     <div>
-                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Cash Drawer</span>
-                      <span className="font-bold text-white text-sm">{printableVoucher.data.registerName || 'Main Admissions Counter'}</span>
+                      <span className="text-[10px] text-muted-foreground block font-semibold uppercase">Cash Drawer</span>
+                      <span className="font-bold text-foreground text-sm">{printableVoucher.data.registerName || 'Main Admissions Counter'}</span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Transaction Type</span>
+                      <span className="text-[10px] text-muted-foreground block font-semibold uppercase">Transaction Type</span>
                       <span className="text-amber-300 font-bold">{printableVoucher.data.transactionType}</span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Payer / Recipient</span>
-                      <span className="text-slate-200">{printableVoucher.data.recipientOrPayer || '-'}</span>
+                      <span className="text-[10px] text-muted-foreground block font-semibold uppercase">Payer / Recipient</span>
+                      <span className="text-foreground">{printableVoucher.data.recipientOrPayer || '-'}</span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Category</span>
+                      <span className="text-[10px] text-muted-foreground block font-semibold uppercase">Category</span>
                       <span className="text-emerald-400 font-medium">{printableVoucher.data.category || 'PETTY_EXPENSE'}</span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Tally Voucher Type</span>
+                      <span className="text-[10px] text-muted-foreground block font-semibold uppercase">Tally Voucher Type</span>
                       <span className="text-teal-300 font-mono">F4 Contra / Cash Receipt</span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Transaction Date</span>
-                      <span className="text-slate-200">{new Date(printableVoucher.data.transactionDate || Date.now()).toLocaleDateString('en-IN')}</span>
+                      <span className="text-[10px] text-muted-foreground block font-semibold uppercase">Transaction Date</span>
+                      <span className="text-foreground">{new Date(printableVoucher.data.transactionDate || Date.now()).toLocaleDateString('en-IN')}</span>
                     </div>
                   </>
                 )}
@@ -3610,54 +4743,54 @@ export default function AccountantPage() {
                 {printableVoucher.type === 'FIXED_ASSET' && (
                   <>
                     <div>
-                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Asset Name</span>
-                      <span className="font-bold text-white text-sm">{printableVoucher.data.assetName}</span>
+                      <span className="text-[10px] text-muted-foreground block font-semibold uppercase">Asset Name</span>
+                      <span className="font-bold text-foreground text-sm">{printableVoucher.data.assetName}</span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Asset Tag Code</span>
+                      <span className="text-[10px] text-muted-foreground block font-semibold uppercase">Asset Tag Code</span>
                       <span className="font-mono text-cyan-300 font-bold">{printableVoucher.data.assetCode || 'AST-001'}</span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Category</span>
-                      <span className="text-slate-200">{printableVoucher.data.category}</span>
+                      <span className="text-[10px] text-muted-foreground block font-semibold uppercase">Category</span>
+                      <span className="text-foreground">{printableVoucher.data.category}</span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Campus Location</span>
+                      <span className="text-[10px] text-muted-foreground block font-semibold uppercase">Campus Location</span>
                       <span className="text-emerald-400 font-medium">{printableVoucher.data.location || 'Main Campus'}</span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Depreciation Method</span>
+                      <span className="text-[10px] text-muted-foreground block font-semibold uppercase">Depreciation Method</span>
                       <span className="text-teal-300 font-mono">{printableVoucher.data.depreciationMethod || 'STRAIGHT_LINE'}</span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-slate-400 block font-semibold uppercase">Purchase Date</span>
-                      <span className="text-slate-200">{new Date(printableVoucher.data.purchaseDate || Date.now()).toLocaleDateString('en-IN')}</span>
+                      <span className="text-[10px] text-muted-foreground block font-semibold uppercase">Purchase Date</span>
+                      <span className="text-foreground">{new Date(printableVoucher.data.purchaseDate || Date.now()).toLocaleDateString('en-IN')}</span>
                     </div>
                   </>
                 )}
               </div>
 
               {/* Itemized Table Breakdown */}
-              <div className="overflow-x-auto rounded-lg border border-slate-800">
+              <div className="overflow-x-auto rounded-lg border border-border">
                 <table className="w-full text-xs">
-                  <thead className="bg-slate-900 text-slate-400 uppercase font-semibold">
+                  <thead className="bg-muted text-muted-foreground uppercase font-semibold">
                     <tr>
                       <th className="p-3 text-left">Description / Accounting Particulars</th>
                       <th className="p-3 text-right">Amount (₹)</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-800/60 text-slate-300">
+                  <tbody className="divide-y divide-border/60 text-foreground/90">
                     {printableVoucher.type === 'FEE' && (
                       <>
                         <tr>
                           <td className="p-3 font-medium">{printableVoucher.data.feeHeader} (Billed Amount)</td>
-                          <td className="p-3 text-right font-mono text-slate-200">{formatCurrency(printableVoucher.data.totalAmount)}</td>
+                          <td className="p-3 text-right font-mono text-foreground">{formatCurrency(printableVoucher.data.totalAmount)}</td>
                         </tr>
                         <tr>
                           <td className="p-3 font-medium text-emerald-400">Total Payment Received</td>
                           <td className="p-3 text-right font-mono text-emerald-400 font-bold">+{formatCurrency(printableVoucher.data.paidAmount)}</td>
                         </tr>
-                        <tr className="bg-slate-900/80 font-bold">
+                        <tr className="bg-card/80 font-bold">
                           <td className="p-3 text-amber-400">Remaining Balance Dues</td>
                           <td className="p-3 text-right font-mono text-amber-400">{formatCurrency(printableVoucher.data.pendingBalance)}</td>
                         </tr>
@@ -3668,7 +4801,7 @@ export default function AccountantPage() {
                       <>
                         <tr>
                           <td className="p-3 font-medium">Basic Pay Salary</td>
-                          <td className="p-3 text-right font-mono text-slate-200">{formatCurrency(printableVoucher.data.basicPay)}</td>
+                          <td className="p-3 text-right font-mono text-foreground">{formatCurrency(printableVoucher.data.basicPay)}</td>
                         </tr>
                         <tr>
                           <td className="p-3 font-medium text-emerald-400">Allowances & Bonuses</td>
@@ -3678,7 +4811,7 @@ export default function AccountantPage() {
                           <td className="p-3 font-medium text-rose-400">Deductions (TDS / PF)</td>
                           <td className="p-3 text-right font-mono text-rose-400">-{formatCurrency(printableVoucher.data.deductions)}</td>
                         </tr>
-                        <tr className="bg-slate-900/80 font-bold text-white">
+                        <tr className="bg-card/80 font-bold text-foreground">
                           <td className="p-3 text-sm">Net Salary Disbursed</td>
                           <td className="p-3 text-right text-sm font-mono text-emerald-400">{formatCurrency(printableVoucher.data.netSalary)}</td>
                         </tr>
@@ -3689,11 +4822,11 @@ export default function AccountantPage() {
                       <>
                         <tr>
                           <td className="p-3 font-medium">{printableVoucher.data.title}</td>
-                          <td className="p-3 text-right font-mono font-bold text-white">{formatCurrency(printableVoucher.data.amount)}</td>
+                          <td className="p-3 text-right font-mono font-bold text-foreground">{formatCurrency(printableVoucher.data.amount)}</td>
                         </tr>
                         {printableVoucher.data.notes && (
                           <tr>
-                            <td colSpan="2" className="p-3 text-slate-400 italic">Notes: {printableVoucher.data.notes}</td>
+                            <td colSpan="2" className="p-3 text-muted-foreground italic">Notes: {printableVoucher.data.notes}</td>
                           </tr>
                         )}
                       </>
@@ -3707,10 +4840,10 @@ export default function AccountantPage() {
                         </tr>
                         {printableVoucher.data.purpose && (
                           <tr>
-                            <td colSpan="2" className="p-3 text-slate-400 italic">Specific Purpose / Earmark: {printableVoucher.data.purpose}</td>
+                            <td colSpan="2" className="p-3 text-muted-foreground italic">Specific Purpose / Earmark: {printableVoucher.data.purpose}</td>
                           </tr>
                         )}
-                        <tr className="bg-slate-900/80 font-bold text-white">
+                        <tr className="bg-card/80 font-bold text-foreground">
                           <td className="p-3">Total Corpus Capital Inflow (Credit: Capital Account)</td>
                           <td className="p-3 text-right font-mono text-emerald-400">{formatCurrency(printableVoucher.data.amount)}</td>
                         </tr>
@@ -3725,7 +4858,7 @@ export default function AccountantPage() {
                         </tr>
                         {printableVoucher.data.notes && (
                           <tr>
-                            <td colSpan="2" className="p-3 text-slate-400 italic">Narration: {printableVoucher.data.notes}</td>
+                            <td colSpan="2" className="p-3 text-muted-foreground italic">Narration: {printableVoucher.data.notes}</td>
                           </tr>
                         )}
                       </>
@@ -3735,13 +4868,13 @@ export default function AccountantPage() {
                       <>
                         <tr>
                           <td className="p-3 font-medium">Original Capital Acquisition Cost</td>
-                          <td className="p-3 text-right font-mono text-slate-200">{formatCurrency(printableVoucher.data.purchasePrice)}</td>
+                          <td className="p-3 text-right font-mono text-foreground">{formatCurrency(printableVoucher.data.purchasePrice)}</td>
                         </tr>
                         <tr>
                           <td className="p-3 font-medium text-rose-400">Total Accumulated Depreciation ({printableVoucher.data.depreciationRate}% p.a.)</td>
                           <td className="p-3 text-right font-mono text-rose-400 font-bold">-{formatCurrency(printableVoucher.data.accumulatedDepreciation)}</td>
                         </tr>
-                        <tr className="bg-slate-900/80 font-bold text-white">
+                        <tr className="bg-card/80 font-bold text-foreground">
                           <td className="p-3 text-cyan-300">Net Current Book Value on Balance Sheet</td>
                           <td className="p-3 text-right font-mono text-cyan-300 text-sm">{formatCurrency(printableVoucher.data.currentBookValue)}</td>
                         </tr>
@@ -3752,17 +4885,65 @@ export default function AccountantPage() {
               </div>
 
               {/* Verification & Signatures */}
-              <div className="flex items-center justify-between pt-4 border-t border-slate-800">
+              <div className="flex items-center justify-between pt-4 border-t border-border">
                 <div className="flex items-center gap-2 text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 rounded-lg">
                   <CheckCircle2 className="w-4 h-4" />
                   <span>Verified & Synced with Tally Prime / Busy ERP</span>
                 </div>
 
                 <div className="text-right space-y-1">
-                  <div className="text-xs font-bold text-slate-300">Finance & Accounts Department</div>
-                  <div className="text-[10px] text-slate-500 italic">Authorized System Generated Signature & Stamp</div>
+                  <div className="text-xs font-bold text-foreground/90">Finance & Accounts Department</div>
+                  <div className="text-[10px] text-muted-foreground italic">Authorized System Generated Signature & Stamp</div>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Sleek Custom Confirmation Modal Popup */}
+      {confirmModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-card border border-border/80 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 animate-in zoom-in-95 duration-200">
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-400 shrink-0">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div className="space-y-1 flex-1">
+                <h3 className="text-lg font-bold text-foreground">{confirmModal.title}</h3>
+                <p className="text-sm text-muted-foreground leading-relaxed">{confirmModal.message}</p>
+              </div>
+            </div>
+
+            {confirmModal.tallyImpact && (
+              <div className="p-3.5 bg-amber-500/10 border border-amber-500/20 rounded-xl text-xs text-amber-300 flex items-start gap-2.5">
+                <Database className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <span>
+                  This voucher will also be <strong>purged from Tally Prime (localhost:9000)</strong> and recorded in anti-resurrection tombstone registry.
+                </span>
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setConfirmModal((prev) => ({ ...prev, isOpen: false }))}
+                className="px-4 py-2.5 bg-muted/60 hover:bg-muted text-foreground border border-border text-xs font-semibold rounded-xl transition-all"
+              >
+                {confirmModal.cancelText || 'Cancel'}
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const action = confirmModal.onConfirm;
+                  setConfirmModal((prev) => ({ ...prev, isOpen: false }));
+                  if (action) await action();
+                }}
+                className="px-4 py-2.5 bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold rounded-xl shadow-lg transition-all flex items-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                {confirmModal.confirmText || 'Delete & Purge'}
+              </button>
             </div>
           </div>
         </div>

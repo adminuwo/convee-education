@@ -12,7 +12,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { Building2, Users, Layers, Plus, Mail, Trash2, Crown, ChevronRight, GraduationCap, UserCheck, Filter, Key, HeartHandshake, Pencil, Clock, Copy, CheckCircle2, UserX } from 'lucide-react';
+import { Building2, Users, Layers, Plus, Mail, Trash2, Crown, ChevronRight, GraduationCap, UserCheck, Filter, Key, HeartHandshake, Pencil, Clock, Copy, CheckCircle2, UserX, BookOpen } from 'lucide-react';
 import { connectSocket, getSocket } from '@/lib/socket';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
@@ -64,7 +64,7 @@ export default function AdminPage() {
 
   const facultyMembers = useMemo(() => {
     return members.filter(
-      (m) => m.role !== 'STUDENT' && m.role !== 'PARENT' && !m.user?.email?.includes('parent') && !m.title?.toLowerCase().includes('parent')
+      (m) => m.role !== 'STUDENT' && m.role !== 'ALUMNI' && m.role !== 'PARENT' && !m.user?.email?.includes('parent') && !m.title?.toLowerCase().includes('parent')
     );
   }, [members]);
 
@@ -74,9 +74,15 @@ export default function AdminPage() {
     );
   }, [members]);
 
+  const alumniMembers = useMemo(() => {
+    return members.filter(
+      (m) => m.role === 'ALUMNI' || m.title?.includes('Alumni')
+    );
+  }, [members]);
+
   const unassignedMembers = useMemo(() => {
     return members.filter(
-      (m) => m.role === 'STUDENT' && (!m.teamId && !m.team?.id)
+      (m) => m.role === 'STUDENT' && (!m.teamId && !m.team?.id) && m.role !== 'ALUMNI' && !m.title?.includes('Alumni')
     );
   }, [members]);
 
@@ -88,7 +94,7 @@ export default function AdminPage() {
 
   const studentMembers = useMemo(() => {
     return members.filter((m) => {
-      if (m.role !== 'STUDENT') return false;
+      if (m.role !== 'STUDENT' || m.role === 'ALUMNI' || m.title?.includes('Alumni')) return false;
       if (studentWingFilter !== 'ALL' && m.departmentId !== studentWingFilter && m.department?.id !== studentWingFilter) {
         return false;
       }
@@ -354,10 +360,10 @@ export default function AdminPage() {
                       : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
                   }`}
                 >
-                  <GraduationCap className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
-                  <span>Students</span>
+                  <BookOpen className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                  <span>Enrolled Students</span>
                   <span className={`text-[11px] px-1.5 py-0.5 rounded-full font-bold ${memberSubTab === 'students' ? 'bg-emerald-500/30 text-emerald-200' : 'bg-slate-800 text-slate-400'}`}>
-                    {members.filter((m) => m.role === 'STUDENT').length}
+                    {members.filter((m) => m.role === 'STUDENT' && m.role !== 'ALUMNI' && !m.title?.includes('Alumni')).length}
                   </span>
                 </button>
                 <button
@@ -365,14 +371,29 @@ export default function AdminPage() {
                   onClick={() => setMemberSubTab('unassigned')}
                   className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${
                     memberSubTab === 'unassigned'
+                      ? 'bg-rose-600/20 text-rose-400 border border-rose-500/40 shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                  }`}
+                >
+                  <UserX className="h-3.5 w-3.5 text-rose-400 shrink-0" />
+                  <span>Unassigned</span>
+                  <span className={`text-[11px] px-1.5 py-0.5 rounded-full font-bold ${memberSubTab === 'unassigned' ? 'bg-rose-500/30 text-rose-200' : 'bg-slate-800 text-slate-400'}`}>
+                    {unassignedMembers.length}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMemberSubTab('alumni')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${
+                    memberSubTab === 'alumni'
                       ? 'bg-amber-600/20 text-amber-400 border border-amber-500/40 shadow-sm'
                       : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
                   }`}
                 >
-                  <UserX className="h-3.5 w-3.5 text-amber-400 shrink-0" />
-                  <span>Unassigned</span>
-                  <span className={`text-[11px] px-1.5 py-0.5 rounded-full font-bold ${memberSubTab === 'unassigned' ? 'bg-amber-500/30 text-amber-200' : 'bg-slate-800 text-slate-400'}`}>
-                    {unassignedMembers.length}
+                  <GraduationCap className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+                  <span>Alumni</span>
+                  <span className={`text-[11px] px-1.5 py-0.5 rounded-full font-bold ${memberSubTab === 'alumni' ? 'bg-amber-500/30 text-amber-200' : 'bg-slate-800 text-slate-400'}`}>
+                    {alumniMembers.length}
                   </span>
                 </button>
                 <button
@@ -616,6 +637,79 @@ export default function AdminPage() {
                         <tr>
                           <td colSpan={5} className="text-center py-8 text-xs text-muted-foreground">
                             No unassigned students in this workspace. All students belong to a class section!
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              ) : memberSubTab === 'alumni' ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="border-b border-border bg-muted/20">
+                      <tr className="text-left text-muted-foreground">
+                        <th className="px-4 py-2.5 font-medium">Alumni Graduate</th>
+                        <th className="px-4 py-2.5 font-medium">Email</th>
+                        <th className="px-4 py-2.5 font-medium">Alumni Designation</th>
+                        <th className="px-4 py-2.5 font-medium">Status</th>
+                        <th className="px-4 py-2.5 font-medium">Graduated</th>
+                        <th className="px-4 py-2.5 font-medium text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {alumniMembers.map((m) => {
+                        const canRemove = canRemoveMember(m);
+                        const batchTag = m.title?.match(/\[(.*?)\]/)?.[1] || m.title || 'Alumni Network';
+                        return (
+                          <tr key={m.id} className="border-b border-border hover:bg-muted/30 transition-colors">
+                            <td className="px-4 py-2.5">
+                              <div className="flex items-center gap-2.5">
+                                <Avatar className="h-7 w-7 border border-amber-500/30">
+                                  <AvatarImage src={m.user?.avatarUrl} />
+                                  <AvatarFallback className="text-[10px] bg-amber-500/15 text-amber-400 font-bold">
+                                    {initials(m.user?.fullName || m.user?.email)}
+                                  </AvatarFallback>
+                                </Avatar>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-medium text-foreground">{m.user?.fullName || m.user?.email || 'Alumni Member'}</span>
+                                  <Badge variant="outline" className="font-semibold text-[10px] px-2 py-0 h-4 bg-amber-500/10 text-amber-400 border-amber-500/30">
+                                    🎓 {batchTag}
+                                  </Badge>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-4 py-2.5 text-muted-foreground">{renderEmailCell(m.user)}</td>
+                            <td className="px-4 py-2.5">
+                              <span className="text-xs font-medium text-amber-300/90 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                                {m.title || 'Graduated Alumni'}
+                              </span>
+                            </td>
+                            <td className="px-4 py-2.5">
+                              <Badge variant="secondary" className="text-[10px] font-bold uppercase bg-emerald-500/10 text-emerald-400 border-emerald-500/20">
+                                Graduated
+                              </Badge>
+                            </td>
+                            <td className="px-4 py-2.5 text-muted-foreground text-xs">{new Date(m.joinedAt).toLocaleDateString()}</td>
+                            <td className="px-4 py-2.5 text-right space-x-1">
+                              {canRemove && (
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                                  onClick={() => setRemoveDialog({ open: true, member: m })}
+                                  title="Remove alumni"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {alumniMembers.length === 0 && (
+                        <tr>
+                          <td colSpan={6} className="text-center py-8 text-xs text-muted-foreground">
+                            No graduated alumni members yet in this institution.
                           </td>
                         </tr>
                       )}

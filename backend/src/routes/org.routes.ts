@@ -1376,6 +1376,12 @@ router.patch('/:orgId/members/:membershipId', async (req, res, next) => {
     }
     if (teamId !== undefined) {
       updateData.teamId = (!teamId || teamId === 'unassigned') ? null : teamId;
+      if (updateData.teamId && target.role === 'STUDENT') {
+        const teamObj = await prisma.team.findUnique({ where: { id: updateData.teamId } });
+        if (teamObj) {
+          updateData.title = `Student - ${teamObj.name}`;
+        }
+      }
     }
 
     // Role change logic (if role is explicitly changing)

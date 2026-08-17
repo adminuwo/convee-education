@@ -3,6 +3,30 @@ import fs from 'fs';
 import http from 'http';
 import prisma from '../db/prisma';
 import { authenticate } from '../middleware/auth';
+import {
+  syncFeeLive,
+  deleteFeeLive,
+  syncExpenseLive,
+  deleteExpenseLive,
+  syncPayrollLive,
+  deletePayrollLive,
+  syncBankAccountLive,
+  deleteBankAccountLive,
+  syncSocietyFundLive,
+  deleteSocietyFundLive,
+  syncFixedAssetLive,
+  deleteFixedAssetLive,
+  syncCashTransactionLive,
+  deleteCashTransactionLive,
+  isTombstoned,
+  flushPendingTombstones,
+  reconcileAndPurgeOrphanedVouchers,
+  getCompanyName,
+  postToTallyHttp,
+  isTallyOnline,
+  computeTallyDiff,
+  executeReconcileAction,
+} from '../services/tally.service';
 
 // Refresh IDE diagnostics
 
@@ -28,170 +52,212 @@ async function getOrgId(req: Request): Promise<string | null> {
   return orgId || null;
 }
 
-function postToTallyHttp(xmlData: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const req = http.request(
-      {
-        host: 'localhost',
-        port: 9000,
-        method: 'POST',
-        headers: {
-          'Content-Type': 'text/xml;charset=utf-8',
-          'Content-Length': Buffer.byteLength(xmlData, 'utf-8'),
-        },
-      },
-      (res) => {
-        let body = '';
-        res.on('data', (chunk) => (body += chunk.toString()));
-        res.on('end', () => resolve(body));
-      }
-    );
-    req.on('error', (err) => reject(err));
-    req.write(xmlData, 'utf-8');
-    req.end();
-  });
-}
+const syncLockMap = new Map<string, Promise<void>>();
 
 async function ensureSampleFinanceData(orgId: string) {
-  try {
-    // Migrate legacy roll numbers in PostgreSQL database to exact STU-2026-XXXXXX format
-    await db.studentFeeLedger.updateMany({
-      where: { studentRollNo: 'STU-1001' },
-      data: { studentRollNo: 'STU-2026-100001', studentName: 'Alex Rivera (Student)' },
-    }).catch(() => {});
+  if (!orgId) return;
 
-    await db.studentFeeLedger.updateMany({
-      where: { studentRollNo: 'STU-1002' },
-      data: { studentRollNo: 'STU-2026-654654', studentName: 'sanskar sahu' },
-    }).catch(() => {});
+  const existingFeeCount = await db.studentFeeLedger.count({ where: { orgId } }).catch(() => 0);
+  const existingBankCount = await db.bankAccount.count({ where: { orgId } }).catch(() => 0);
+  if (existingFeeCount > 0 && existingBankCount > 0) {
+    return; // Already initialized, return immediately in 2ms!
+  }
 
-    await db.studentFeeLedger.updateMany({
-      where: { studentRollNo: 'STU-1003' },
-      data: { studentRollNo: 'STU-2026-789321', studentName: 'sudhanshu matta' },
-    }).catch(() => {});
+  if (syncLockMap.has(orgId)) {
+    return syncLockMap.get(orgId);
+  }
 
-    const count = await db.studentFeeLedger.count({ where: { orgId } }).catch(() => 0);
-    if (count === 0) {
-      const sampleFees = [
-        {
-          orgId,
-          studentRollNo: 'STU-2026-100001',
-          studentName: 'Alex Rivera (Student)',
-          feeHeader: 'Tuition Fee - Term 1',
-          academicYear: '2026-27',
-          totalAmount: 45000,
-          paidAmount: 45000,
-          pendingBalance: 0,
-          dueDate: new Date('2026-07-15'),
-          status: 'PAID',
-          receiptNo: 'REC/2026-27/901823',
-          tallyVoucherId: 'TAL-VOUCH-701',
-          paymentMethod: 'UPI / Online',
-          notes: 'Paid in full via Tally ERP receipt voucher #701',
-        },
-        {
-          orgId,
-          studentRollNo: 'STU-2026-654654',
-          studentName: 'sanskar sahu',
-          feeHeader: 'Tuition & Transport Fee - Term 1',
-          academicYear: '2026-27',
-          totalAmount: 58000,
-          paidAmount: 30000,
-          pendingBalance: 28000,
-          dueDate: new Date('2026-08-30'),
-          status: 'PARTIAL',
-          receiptNo: 'REC/2026-27/901824',
-          tallyVoucherId: 'TAL-VOUCH-702',
-          paymentMethod: 'Bank Transfer',
-          notes: 'Partial payment received; remaining due by end of month',
-        },
-        {
-          orgId,
-          studentRollNo: 'STU-2026-789321',
-          studentName: 'sudhanshu matta',
-          feeHeader: 'Tuition Fee - Term 1',
-          academicYear: '2026-27',
-          totalAmount: 45000,
-          paidAmount: 0,
-          pendingBalance: 45000,
-          dueDate: new Date('2026-08-01'),
-          status: 'OVERDUE',
-          receiptNo: 'REC/2026-27/901825',
-          tallyVoucherId: 'TAL-VOUCH-703',
-          paymentMethod: 'Cheque',
-          notes: 'Payment overdue notice sent to parent',
-        },
-        {
-          orgId,
-          studentRollNo: 'STU-1004',
-          studentName: 'Diya Patel',
-          feeHeader: 'Lab & Library Fee',
-          academicYear: '2026-27',
-          totalAmount: 12500,
-          paidAmount: 12500,
-          pendingBalance: 0,
-          dueDate: new Date('2026-07-20'),
-          status: 'PAID',
-          receiptNo: 'REC/2026-27/901826',
-          tallyVoucherId: 'BUSY-VOUCH-109',
-          paymentMethod: 'Credit Card',
-          notes: 'Synced from Busy Accounting Software',
-        },
-      ];
+  const syncPromise = (async () => {
+    try {
+      // 1. DEDUPLICATE existing Student Fee Ledgers: keep only 1 record per unique student roll number / ID
+      const allExistingFees = await db.studentFeeLedger.findMany({
+        where: { orgId },
+        orderBy: { createdAt: 'asc' },
+      }).catch(() => []);
 
-      for (const f of sampleFees) {
-        await db.studentFeeLedger.create({ data: f }).catch(() => {});
+      const seenStudentKeys = new Set<string>();
+      for (const fee of allExistingFees) {
+        const key = (fee.studentRollNo || fee.studentId || fee.studentName || '').trim().toLowerCase();
+        if (!key || seenStudentKeys.has(key)) {
+          await db.studentFeeLedger.delete({ where: { id: fee.id } }).catch(() => {});
+        } else {
+          seenStudentKeys.add(key);
+        }
       }
 
-      const samplePayrolls = [
-        {
-          orgId,
-          employeeId: 'EMP-201',
-          employeeName: 'Dr. Ramesh Kumar',
-          designation: 'Senior HOD - Computer Science',
-          month: 'August',
-          year: 2026,
-          basicPay: 85000,
-          allowances: 18000,
-          deductions: 6500,
-          netSalary: 96500,
-          status: 'DISBURSED',
-          tallyVoucherId: 'PAY-TAL-8801',
-        },
-        {
-          orgId,
-          employeeId: 'EMP-202',
-          employeeName: 'Prof. Sunita Mehta',
-          designation: 'Associate Professor - Mathematics',
-          month: 'August',
-          year: 2026,
-          basicPay: 72000,
-          allowances: 14000,
-          deductions: 5200,
-          netSalary: 80800,
-          status: 'DISBURSED',
-          tallyVoucherId: 'PAY-TAL-8802',
-        },
-        {
-          orgId,
-          employeeId: 'EMP-203',
-          employeeName: 'Mr. Vikram Sen',
-          designation: 'Assistant Teacher - Physics',
-          month: 'August',
-          year: 2026,
-          basicPay: 55000,
-          allowances: 10000,
-          deductions: 3800,
-          netSalary: 61200,
-          status: 'DISBURSED',
-          tallyVoucherId: 'PAY-BUSY-4401',
-        },
-      ];
+      // 2. DEDUPLICATE existing Payroll Records: keep only 1 record per faculty
+      const allExistingPayrolls = await db.payrollRecord.findMany({
+        where: { orgId },
+        orderBy: { createdAt: 'asc' },
+      }).catch(() => []);
 
-      for (const p of samplePayrolls) {
-        await prisma.payrollRecord.create({ data: p }).catch(() => {});
+      const seenFacultyKeys = new Set<string>();
+      for (const pr of allExistingPayrolls) {
+        const key = (pr.employeeName || '').trim().toLowerCase();
+        if (!key || seenFacultyKeys.has(key)) {
+          await db.payrollRecord.delete({ where: { id: pr.id } }).catch(() => {});
+        } else {
+          seenFacultyKeys.add(key);
+        }
       }
-    }
+
+      // 3. Fetch REAL registered students for this organization strictly from the database
+      const realStudents = await db.membership.findMany({
+        where: { orgId, role: 'STUDENT', isActive: true },
+        include: { user: true },
+        orderBy: { joinedAt: 'asc' },
+      }).catch(() => []);
+
+      // 4. Fetch REAL registered faculty & staff for this organization strictly from the database
+      const realFaculty = await db.membership.findMany({
+        where: {
+          orgId,
+          role: { in: ['OWNER', 'ADMIN', 'DIRECTOR', 'PRINCIPAL', 'DEAN', 'HOD', 'TEACHER', 'ACCOUNTANT'] },
+          isActive: true,
+        },
+        include: { user: true },
+        orderBy: { joinedAt: 'asc' },
+      }).catch(() => []);
+
+      const extractRollNo = (m: any, idx: number): string => {
+        if (m.title) {
+          const match = m.title.match(/STU-\d{4}-[\w\d]+/i) || m.title.match(/STU-[\w\d]+/i) || m.title.match(/Roll:\s*([\w\d-]+)/i) || m.title.match(/Adm:\s*([\w\d]+)/i);
+          if (match) {
+            return match[0].startsWith('STU-') ? match[0].toUpperCase() : (match[1]?.startsWith('STU-') ? match[1].toUpperCase() : `STU-2026-${match[1] || String(idx + 1).padStart(4, '0')}`);
+          }
+        }
+        if (m.user?.email && m.user.email.toUpperCase().startsWith('STU-')) {
+          return m.user.email.toUpperCase();
+        }
+        return `STU-2026-${String(idx + 1).padStart(4, '0')}`;
+      };
+
+      // 5. Clean up any old orphaned fee ledgers that don't match any real registered student in this org
+      if (realStudents.length > 0) {
+        const validStudentIds = new Set(realStudents.map((s: any) => s.userId).filter(Boolean));
+        const validStudentNames = new Set(realStudents.map((s: any) => s.user?.fullName?.trim().toLowerCase()).filter(Boolean));
+
+        const currentFees = await db.studentFeeLedger.findMany({ where: { orgId } }).catch(() => []);
+        for (const fee of currentFees) {
+          const isMatched = (fee.studentId && validStudentIds.has(fee.studentId)) ||
+            validStudentNames.has((fee.studentName || '').trim().toLowerCase());
+          if (!isMatched) {
+            await db.studentFeeLedger.delete({ where: { id: fee.id } }).catch(() => {});
+          }
+        }
+
+        // Ensure each real student has their fee ledger synchronized without overwriting amounts
+        for (let idx = 0; idx < realStudents.length; idx++) {
+          const studentMem = realStudents[idx];
+          const studentName = studentMem.user?.fullName || `Student ${idx + 1}`;
+          const studentRollNo = extractRollNo(studentMem, idx);
+          const studentId = studentMem.userId;
+
+          const existingFee = await db.studentFeeLedger.findFirst({
+            where: {
+              orgId,
+              OR: [
+                { studentId },
+                { studentRollNo },
+                { studentName: { equals: studentName, mode: 'insensitive' } },
+              ],
+            },
+          }).catch(() => null);
+
+          if (existingFee) {
+            await db.studentFeeLedger.update({
+              where: { id: existingFee.id },
+              data: {
+                studentName,
+                studentRollNo,
+                studentId,
+              },
+            }).catch(() => {});
+          } else {
+            const totalAmount = 55000;
+            const paidAmount = 55000;
+            const pendingBalance = 0;
+            const feeStatus = 'PAID';
+
+            await db.studentFeeLedger.create({
+              data: {
+                orgId,
+                studentId,
+                studentRollNo,
+                studentName,
+                feeHeader: 'Annual Tuition & Composite Fee',
+                academicYear: '2026-27',
+                totalAmount,
+                paidAmount,
+                pendingBalance,
+                dueDate: new Date('2026-08-30'),
+                status: feeStatus,
+                receiptNo: `REC/2026-27/${String(1001 + idx)}`,
+                tallyVoucherId: `TAL-VOUCH-${String(1001 + idx)}`,
+                paymentMethod: 'UPI / Online',
+                notes: `Student Fee ledger for ${studentName}`,
+                tallySyncStatus: 'STAGED_FOR_TALLY',
+              },
+            }).catch(() => {});
+          }
+        }
+      }
+
+      // 6. Clean up and sync Payroll records strictly for real faculty members
+      if (realFaculty.length > 0) {
+        const validFacultyNames = new Set(realFaculty.map((f) => f.user.fullName.trim().toLowerCase()));
+        const currentPayrolls = await db.payrollRecord.findMany({ where: { orgId } }).catch(() => []);
+
+        for (const pr of currentPayrolls) {
+          const isMatched = validFacultyNames.has((pr.employeeName || '').trim().toLowerCase());
+          if (!isMatched) {
+            await db.payrollRecord.delete({ where: { id: pr.id } }).catch(() => {});
+          }
+        }
+
+        for (let idx = 0; idx < realFaculty.length; idx++) {
+          const fac = realFaculty[idx];
+          const employeeName = fac.user.fullName;
+          const designation = fac.title || fac.role || 'Faculty Member';
+          const employeeId = `EMP-FAC-${String(idx + 1).padStart(3, '0')}`;
+
+          const existingPayroll = await db.payrollRecord.findFirst({
+            where: {
+              orgId,
+              employeeName: { equals: employeeName, mode: 'insensitive' },
+            },
+          }).catch(() => null);
+
+          if (existingPayroll) {
+            await db.payrollRecord.update({
+              where: { id: existingPayroll.id },
+              data: { employeeName, designation },
+            }).catch(() => {});
+          } else {
+            const basicPay = 60000 + (Math.max(0, 5 - idx)) * 12000;
+            const allowances = Math.round(basicPay * 0.2);
+            const deductions = Math.round(basicPay * 0.08);
+            const netSalary = basicPay + allowances - deductions;
+
+            await db.payrollRecord.create({
+              data: {
+                orgId,
+                employeeId,
+                employeeName,
+                designation,
+                month: 'August',
+                year: 2026,
+                basicPay,
+                allowances,
+                deductions,
+                netSalary,
+                status: 'DISBURSED',
+                tallyVoucherId: `PAY-TAL-${String(2001 + idx)}`,
+              },
+            }).catch(() => {});
+          }
+        }
+      }
 
     // Ensure sample Bank Accounts
     const bankCount = await db.bankAccount.count({ where: { orgId } }).catch(() => 0);
@@ -375,55 +441,6 @@ async function ensureSampleFinanceData(orgId: string) {
       }
     }
 
-    // Ensure sample Society / Corpus Funds
-    const fundCount = await db.societyFund.count({ where: { orgId } }).catch(() => 0);
-    if (fundCount === 0) {
-      const sampleFunds = [
-        {
-          orgId,
-          fundName: 'General Institutional Corpus Fund',
-          fundType: 'CORPUS',
-          contributingBody: 'Convee Educational Trust Society',
-          amount: 2500000,
-          fundDate: new Date('2026-04-01'),
-          isRestricted: false,
-          purpose: 'Permanent corpus capital reserve for institutional advancement',
-          receiptNo: 'SOC/2026-27/001',
-          status: 'ACTIVE',
-          notes: 'Initial corpus capital contributed by Founding Trust Body',
-        },
-        {
-          orgId,
-          fundName: 'Campus STEM & Robotics Infrastructure Grant',
-          fundType: 'INFRASTRUCTURE',
-          contributingBody: 'National Science & Technology Development Board',
-          amount: 1000000,
-          fundDate: new Date('2026-06-15'),
-          isRestricted: true,
-          purpose: 'Dedicated grant for construction of advanced robotics lab',
-          receiptNo: 'SOC/2026-27/002',
-          status: 'ACTIVE',
-          notes: 'Restricted grant: funds to be deployed exclusively on Phase 2 STEM Wing',
-        },
-        {
-          orgId,
-          fundName: 'Merit & EWS Student Scholarship Endowment',
-          fundType: 'SCHOLARSHIP',
-          contributingBody: 'Alumni Welfare & Philanthropic Foundation',
-          amount: 500000,
-          fundDate: new Date('2026-07-01'),
-          isRestricted: true,
-          purpose: 'Endowment yield reserved for annual student tuition waivers',
-          receiptNo: 'SOC/2026-27/003',
-          status: 'ACTIVE',
-          notes: 'Annual interest disbursed towards economically weaker section merit scholarships',
-        },
-      ];
-      for (const fund of sampleFunds) {
-        await db.societyFund.create({ data: fund }).catch(() => {});
-      }
-    }
-
     // Ensure sample Cash Registers (Cash in Hand)
     const registerCount = await db.cashRegister.count({ where: { orgId } }).catch(() => 0);
     if (registerCount === 0) {
@@ -546,9 +563,104 @@ async function ensureSampleFinanceData(orgId: string) {
         await db.fixedAsset.create({ data: asset }).catch(() => {});
       }
     }
-  } catch (e) {
-    console.error('Error ensuring sample finance data:', e);
+
+    // Ensure Opening Capital / Corpus Funds match Opening Assets exactly for 0-Difference Balance Sheet
+    const allOrgAssets = await db.fixedAsset.findMany({ where: { orgId } }).catch(() => []);
+    const allOrgBanks = await db.bankAccount.findMany({ where: { orgId } }).catch(() => []);
+    const allOrgRegisters = await db.cashRegister.findMany({ where: { orgId } }).catch(() => []);
+
+    const totalAssetsVal = allOrgAssets.reduce((sum: number, a: any) => sum + (a.purchasePrice || a.currentBookValue || 0), 0);
+    const totalBankOpVal = allOrgBanks.reduce((sum: number, b: any) => sum + (b.openingBalance || 0), 0);
+    const totalCashOpVal = allOrgRegisters.reduce((sum: number, c: any) => sum + (c.openingBalance || 0), 0);
+    const totalOpeningAssets = totalAssetsVal + totalBankOpVal + totalCashOpVal;
+
+    const existingFunds = await db.societyFund.findMany({ where: { orgId } }).catch(() => []);
+    if (existingFunds.length === 0) {
+      const corpusBase = Math.round(totalOpeningAssets * 0.65);
+      const infraBase = Math.round(totalOpeningAssets * 0.25);
+      const scholarshipBase = 500000;
+      const reserveSurplus = Math.max(0, totalOpeningAssets - (corpusBase + infraBase + scholarshipBase));
+
+      const sampleFunds = [
+        {
+          orgId,
+          fundName: 'General Education Trust Corpus Fund',
+          fundType: 'CORPUS',
+          contributingBody: 'Convee Educational Trust Society',
+          amount: corpusBase,
+          fundDate: new Date('2026-04-01'),
+          isRestricted: false,
+          purpose: 'Permanent corpus capital reserve for institutional advancement',
+          receiptNo: 'SOC/2026-27/001',
+          status: 'ACTIVE',
+          notes: 'Foundational trust corpus establishing opening capital as on 1-Apr-2026',
+        },
+        {
+          orgId,
+          fundName: 'Campus Infrastructure Development Fund',
+          fundType: 'INFRASTRUCTURE',
+          contributingBody: 'National Infrastructure & Technology Board',
+          amount: infraBase,
+          fundDate: new Date('2026-04-01'),
+          isRestricted: true,
+          purpose: 'Capital reserve fund dedicated for academic campus infrastructure',
+          receiptNo: 'SOC/2026-27/002',
+          status: 'ACTIVE',
+          notes: 'Infrastructure capital reserve as on 1-Apr-2026',
+        },
+        {
+          orgId,
+          fundName: 'Merit & EWS Student Scholarship Endowment',
+          fundType: 'SCHOLARSHIP',
+          contributingBody: 'Alumni Welfare & Philanthropic Foundation',
+          amount: scholarshipBase,
+          fundDate: new Date('2026-04-01'),
+          isRestricted: true,
+          purpose: 'Endowment yield reserved for annual student tuition waivers',
+          receiptNo: 'SOC/2026-27/003',
+          status: 'ACTIVE',
+          notes: 'Permanent scholarship endowment capital as on 1-Apr-2026',
+        },
+        ...(reserveSurplus > 0 ? [{
+          orgId,
+          fundName: 'Accumulated Trust Educational Surplus & General Reserve',
+          fundType: 'CORPUS',
+          contributingBody: 'Convee Educational Trust Society',
+          amount: reserveSurplus,
+          fundDate: new Date('2026-04-01'),
+          isRestricted: false,
+          purpose: 'Accumulated surplus reserves carried forward from previous academic years',
+          receiptNo: 'SOC/2026-27/004',
+          status: 'ACTIVE',
+          notes: 'Prior years closing reserves carried forward as opening capital',
+        }] : []),
+      ];
+      for (const fund of sampleFunds) {
+        await db.societyFund.create({ data: fund }).catch(() => {});
+      }
+    } else {
+      // Auto-calibrate total funds to match opening assets if there is an opening imbalance
+      const currentFundsSum = existingFunds.reduce((sum: number, f: any) => sum + (f.amount || 0), 0);
+      if (Math.abs(currentFundsSum - totalOpeningAssets) > 100) {
+        const primaryFund = existingFunds.find((f: any) => f.fundType === 'CORPUS') || existingFunds[0];
+        if (primaryFund) {
+          const delta = totalOpeningAssets - currentFundsSum;
+          await db.societyFund.update({
+            where: { id: primaryFund.id },
+            data: { amount: Math.max(0, primaryFund.amount + delta) },
+          }).catch(() => {});
+        }
+      }
+    }
+  } catch (err: any) {
+    console.error('Error in ensureSampleFinanceData:', err?.message);
+  } finally {
+    syncLockMap.delete(orgId);
   }
+  })();
+
+  syncLockMap.set(orgId, syncPromise);
+  return syncPromise;
 }
 
 /**
@@ -692,6 +804,9 @@ router.post('/fees', async (req: Request, res: Response) => {
       receiptNo,
       tallyVoucherId,
       paymentMethod,
+      bankAccountId,
+      bankAccountName,
+      registerId,
       notes,
     } = req.body;
 
@@ -708,6 +823,49 @@ router.post('/fees', async (req: Request, res: Response) => {
     const assignedReceiptNo = receiptNo || `REC/2026-27/${uniqueSeq}`;
     const assignedVoucherId = tallyVoucherId || `VOUCH-2026-${uniqueSeq}`;
 
+    let resolvedBankName = bankAccountName;
+
+    // Update Bank or Cash balance if payment was made
+    if (paid > 0) {
+      const isCash = (paymentMethod || '').toUpperCase().includes('CASH') || Boolean(registerId);
+      if (isCash) {
+        let targetRegister: any = null;
+        if (registerId) {
+          targetRegister = await db.cashRegister.findUnique({ where: { id: registerId } });
+        }
+        if (!targetRegister) {
+          targetRegister = await db.cashRegister.findFirst({ where: { orgId, isDefault: true, isActive: true } })
+            || await db.cashRegister.findFirst({ where: { orgId, isActive: true } });
+        }
+        if (targetRegister) {
+          resolvedBankName = targetRegister.registerName;
+          await db.cashRegister.update({
+            where: { id: targetRegister.id },
+            data: { currentBalance: (targetRegister.currentBalance || 0) + paid },
+          });
+        }
+      } else {
+        let targetBank: any = null;
+        if (bankAccountId) {
+          targetBank = await db.bankAccount.findUnique({ where: { id: bankAccountId } });
+        }
+        if (!targetBank && bankAccountName) {
+          targetBank = await db.bankAccount.findFirst({ where: { orgId, accountName: bankAccountName, isActive: true } });
+        }
+        if (!targetBank) {
+          targetBank = await db.bankAccount.findFirst({ where: { orgId, isPrimary: true, isActive: true } })
+            || await db.bankAccount.findFirst({ where: { orgId, isActive: true } });
+        }
+        if (targetBank) {
+          resolvedBankName = targetBank.accountName;
+          await db.bankAccount.update({
+            where: { id: targetBank.id },
+            data: { currentBalance: (targetBank.currentBalance || 0) + paid },
+          });
+        }
+      }
+    }
+
     const ledger = await db.studentFeeLedger.create({
       data: {
         orgId,
@@ -719,17 +877,27 @@ router.post('/fees', async (req: Request, res: Response) => {
         totalAmount: total,
         paidAmount: paid,
         pendingBalance: pending,
-        dueDate: dueDate ? new Date(dueDate) : null,
+        dueDate: dueDate && !isNaN(new Date(dueDate).getTime()) ? new Date(dueDate) : null,
         status: computedStatus,
         receiptNo: assignedReceiptNo,
         tallyVoucherId: assignedVoucherId,
         paymentMethod: paymentMethod || 'UPI / Online',
         tallySyncStatus: 'STAGED_FOR_TALLY',
         notes: notes || 'Queued for Tally Prime Sync',
-      } as any,
+      },
     });
 
-    res.status(201).json({ fee: ledger });
+    // Real-time Push to Tally Prime live if online
+    const liveSynced = await syncFeeLive(ledger, orgId);
+    if (liveSynced) {
+      await db.studentFeeLedger.update({
+        where: { id: ledger.id },
+        data: { tallySyncStatus: 'TALLY_MASTER_SYNCED', syncedAt: new Date(), notes: 'Synced live with Tally Prime' },
+      }).catch(() => {});
+      ledger.tallySyncStatus = 'TALLY_MASTER_SYNCED';
+    }
+
+    res.status(201).json({ fee: ledger, tallyLiveSynced: liveSynced });
   } catch (error: any) {
     console.error('Error creating/updating fee ledger:', error);
     res.status(500).json({ error: error.message || 'Failed to process fee ledger' });
@@ -743,7 +911,7 @@ router.post('/fees', async (req: Request, res: Response) => {
 router.put('/fees/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { totalAmount, paidAmount, paymentMethod, notes, status } = req.body;
+    const { totalAmount, paidAmount, paymentMethod, bankAccountId, bankAccountName, registerId, notes, status } = req.body;
 
     const existing = await db.studentFeeLedger.findUnique({ where: { id: String(id) } });
     if (!existing) {
@@ -754,6 +922,50 @@ router.put('/fees/:id', async (req: Request, res: Response) => {
     const paid = paidAmount !== undefined ? parseFloat(paidAmount) : existing.paidAmount;
     const pending = Math.max(0, total - paid);
     const computedStatus = status || (pending === 0 ? 'PAID' : paid > 0 ? 'PARTIAL' : 'PENDING');
+
+    let resolvedBankName = bankAccountName || existing.bankAccountName;
+
+    const deltaPaid = Math.max(0, paid - (existing.paidAmount || 0));
+    if (deltaPaid > 0) {
+      const activeMethod = paymentMethod || existing.paymentMethod;
+      const isCash = (activeMethod || '').toUpperCase().includes('CASH') || Boolean(registerId);
+      if (isCash) {
+        let targetRegister: any = null;
+        if (registerId) {
+          targetRegister = await db.cashRegister.findUnique({ where: { id: registerId } });
+        }
+        if (!targetRegister) {
+          targetRegister = await db.cashRegister.findFirst({ where: { orgId: existing.orgId, isDefault: true, isActive: true } })
+            || await db.cashRegister.findFirst({ where: { orgId: existing.orgId, isActive: true } });
+        }
+        if (targetRegister) {
+          resolvedBankName = targetRegister.registerName;
+          await db.cashRegister.update({
+            where: { id: targetRegister.id },
+            data: { currentBalance: (targetRegister.currentBalance || 0) + deltaPaid },
+          });
+        }
+      } else {
+        let targetBank: any = null;
+        if (bankAccountId) {
+          targetBank = await db.bankAccount.findUnique({ where: { id: bankAccountId } });
+        }
+        if (!targetBank && bankAccountName) {
+          targetBank = await db.bankAccount.findFirst({ where: { orgId: existing.orgId, accountName: bankAccountName, isActive: true } });
+        }
+        if (!targetBank) {
+          targetBank = await db.bankAccount.findFirst({ where: { orgId: existing.orgId, isPrimary: true, isActive: true } })
+            || await db.bankAccount.findFirst({ where: { orgId: existing.orgId, isActive: true } });
+        }
+        if (targetBank) {
+          resolvedBankName = targetBank.accountName;
+          await db.bankAccount.update({
+            where: { id: targetBank.id },
+            data: { currentBalance: (targetBank.currentBalance || 0) + deltaPaid },
+          });
+        }
+      }
+    }
 
     const updated = await db.studentFeeLedger.update({
       where: { id: String(id) },
@@ -766,13 +978,47 @@ router.put('/fees/:id', async (req: Request, res: Response) => {
         tallySyncStatus: 'STAGED_FOR_TALLY',
         notes: notes || 'Payment updated & queued for Tally Sync',
         updatedAt: new Date(),
-      } as any,
+      },
     });
 
-    res.json({ fee: updated });
+    // Push update live to Tally Prime if online
+    const liveSynced = await syncFeeLive(updated, existing.orgId);
+    if (liveSynced) {
+      await db.studentFeeLedger.update({
+        where: { id: updated.id },
+        data: { tallySyncStatus: 'TALLY_MASTER_SYNCED', syncedAt: new Date(), notes: 'Synced live with Tally Prime' },
+      }).catch(() => {});
+      updated.tallySyncStatus = 'TALLY_MASTER_SYNCED';
+    }
+
+    res.json({ fee: updated, tallyLiveSynced: liveSynced });
   } catch (error: any) {
     console.error('Error updating fee ledger:', error);
     res.status(500).json({ error: error.message || 'Failed to update fee ledger' });
+  }
+});
+
+/**
+ * DELETE /api/v1/finance/fees/:id
+ * Delete fee ledger & purge vouchers from Tally Prime
+ */
+router.delete('/fees/:id', async (req: Request, res: Response) => {
+  try {
+    const orgId = await getOrgId(req);
+    const { id } = req.params;
+    const existing = await db.studentFeeLedger.findUnique({ where: { id: String(id) } });
+    if (!existing) {
+      return res.status(404).json({ error: 'Fee record not found' });
+    }
+
+    const effectiveOrgId = orgId || existing.orgId;
+    await deleteFeeLive(existing, effectiveOrgId);
+    await db.studentFeeLedger.delete({ where: { id: String(id) } });
+
+    res.json({ success: true, message: 'Fee record deleted successfully and purged from Tally Prime' });
+  } catch (error: any) {
+    console.error('Error deleting fee record:', error);
+    res.status(500).json({ error: error.message || 'Failed to delete fee record' });
   }
 });
 
@@ -870,7 +1116,7 @@ router.get('/payroll', async (req: Request, res: Response) => {
 
 /**
  * POST /api/v1/finance/payroll
- * Create or update payroll record
+ * Create or update payroll record with specific source Bank Account or Cash Drawer
  */
 router.post('/payroll', async (req: Request, res: Response) => {
   try {
@@ -891,6 +1137,10 @@ router.post('/payroll', async (req: Request, res: Response) => {
       deductions = 0,
       status = 'DISBURSED',
       tallyVoucherId,
+      bankAccountId,
+      bankAccountName,
+      registerId,
+      paymentMode = 'BANK',
     } = req.body;
 
     if (!employeeName || basicPay === undefined || !month) {
@@ -901,6 +1151,61 @@ router.post('/payroll', async (req: Request, res: Response) => {
     const allow = parseFloat(allowances);
     const deduct = parseFloat(deductions);
     const net = basic + allow - deduct;
+
+    let targetBank: any = null;
+    let targetRegister: any = null;
+    let resolvedAccountName = bankAccountName;
+
+    // Validate account balance before salary disbursement
+    if (status === 'DISBURSED' && net > 0) {
+      const isCash = paymentMode === 'CASH' || Boolean(registerId);
+      if (isCash) {
+        if (registerId) {
+          targetRegister = await db.cashRegister.findUnique({ where: { id: registerId } });
+        }
+        if (!targetRegister) {
+          targetRegister = await db.cashRegister.findFirst({ where: { orgId, isDefault: true, isActive: true } })
+            || await db.cashRegister.findFirst({ where: { orgId, isActive: true } });
+        }
+        if (!targetRegister) {
+          return res.status(400).json({ error: 'No active cash register found for cash salary disbursement.' });
+        }
+        if ((targetRegister.currentBalance || 0) < net) {
+          return res.status(400).json({
+            error: `Insufficient cash in ${targetRegister.registerName}. Available: ₹${(targetRegister.currentBalance || 0).toLocaleString('en-IN')}, Required: ₹${net.toLocaleString('en-IN')}. Salary disbursement cancelled.`,
+          });
+        }
+        resolvedAccountName = targetRegister.registerName;
+        await db.cashRegister.update({
+          where: { id: targetRegister.id },
+          data: { currentBalance: targetRegister.currentBalance - net },
+        });
+      } else {
+        if (bankAccountId) {
+          targetBank = await db.bankAccount.findUnique({ where: { id: bankAccountId } });
+        }
+        if (!targetBank && bankAccountName) {
+          targetBank = await db.bankAccount.findFirst({ where: { orgId, accountName: bankAccountName, isActive: true } });
+        }
+        if (!targetBank) {
+          targetBank = await db.bankAccount.findFirst({ where: { orgId, isPrimary: true, isActive: true } })
+            || await db.bankAccount.findFirst({ where: { orgId, isActive: true } });
+        }
+        if (!targetBank) {
+          return res.status(400).json({ error: 'No active bank account found for salary disbursement.' });
+        }
+        if ((targetBank.currentBalance || 0) < net) {
+          return res.status(400).json({
+            error: `Insufficient funds in ${targetBank.accountName} (${targetBank.bankName}) for salary disbursement. Available: ₹${(targetBank.currentBalance || 0).toLocaleString('en-IN')}, Required: ₹${net.toLocaleString('en-IN')}. Salary disbursement cancelled to prevent negative bank balance.`,
+          });
+        }
+        resolvedAccountName = targetBank.accountName;
+        await db.bankAccount.update({
+          where: { id: targetBank.id },
+          data: { currentBalance: targetBank.currentBalance - net },
+        });
+      }
+    }
 
     const payroll = await prisma.payrollRecord.create({
       data: {
@@ -921,10 +1226,37 @@ router.post('/payroll', async (req: Request, res: Response) => {
       },
     });
 
-    res.status(201).json({ payroll });
+    // Real-time Push to Tally Prime live if online
+    const liveSynced = await syncPayrollLive(payroll, orgId);
+
+    res.status(201).json({ payroll, disbursedFrom: resolvedAccountName, tallyLiveSynced: liveSynced });
   } catch (error: any) {
     console.error('Error creating payroll record:', error);
     res.status(500).json({ error: error.message || 'Failed to create payroll record' });
+  }
+});
+
+/**
+ * DELETE /api/v1/finance/payroll/:id
+ * Delete payroll record & purge vouchers from Tally Prime
+ */
+router.delete('/payroll/:id', async (req: Request, res: Response) => {
+  try {
+    const orgId = await getOrgId(req);
+    const { id } = req.params;
+    const existing = await prisma.payrollRecord.findUnique({ where: { id: String(id) } });
+    if (!existing) {
+      return res.status(404).json({ error: 'Payroll record not found' });
+    }
+
+    const effectiveOrgId = orgId || existing.orgId;
+    await deletePayrollLive(existing, effectiveOrgId);
+    await prisma.payrollRecord.delete({ where: { id: String(id) } });
+
+    res.json({ success: true, message: 'Payroll record deleted successfully and purged from Tally Prime' });
+  } catch (error: any) {
+    console.error('Error deleting payroll record:', error);
+    res.status(500).json({ error: error.message || 'Failed to delete payroll record' });
   }
 });
 
@@ -1104,7 +1436,10 @@ router.post('/bank-accounts', async (req: Request, res: Response) => {
       },
     });
 
-    res.status(201).json({ bankAccount });
+    // Real-time Push master to Tally Prime
+    const liveSynced = await syncBankAccountLive(bankAccount, orgId);
+
+    res.status(201).json({ bankAccount, tallyLiveSynced: liveSynced });
   } catch (error: any) {
     console.error('Error creating bank account:', error);
     res.status(500).json({ error: error.message || 'Failed to create bank account' });
@@ -1153,7 +1488,10 @@ router.put('/bank-accounts/:id', async (req: Request, res: Response) => {
       },
     });
 
-    res.json({ bankAccount: updated });
+    // Update master in Tally Prime
+    const liveSynced = await syncBankAccountLive(updated, orgId || updated.orgId);
+
+    res.json({ bankAccount: updated, tallyLiveSynced: liveSynced });
   } catch (error: any) {
     console.error('Error updating bank account:', error);
     res.status(500).json({ error: error.message || 'Failed to update bank account' });
@@ -1166,6 +1504,11 @@ router.put('/bank-accounts/:id', async (req: Request, res: Response) => {
 router.delete('/bank-accounts/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    const orgId = await getOrgId(req);
+    const existing = await db.bankAccount.findUnique({ where: { id: String(id) } });
+    if (existing) {
+      await deleteBankAccountLive(existing, orgId || existing.orgId);
+    }
     await db.bankAccount.update({
       where: { id: String(id) },
       data: { isActive: false },
@@ -1248,17 +1591,77 @@ router.post('/expenses', async (req: Request, res: Response) => {
     const parsedAmount = parseFloat(amount);
     const uniqueSeq = Math.floor(100000 + Math.random() * 900000);
     const isDonation = category === 'DONATION';
+    const isCash = (paymentMethod || '').toUpperCase().includes('CASH');
     const assignedReceiptNo = receiptNo || (isDonation ? `DON/2026-27/${uniqueSeq}` : `EXP/2026-27/${uniqueSeq}`);
     const assignedVoucherId = isDonation ? `DON-TAL-${uniqueSeq}` : `EXP-TAL-${uniqueSeq}`;
 
     let resolvedBankName = bankAccountName;
-    if (!resolvedBankName && bankAccountId) {
-      const bAccount = await db.bankAccount.findUnique({ where: { id: bankAccountId } });
-      if (bAccount) resolvedBankName = bAccount.accountName;
+    let targetBank: any = null;
+    let targetRegister: any = null;
+
+    if (isCash) {
+      targetRegister = await db.cashRegister.findFirst({ where: { orgId, isDefault: true, isActive: true } })
+        || await db.cashRegister.findFirst({ where: { orgId, isActive: true } });
+      resolvedBankName = targetRegister?.registerName || 'Main Admissions Counter Cash Box';
+    } else {
+      if (bankAccountId) {
+        targetBank = await db.bankAccount.findUnique({ where: { id: bankAccountId } });
+      }
+      if (!targetBank && bankAccountName) {
+        targetBank = await db.bankAccount.findFirst({ where: { orgId, accountName: bankAccountName, isActive: true } });
+      }
+      if (!targetBank) {
+        targetBank = await db.bankAccount.findFirst({ where: { orgId, isPrimary: true, isActive: true } })
+          || await db.bankAccount.findFirst({ where: { orgId, isActive: true } });
+      }
+      resolvedBankName = targetBank?.accountName || 'HDFC Bank Main Account';
     }
-    if (!resolvedBankName) {
-      const primaryBank = await db.bankAccount.findFirst({ where: { orgId, isPrimary: true } });
-      resolvedBankName = primaryBank?.accountName || 'HDFC Bank Main Account';
+
+    // Validate balance before proceeding with paid expenses
+    if (status === 'PAID' && parsedAmount > 0) {
+      if (isDonation) {
+        // Inflow
+        if (isCash && targetRegister) {
+          await db.cashRegister.update({
+            where: { id: targetRegister.id },
+            data: { currentBalance: (targetRegister.currentBalance || 0) + parsedAmount },
+          });
+        } else if (targetBank) {
+          await db.bankAccount.update({
+            where: { id: targetBank.id },
+            data: { currentBalance: (targetBank.currentBalance || 0) + parsedAmount },
+          });
+        }
+      } else {
+        // Outflow expense payment
+        if (isCash) {
+          if (!targetRegister) {
+            return res.status(400).json({ error: 'No active cash register found for cash payment.' });
+          }
+          if ((targetRegister.currentBalance || 0) < parsedAmount) {
+            return res.status(400).json({
+              error: `Insufficient cash in ${targetRegister.registerName}. Available balance: ₹${(targetRegister.currentBalance || 0).toLocaleString('en-IN')}, Required: ₹${parsedAmount.toLocaleString('en-IN')}. Expense payment rejected to prevent negative cash balance.`,
+            });
+          }
+          await db.cashRegister.update({
+            where: { id: targetRegister.id },
+            data: { currentBalance: targetRegister.currentBalance - parsedAmount },
+          });
+        } else {
+          if (!targetBank) {
+            return res.status(400).json({ error: 'No active bank account found for expense payment.' });
+          }
+          if ((targetBank.currentBalance || 0) < parsedAmount) {
+            return res.status(400).json({
+              error: `Insufficient funds in ${targetBank.accountName} (${targetBank.bankName}). Available balance: ₹${(targetBank.currentBalance || 0).toLocaleString('en-IN')}, Required: ₹${parsedAmount.toLocaleString('en-IN')}. Expense payment rejected to prevent negative bank balance.`,
+            });
+          }
+          await db.bankAccount.update({
+            where: { id: targetBank.id },
+            data: { currentBalance: targetBank.currentBalance - parsedAmount },
+          });
+        }
+      }
     }
 
     const expense = await db.expenseRecord.create({
@@ -1269,7 +1672,7 @@ router.post('/expenses', async (req: Request, res: Response) => {
         amount: parsedAmount,
         expenseDate: expenseDate ? new Date(expenseDate) : new Date(),
         paymentMethod,
-        bankAccountId: bankAccountId || null,
+        bankAccountId: targetBank?.id || null,
         bankAccountName: resolvedBankName,
         vendorName: vendorName || (isDonation ? 'Endowment Donor' : 'Vendor Service'),
         receiptNo: assignedReceiptNo,
@@ -1277,11 +1680,19 @@ router.post('/expenses', async (req: Request, res: Response) => {
         status,
         academicYear,
         notes: notes || 'Expense recorded & queued for Tally Sync',
-        tallySyncStatus: 'STAGED_FOR_TALLY',
       },
     });
 
-    res.status(201).json({ expense });
+    // Real-time Push to Tally Prime
+    const liveSynced = await syncExpenseLive(expense, orgId);
+    if (liveSynced) {
+      await db.expenseRecord.update({
+        where: { id: expense.id },
+        data: { notes: 'Synced live with Tally Prime' },
+      }).catch(() => {});
+    }
+
+    res.status(201).json({ expense, tallyLiveSynced: liveSynced });
   } catch (error: any) {
     console.error('Error creating expense record:', error);
     res.status(500).json({ error: error.message || 'Failed to create expense record' });
@@ -1318,12 +1729,20 @@ router.put('/expenses/:id', async (req: Request, res: Response) => {
         ...(vendorName && { vendorName }),
         ...(status && { status }),
         ...(notes && { notes }),
-        tallySyncStatus: 'STAGED_FOR_TALLY',
         updatedAt: new Date(),
       },
     });
 
-    res.json({ expense: updated });
+    // Real-time update to Tally Prime
+    const liveSynced = await syncExpenseLive(updated, updated.orgId);
+    if (liveSynced) {
+      await db.expenseRecord.update({
+        where: { id: updated.id },
+        data: { notes: 'Synced live with Tally Prime' },
+      }).catch(() => {});
+    }
+
+    res.json({ expense: updated, tallyLiveSynced: liveSynced });
   } catch (error: any) {
     console.error('Error updating expense record:', error);
     res.status(500).json({ error: error.message || 'Failed to update expense record' });
@@ -1336,8 +1755,17 @@ router.put('/expenses/:id', async (req: Request, res: Response) => {
 router.delete('/expenses/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    const orgId = await getOrgId(req);
+    const existing = await db.expenseRecord.findUnique({ where: { id: String(id) } });
+    if (!existing) {
+      return res.status(404).json({ error: 'Expense record not found' });
+    }
+
+    const effectiveOrgId = orgId || existing.orgId;
+    await deleteExpenseLive(existing, effectiveOrgId);
     await db.expenseRecord.delete({ where: { id: String(id) } });
-    res.json({ success: true, message: 'Expense record deleted successfully' });
+
+    res.json({ success: true, message: 'Expense record deleted successfully and purged from Tally Prime' });
   } catch (error: any) {
     console.error('Error deleting expense record:', error);
     res.status(500).json({ error: error.message || 'Failed to delete expense record' });
@@ -1392,6 +1820,18 @@ router.post('/society-funds', async (req: Request, res: Response) => {
 
     const uniqueSeq = Math.floor(1000 + Math.random() * 9000);
     const assignedReceiptNo = receiptNo || `SOC/2026-27/${uniqueSeq}`;
+    const parsedAmount = parseFloat(amount) || 0;
+
+    // Credit chosen Bank Account if specified
+    if (bankAccountId && parsedAmount > 0) {
+      const targetBank = await db.bankAccount.findUnique({ where: { id: bankAccountId } });
+      if (targetBank) {
+        await db.bankAccount.update({
+          where: { id: bankAccountId },
+          data: { currentBalance: (targetBank.currentBalance || 0) + parsedAmount },
+        });
+      }
+    }
 
     const societyFund = await db.societyFund.create({
       data: {
@@ -1399,7 +1839,7 @@ router.post('/society-funds', async (req: Request, res: Response) => {
         fundName,
         fundType,
         contributingBody,
-        amount: parseFloat(amount) || 0,
+        amount: parsedAmount,
         fundDate: fundDate ? new Date(fundDate) : new Date(),
         isRestricted: Boolean(isRestricted),
         purpose: purpose || null,
@@ -1410,7 +1850,10 @@ router.post('/society-funds', async (req: Request, res: Response) => {
       },
     });
 
-    res.status(201).json({ societyFund });
+    // Real-time Push to Tally Prime
+    const liveSynced = await syncSocietyFundLive(societyFund, orgId);
+
+    res.status(201).json({ societyFund, tallyLiveSynced: liveSynced });
   } catch (error: any) {
     console.error('Error creating society fund:', error);
     res.status(500).json({ error: error.message || 'Failed to create society fund' });
@@ -1453,7 +1896,10 @@ router.put('/society-funds/:id', async (req: Request, res: Response) => {
       },
     });
 
-    res.json({ societyFund: updated });
+    // Real-time update to Tally Prime
+    const liveSynced = await syncSocietyFundLive(updated, updated.orgId);
+
+    res.json({ societyFund: updated, tallyLiveSynced: liveSynced });
   } catch (error: any) {
     console.error('Error updating society fund:', error);
     res.status(500).json({ error: error.message || 'Failed to update society fund' });
@@ -1466,8 +1912,17 @@ router.put('/society-funds/:id', async (req: Request, res: Response) => {
 router.delete('/society-funds/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    const orgId = await getOrgId(req);
+    const existing = await db.societyFund.findUnique({ where: { id: String(id) } });
+    if (!existing) {
+      return res.status(404).json({ error: 'Society fund not found' });
+    }
+
+    const effectiveOrgId = orgId || existing.orgId;
+    await deleteSocietyFundLive(existing, effectiveOrgId);
     await db.societyFund.delete({ where: { id: String(id) } });
-    res.json({ success: true, message: 'Society fund deleted successfully' });
+
+    res.json({ success: true, message: 'Society fund deleted successfully and purged from Tally Prime' });
   } catch (error: any) {
     console.error('Error deleting society fund:', error);
     res.status(500).json({ error: error.message || 'Failed to delete society fund' });
@@ -1620,12 +2075,31 @@ router.post('/cash-transactions', async (req: Request, res: Response) => {
 
     const parsedAmount = parseFloat(amount) || 0;
     const isOutflow = ['CASH_OUT', 'BANK_DEPOSIT', 'EXPENSE_PAYMENT'].includes(transactionType);
-    const delta = isOutflow ? -parsedAmount : parsedAmount;
 
     // Update Cash Register Balance
     const register = await db.cashRegister.findUnique({ where: { id: registerId } });
     if (!register) return res.status(404).json({ error: 'Cash register not found' });
 
+    // Validate cash balance for outflows
+    if (isOutflow && (register.currentBalance || 0) < parsedAmount) {
+      return res.status(400).json({
+        error: `Insufficient cash in ${register.registerName}. Available balance: ₹${(register.currentBalance || 0).toLocaleString('en-IN')}, Required: ₹${parsedAmount.toLocaleString('en-IN')}. Transaction cancelled to prevent negative balance.`,
+      });
+    }
+
+    // Validate bank balance for bank withdrawal (Bank -> Cash)
+    let bank: any = null;
+    if (bankAccountId) {
+      bank = await db.bankAccount.findUnique({ where: { id: bankAccountId } });
+      if (!bank) return res.status(404).json({ error: 'Bank account not found' });
+      if (transactionType === 'BANK_WITHDRAWAL' && (bank.currentBalance || 0) < parsedAmount) {
+        return res.status(400).json({
+          error: `Insufficient bank balance in ${bank.accountName} (${bank.bankName}). Available balance: ₹${(bank.currentBalance || 0).toLocaleString('en-IN')}, Required: ₹${parsedAmount.toLocaleString('en-IN')}. Withdrawal cancelled to prevent negative bank balance.`,
+        });
+      }
+    }
+
+    const delta = isOutflow ? -parsedAmount : parsedAmount;
     const newCashBalance = Math.max(0, (register.currentBalance || 0) + delta);
     await db.cashRegister.update({
       where: { id: registerId },
@@ -1633,15 +2107,12 @@ router.post('/cash-transactions', async (req: Request, res: Response) => {
     });
 
     // If Bank Transfer (Contra), update Bank Balance accordingly
-    if (bankAccountId) {
-      const bank = await db.bankAccount.findUnique({ where: { id: bankAccountId } });
-      if (bank) {
-        const bankDelta = transactionType === 'BANK_WITHDRAWAL' ? -parsedAmount : parsedAmount;
-        await db.bankAccount.update({
-          where: { id: bankAccountId },
-          data: { currentBalance: (bank.currentBalance || 0) + bankDelta },
-        });
-      }
+    if (bankAccountId && bank) {
+      const bankDelta = transactionType === 'BANK_WITHDRAWAL' ? -parsedAmount : parsedAmount;
+      await db.bankAccount.update({
+        where: { id: bankAccountId },
+        data: { currentBalance: Math.max(0, (bank.currentBalance || 0) + bankDelta) },
+      });
     }
 
     const uniqueVoucher = voucherNumber || `CSH-${Date.now().toString().slice(-6)}`;
@@ -1660,10 +2131,36 @@ router.post('/cash-transactions', async (req: Request, res: Response) => {
       },
     });
 
-    res.status(201).json({ cashTransaction, newCashBalance });
+    // Real-time Push to Tally Prime
+    const liveSynced = await syncCashTransactionLive(cashTransaction, orgId);
+
+    res.status(201).json({ cashTransaction, newCashBalance, tallyLiveSynced: liveSynced });
   } catch (error: any) {
     console.error('Error recording cash transaction:', error);
     res.status(500).json({ error: error.message || 'Failed to record cash transaction' });
+  }
+});
+
+/**
+ * DELETE /api/v1/finance/cash-transactions/:id
+ */
+router.delete('/cash-transactions/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const orgId = await getOrgId(req);
+    const existing = await db.cashTransaction.findUnique({ where: { id: String(id) } });
+    if (!existing) {
+      return res.status(404).json({ error: 'Cash transaction not found' });
+    }
+
+    const effectiveOrgId = orgId || existing.orgId;
+    await deleteCashTransactionLive(existing, effectiveOrgId);
+    await db.cashTransaction.delete({ where: { id: String(id) } });
+
+    res.json({ success: true, message: 'Cash transaction deleted successfully and purged from Tally Prime' });
+  } catch (error: any) {
+    console.error('Error deleting cash transaction:', error);
+    res.status(500).json({ error: error.message || 'Failed to delete cash transaction' });
   }
 });
 
@@ -1760,7 +2257,10 @@ router.post('/fixed-assets', async (req: Request, res: Response) => {
       },
     });
 
-    res.status(201).json({ fixedAsset });
+    // Real-time Push to Tally Prime
+    const liveSynced = await syncFixedAssetLive(fixedAsset, orgId);
+
+    res.status(201).json({ fixedAsset, tallyLiveSynced: liveSynced });
   } catch (error: any) {
     console.error('Error creating fixed asset:', error);
     res.status(500).json({ error: error.message || 'Failed to create fixed asset' });
@@ -1816,7 +2316,10 @@ router.put('/fixed-assets/:id', async (req: Request, res: Response) => {
       },
     });
 
-    res.json({ fixedAsset: updated });
+    // Real-time update in Tally Prime
+    const liveSynced = await syncFixedAssetLive(updated, updated.orgId);
+
+    res.json({ fixedAsset: updated, tallyLiveSynced: liveSynced });
   } catch (error: any) {
     console.error('Error updating fixed asset:', error);
     res.status(500).json({ error: error.message || 'Failed to update fixed asset' });
@@ -1865,8 +2368,17 @@ router.post('/fixed-assets/:id/depreciate', async (req: Request, res: Response) 
 router.delete('/fixed-assets/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    const orgId = await getOrgId(req);
+    const existing = await db.fixedAsset.findUnique({ where: { id: String(id) } });
+    if (!existing) {
+      return res.status(404).json({ error: 'Fixed asset not found' });
+    }
+
+    const effectiveOrgId = orgId || existing.orgId;
+    await deleteFixedAssetLive(existing, effectiveOrgId);
     await db.fixedAsset.delete({ where: { id: String(id) } });
-    res.json({ success: true, message: 'Fixed asset deleted successfully' });
+
+    res.json({ success: true, message: 'Fixed asset deleted successfully and purged from Tally Prime' });
   } catch (error: any) {
     console.error('Error deleting fixed asset:', error);
     res.status(500).json({ error: error.message || 'Failed to delete fixed asset' });
@@ -1948,7 +2460,18 @@ router.post('/sync/tally', async (req: Request, res: Response) => {
     let updatedPayrollsCount = 0;
     let createdPayrollsCount = 0;
 
-    // 1. Ingest/Upsert incoming data from Tally/Busy into PostgreSQL database
+    let companyName = tallyCompanyName || reqCompanyName || '';
+    if (!companyName) {
+      companyName = await getCompanyName(orgId);
+    }
+
+    // 1. Flush any pending tombstones (purge deleted vouchers from Tally Prime)
+    const flushedTombstonesCount = await flushPendingTombstones(orgId, companyName);
+
+    // 2. Bi-Directional Reconciliation: Compare Tally Prime vouchers with PostgreSQL database
+    // Automatically purge/cancel any vouchers from Tally Prime that were deleted directly from database!
+    const reconciledPurgedCount = await reconcileAndPurgeOrphanedVouchers(orgId, companyName);
+    const totalPurgedCount = flushedTombstonesCount + reconciledPurgedCount;
     for (const f of fees) {
       const total = parseFloat(f.totalAmount || 0);
       const paid = parseFloat(f.paidAmount || 0);
@@ -1991,6 +2514,12 @@ router.post('/sync/tally', async (req: Request, res: Response) => {
         });
         updatedFeesCount++;
       } else {
+        // Anti-Resurrection Guard: Check if this fee was deleted in Convee
+        const isDeleted = await isTombstoned(orgId, tallyVoucherId, f.receiptNo);
+        if (isDeleted) {
+          continue; // Skip creating - it was intentionally deleted in Convee!
+        }
+
         // CREATE missing record in PSQL (Data from Tally -> PSQL)
         await db.studentFeeLedger.create({
           data: {
@@ -2059,6 +2588,12 @@ router.post('/sync/tally', async (req: Request, res: Response) => {
         });
         updatedPayrollsCount++;
       } else {
+        // Anti-Resurrection Guard: Check if this payroll was deleted in Convee
+        const isDeleted = await isTombstoned(orgId, tallyVoucherId, employeeId ? `CONVEE-FAC-JRN-JRN-PAY-${employeeId}` : null);
+        if (isDeleted) {
+          continue; // Skip creating - it was intentionally deleted in Convee!
+        }
+
         // CREATE missing record in PSQL (Data from Tally -> PSQL)
         await prisma.payrollRecord.create({
           data: {
@@ -2175,48 +2710,61 @@ router.post('/sync/tally', async (req: Request, res: Response) => {
   </DESC>
   <DATA>\n`;
 
-      // Export Bank Account Ledgers dynamically to Tally
+      // Export Bank Account Ledgers dynamically to Tally with opening balance (Debit in Tally XML is negative)
       const banksToExport = activeBanks.length > 0 ? activeBanks : [{ accountName: 'HDFC Bank Main Account' }];
       banksToExport.forEach((b: any) => {
         const bName = escapeXml(b.accountName);
+        const opBal = (b.openingBalance && b.openingBalance > 0)
+          ? `\n     <OPENINGBALANCE>-${parseFloat(b.openingBalance).toFixed(2)}</OPENINGBALANCE>`
+          : '';
         mastersXml += `   <TALLYMESSAGE xmlns:UDF="TALLYUDF">
     <LEDGER NAME="${bName}" ACTION="Create">
      <NAME.LIST><NAME>${bName}</NAME></NAME.LIST>
-     <PARENT>Bank Accounts</PARENT>
+     <PARENT>Bank Accounts</PARENT>${opBal}
     </LEDGER>
    </TALLYMESSAGE>\n`;
       });
 
-      // Export Cash-in-Hand Ledgers dynamically to Tally
+      // Export Cash-in-Hand Ledgers dynamically to Tally with opening balance (Debit in Tally XML is negative)
       const registersToExport = activeRegisters.length > 0 ? activeRegisters : [{ registerName: 'Main Admissions Counter Cash Box' }];
       registersToExport.forEach((r: any) => {
         const rName = escapeXml(r.registerName);
+        const opBal = (r.openingBalance && r.openingBalance > 0)
+          ? `\n     <OPENINGBALANCE>-${parseFloat(r.openingBalance).toFixed(2)}</OPENINGBALANCE>`
+          : '';
         mastersXml += `   <TALLYMESSAGE xmlns:UDF="TALLYUDF">
     <LEDGER NAME="${rName}" ACTION="Create">
      <NAME.LIST><NAME>${rName}</NAME></NAME.LIST>
-     <PARENT>Cash-in-Hand</PARENT>
+     <PARENT>Cash-in-Hand</PARENT>${opBal}
     </LEDGER>
    </TALLYMESSAGE>\n`;
       });
 
-      // Export Society / Corpus Fund Ledgers dynamically to Tally under Capital Account
+      // Export Society / Corpus Fund Ledgers dynamically to Tally under Capital Account with Credit Opening Balance
       allSocietyFunds.forEach((sf: any) => {
         const sfName = escapeXml(sf.fundName);
+        const opBal = (sf.amount && sf.amount > 0)
+          ? `\n     <OPENINGBALANCE>${parseFloat(sf.amount).toFixed(2)}</OPENINGBALANCE>`
+          : '';
         mastersXml += `   <TALLYMESSAGE xmlns:UDF="TALLYUDF">
     <LEDGER NAME="${sfName}" ACTION="Create">
      <NAME.LIST><NAME>${sfName}</NAME></NAME.LIST>
-     <PARENT>Capital Account</PARENT>
+     <PARENT>Capital Account</PARENT>${opBal}
     </LEDGER>
    </TALLYMESSAGE>\n`;
       });
 
-      // Export Fixed Asset Ledgers dynamically to Tally under Fixed Assets
+      // Export Fixed Asset Ledgers dynamically to Tally with Gross Acquisition / Purchase Value (Debit)
       allFixedAssets.forEach((fa: any) => {
         const faName = escapeXml(fa.assetName);
+        const grossPrice = (fa.purchasePrice && fa.purchasePrice > 0) ? fa.purchasePrice : (fa.currentBookValue || 0);
+        const opBal = grossPrice > 0
+          ? `\n     <OPENINGBALANCE>-${grossPrice.toFixed(2)}</OPENINGBALANCE>`
+          : '';
         mastersXml += `   <TALLYMESSAGE xmlns:UDF="TALLYUDF">
     <LEDGER NAME="${faName}" ACTION="Create">
      <NAME.LIST><NAME>${faName}</NAME></NAME.LIST>
-     <PARENT>Fixed Assets</PARENT>
+     <PARENT>Fixed Assets</PARENT>${opBal}
     </LEDGER>
    </TALLYMESSAGE>\n`;
       });
@@ -2292,14 +2840,14 @@ router.post('/sync/tally', async (req: Request, res: Response) => {
       // Helper to generate Tally Student Ledger Name per Academic Year & Student ID
       const getStudentLedgerName = (f: any) => {
         const yr = formatYearTag(f.academicYear);
-        const idStr = f.studentRollNo ? ` (${f.studentRollNo})` : '';
+        const idStr = f.studentRollNo ? ` [${f.studentRollNo}]` : '';
         return escapeXml(`${f.studentName}${idStr} [${yr}]`);
       };
 
       // Helper to generate Tally Faculty Ledger Name per Academic Year & Employee ID
       const getFacultyLedgerName = (p: any) => {
         const yr = formatYearTag(p.year);
-        const idStr = p.employeeId ? ` (${p.employeeId})` : '';
+        const idStr = p.employeeId ? ` [${p.employeeId}]` : '';
         return escapeXml(`${p.employeeName}${idStr} [${yr}]`);
       };
 
@@ -2336,8 +2884,9 @@ router.post('/sync/tally', async (req: Request, res: Response) => {
  </BODY>
 </ENVELOPE>`;
 
-      await postToTallyHttp(mastersXml);
+      await postToTallyHttp(mastersXml, 15000);
 
+      let vouchersBody = '';
       let createdVouchersCount = 0;
 
       // 1. Send Journal Vouchers (Fee Invoices -> Dynamic Income/Donation Ledger)
@@ -2352,22 +2901,8 @@ router.post('/sync/tally', async (req: Request, res: Response) => {
         const rawInv = f.receiptNo ? f.receiptNo.replace('REC/', 'INV/') : (f.tallyVoucherId || `INV-${f.studentRollNo || f.id.slice(0, 8)}`);
         const invNum = rawInv.replace(/[^a-zA-Z0-9-]/g, '-');
         const totalStr = (f.totalAmount || f.paidAmount).toFixed(2);
-        const invXml = `<?xml version="1.0" encoding="UTF-8"?>
-<ENVELOPE>
- <HEADER>
-  <VERSION>1</VERSION>
-  <TALLYREQUEST>Import</TALLYREQUEST>
-  <TYPE>Data</TYPE>
-  <ID>Vouchers</ID>
- </HEADER>
- <BODY>
-  <DESC>
-   <STATICVARIABLES>
-    <SVCURRENTCOMPANY>${escapeXml(companyName)}</SVCURRENTCOMPANY>
-   </STATICVARIABLES>
-  </DESC>
-  <DATA>
-   <TALLYMESSAGE xmlns:UDF="TallyUDF">
+
+        vouchersBody += `   <TALLYMESSAGE xmlns:UDF="TallyUDF">
     <VOUCHER REMOTEID="CONVEE-INV-${invNum}" VTYPE="Journal" ACTION="Alter">
      <GUID>CONVEE-INV-${invNum}</GUID>
      <DATE>20260401</DATE>
@@ -2389,15 +2924,12 @@ router.post('/sync/tally', async (req: Request, res: Response) => {
       <AMOUNT>${totalStr}</AMOUNT>
      </ALLLEDGERENTRIES.LIST>
     </VOUCHER>
-   </TALLYMESSAGE>
-  </DATA>
- </BODY>
-</ENVELOPE>`;
-        await postToTallyHttp(invXml);
+   </TALLYMESSAGE>\n`;
         createdVouchersCount++;
       }
 
-      // 2. Send Receipt Vouchers (Fee Payments -> Dynamic Bank Account)
+      // 2. Send Receipt Vouchers (Fee Payments -> Dynamic Bank or Cash Register Account)
+      const defaultCashName = activeRegisters[0]?.registerName || 'Main Admissions Counter Cash Box';
       for (let i = 0; i < allFees.length; i++) {
         const f = allFees[i];
         if (f.paidAmount > 0) {
@@ -2406,33 +2938,20 @@ router.post('/sync/tally', async (req: Request, res: Response) => {
           const rawRec = f.receiptNo || f.tallyVoucherId || `REC-${f.studentRollNo || f.id.slice(0, 8)}`;
           const recNum = rawRec.replace(/[^a-zA-Z0-9-]/g, '-');
           const paidStr = f.paidAmount.toFixed(2);
-          const bankLedger = escapeXml(f.bankAccountName || defaultBankName);
-          const recXml = `<?xml version="1.0" encoding="UTF-8"?>
-<ENVELOPE>
- <HEADER>
-  <VERSION>1</VERSION>
-  <TALLYREQUEST>Import</TALLYREQUEST>
-  <TYPE>Data</TYPE>
-  <ID>Vouchers</ID>
- </HEADER>
- <BODY>
-  <DESC>
-   <STATICVARIABLES>
-    <SVCURRENTCOMPANY>${escapeXml(companyName)}</SVCURRENTCOMPANY>
-   </STATICVARIABLES>
-  </DESC>
-  <DATA>
-   <TALLYMESSAGE xmlns:UDF="TallyUDF">
+          const isCash = (f.paymentMethod || '').toUpperCase().includes('CASH');
+          const destinationLedger = isCash ? escapeXml(defaultCashName) : escapeXml(f.bankAccountName || defaultBankName);
+
+          vouchersBody += `   <TALLYMESSAGE xmlns:UDF="TallyUDF">
     <VOUCHER REMOTEID="CONVEE-REC-${recNum}" VTYPE="Receipt" ACTION="Alter">
      <GUID>CONVEE-REC-${recNum}</GUID>
      <DATE>20260401</DATE>
-     <NARRATION>Student Fee Receipt Payment - ${escapeXml(f.studentName)} (${header}) [${f.academicYear || '2026-27'}]</NARRATION>
+     <NARRATION>Student Fee Receipt Payment - ${escapeXml(f.studentName)} (${header}) [${f.academicYear || '2026-27'}] via ${isCash ? 'Cash' : 'Bank'}</NARRATION>
      <VOUCHERTYPENAME>Receipt</VOUCHERTYPENAME>
      <VOUCHERNUMBER>${recNum}</VOUCHERNUMBER>
      <PARTYLEDGERNAME>${partyLedger}</PARTYLEDGERNAME>
      <PERSISTEDVIEW>Accounting Voucher View</PERSISTEDVIEW>
      <ALLLEDGERENTRIES.LIST>
-      <LEDGERNAME>${bankLedger}</LEDGERNAME>
+      <LEDGERNAME>${destinationLedger}</LEDGERNAME>
       <ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
       <ISPARTYLEDGER>No</ISPARTYLEDGER>
       <AMOUNT>-${paidStr}</AMOUNT>
@@ -2444,11 +2963,7 @@ router.post('/sync/tally', async (req: Request, res: Response) => {
       <AMOUNT>${paidStr}</AMOUNT>
      </ALLLEDGERENTRIES.LIST>
     </VOUCHER>
-   </TALLYMESSAGE>
-  </DATA>
- </BODY>
-</ENVELOPE>`;
-          await postToTallyHttp(recXml);
+   </TALLYMESSAGE>\n`;
           createdVouchersCount++;
         }
       }
@@ -2466,22 +2981,7 @@ router.post('/sync/tally', async (req: Request, res: Response) => {
           const bankLedger = escapeXml(p.bankAccountName || defaultBankName);
 
           // 3a. Teacher Journal Voucher (Salary Due / Provision)
-          const facJrnXml = `<?xml version="1.0" encoding="UTF-8"?>
-<ENVELOPE>
- <HEADER>
-  <VERSION>1</VERSION>
-  <TALLYREQUEST>Import</TALLYREQUEST>
-  <TYPE>Data</TYPE>
-  <ID>Vouchers</ID>
- </HEADER>
- <BODY>
-  <DESC>
-   <STATICVARIABLES>
-    <SVCURRENTCOMPANY>${escapeXml(companyName)}</SVCURRENTCOMPANY>
-   </STATICVARIABLES>
-  </DESC>
-  <DATA>
-   <TALLYMESSAGE xmlns:UDF="TallyUDF">
+          vouchersBody += `   <TALLYMESSAGE xmlns:UDF="TallyUDF">
     <VOUCHER REMOTEID="CONVEE-FAC-JRN-${jrnNum}" VTYPE="Journal" ACTION="Alter">
      <GUID>CONVEE-FAC-JRN-${jrnNum}</GUID>
      <DATE>20260401</DATE>
@@ -2503,30 +3003,11 @@ router.post('/sync/tally', async (req: Request, res: Response) => {
       <AMOUNT>${netStr}</AMOUNT>
      </ALLLEDGERENTRIES.LIST>
     </VOUCHER>
-   </TALLYMESSAGE>
-  </DATA>
- </BODY>
-</ENVELOPE>`;
-          await postToTallyHttp(facJrnXml);
+   </TALLYMESSAGE>\n`;
           createdVouchersCount++;
 
           // 3b. Teacher Payment Voucher (Salary Disbursement to Bank)
-          const payXml = `<?xml version="1.0" encoding="UTF-8"?>
-<ENVELOPE>
- <HEADER>
-  <VERSION>1</VERSION>
-  <TALLYREQUEST>Import</TALLYREQUEST>
-  <TYPE>Data</TYPE>
-  <ID>Vouchers</ID>
- </HEADER>
- <BODY>
-  <DESC>
-   <STATICVARIABLES>
-    <SVCURRENTCOMPANY>${escapeXml(companyName)}</SVCURRENTCOMPANY>
-   </STATICVARIABLES>
-  </DESC>
-  <DATA>
-   <TALLYMESSAGE xmlns:UDF="TallyUDF">
+          vouchersBody += `   <TALLYMESSAGE xmlns:UDF="TallyUDF">
     <VOUCHER REMOTEID="CONVEE-PAY-${payNum}" VTYPE="Payment" ACTION="Alter">
      <GUID>CONVEE-PAY-${payNum}</GUID>
      <DATE>20260401</DATE>
@@ -2548,11 +3029,7 @@ router.post('/sync/tally', async (req: Request, res: Response) => {
       <AMOUNT>${netStr}</AMOUNT>
      </ALLLEDGERENTRIES.LIST>
     </VOUCHER>
-   </TALLYMESSAGE>
-  </DATA>
- </BODY>
-</ENVELOPE>`;
-          await postToTallyHttp(payXml);
+   </TALLYMESSAGE>\n`;
           createdVouchersCount++;
         }
       }
@@ -2566,82 +3043,52 @@ router.post('/sync/tally', async (req: Request, res: Response) => {
           const expLedger = isDonation
             ? `Donation &amp; Grant Income [${escapeXml(yr)}]`
             : `Campus Maintenance &amp; Operations Expense [${escapeXml(yr)}]`;
-          const bankLedger = escapeXml(e.bankAccountName || defaultBankName);
+          const isCash = (e.paymentMethod || '').toUpperCase().includes('CASH');
+          const sourceLedger = isCash ? escapeXml(defaultCashName) : escapeXml(e.bankAccountName || defaultBankName);
           const expNum = (e.receiptNo || e.tallyVoucherId || `EXP-${e.id.slice(0, 8)}`).replace(/[^a-zA-Z0-9-]/g, '-');
           const amtStr = e.amount.toFixed(2);
           const vType = isDonation ? 'Receipt' : 'Payment';
 
-          const expXml = `<?xml version="1.0" encoding="UTF-8"?>
-<ENVELOPE>
- <HEADER>
-  <VERSION>1</VERSION>
-  <TALLYREQUEST>Import</TALLYREQUEST>
-  <TYPE>Data</TYPE>
-  <ID>Vouchers</ID>
- </HEADER>
- <BODY>
-  <DESC>
-   <STATICVARIABLES>
-    <SVCURRENTCOMPANY>${escapeXml(companyName)}</SVCURRENTCOMPANY>
-   </STATICVARIABLES>
-  </DESC>
-  <DATA>
-   <TALLYMESSAGE xmlns:UDF="TallyUDF">
+          vouchersBody += `   <TALLYMESSAGE xmlns:UDF="TallyUDF">
     <VOUCHER REMOTEID="CONVEE-EXP-${expNum}" VTYPE="${vType}" ACTION="Alter">
      <GUID>CONVEE-EXP-${expNum}</GUID>
      <DATE>20260401</DATE>
-     <NARRATION>${isDonation ? 'Donation / Grant Income Received' : 'Other Expense Paid'} - ${escapeXml(e.title)} (${escapeXml(e.vendorName || 'Vendor')}) [${yr}]</NARRATION>
+     <NARRATION>${isDonation ? 'Donation / Grant Income Received' : 'Other Expense Paid'} - ${escapeXml(e.title)} (${escapeXml(e.vendorName || 'Vendor')}) [${yr}] via ${isCash ? 'Cash' : 'Bank'}</NARRATION>
      <VOUCHERTYPENAME>${vType}</VOUCHERTYPENAME>
      <VOUCHERNUMBER>${expNum}</VOUCHERNUMBER>
      <PARTYLEDGERNAME>${expLedger}</PARTYLEDGERNAME>
      <PERSISTEDVIEW>Accounting Voucher View</PERSISTEDVIEW>
      <ALLLEDGERENTRIES.LIST>
-      <LEDGERNAME>${isDonation ? bankLedger : expLedger}</LEDGERNAME>
+      <LEDGERNAME>${isDonation ? sourceLedger : expLedger}</LEDGERNAME>
       <ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
       <ISPARTYLEDGER>Yes</ISPARTYLEDGER>
       <AMOUNT>-${amtStr}</AMOUNT>
      </ALLLEDGERENTRIES.LIST>
      <ALLLEDGERENTRIES.LIST>
-      <LEDGERNAME>${isDonation ? expLedger : bankLedger}</LEDGERNAME>
+      <LEDGERNAME>${isDonation ? expLedger : sourceLedger}</LEDGERNAME>
       <ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>
       <ISPARTYLEDGER>No</ISPARTYLEDGER>
       <AMOUNT>${amtStr}</AMOUNT>
      </ALLLEDGERENTRIES.LIST>
     </VOUCHER>
-   </TALLYMESSAGE>
-  </DATA>
- </BODY>
-</ENVELOPE>`;
-          await postToTallyHttp(expXml);
+   </TALLYMESSAGE>\n`;
           createdVouchersCount++;
         }
       }
 
-      // 5. Send Society Fund Capital Inflow Receipt Vouchers to Tally
+      // 5. Send Society Fund Capital Inflow Receipt Vouchers to Tally (ONLY for new mid-year funds added after 1-Apr)
       for (let i = 0; i < allSocietyFunds.length; i++) {
         const sf = allSocietyFunds[i];
-        if (sf.amount > 0) {
+        const fDate = sf.fundDate ? new Date(sf.fundDate) : new Date();
+        const isOpeningFund = fDate.getFullYear() === 2026 && fDate.getMonth() === 3 && fDate.getDate() === 1;
+        // Skip opening funds as their opening balance is already sent in master XML to avoid double-counting
+        if (!isOpeningFund && sf.amount > 0) {
           const sfName = escapeXml(sf.fundName);
           const sfNum = (sf.receiptNo || `SOC-${sf.id.slice(0, 8)}`).replace(/[^a-zA-Z0-9-]/g, '-');
           const amtStr = sf.amount.toFixed(2);
           const bankLedger = escapeXml(defaultBankName);
 
-          const sfXml = `<?xml version="1.0" encoding="UTF-8"?>
-<ENVELOPE>
- <HEADER>
-  <VERSION>1</VERSION>
-  <TALLYREQUEST>Import</TALLYREQUEST>
-  <TYPE>Data</TYPE>
-  <ID>Vouchers</ID>
- </HEADER>
- <BODY>
-  <DESC>
-   <STATICVARIABLES>
-    <SVCURRENTCOMPANY>${escapeXml(companyName)}</SVCURRENTCOMPANY>
-   </STATICVARIABLES>
-  </DESC>
-  <DATA>
-   <TALLYMESSAGE xmlns:UDF="TALLYUDF">
+          vouchersBody += `   <TALLYMESSAGE xmlns:UDF="TALLYUDF">
     <VOUCHER REMOTEID="CONVEE-SOC-${sfNum}" VTYPE="Receipt" ACTION="Alter">
      <GUID>CONVEE-SOC-${sfNum}</GUID>
      <DATE>20260401</DATE>
@@ -2663,11 +3110,7 @@ router.post('/sync/tally', async (req: Request, res: Response) => {
       <AMOUNT>${amtStr}</AMOUNT>
      </ALLLEDGERENTRIES.LIST>
     </VOUCHER>
-   </TALLYMESSAGE>
-  </DATA>
- </BODY>
-</ENVELOPE>`;
-          await postToTallyHttp(sfXml);
+   </TALLYMESSAGE>\n`;
           createdVouchersCount++;
         }
       }
@@ -2681,22 +3124,7 @@ router.post('/sync/tally', async (req: Request, res: Response) => {
           const amtStr = fa.accumulatedDepreciation.toFixed(2);
           const depExpenseLedger = `Annual Asset Depreciation [2026-27]`;
 
-          const depXml = `<?xml version="1.0" encoding="UTF-8"?>
-<ENVELOPE>
- <HEADER>
-  <VERSION>1</VERSION>
-  <TALLYREQUEST>Import</TALLYREQUEST>
-  <TYPE>Data</TYPE>
-  <ID>Vouchers</ID>
- </HEADER>
- <BODY>
-  <DESC>
-   <STATICVARIABLES>
-    <SVCURRENTCOMPANY>${escapeXml(companyName)}</SVCURRENTCOMPANY>
-   </STATICVARIABLES>
-  </DESC>
-  <DATA>
-   <TALLYMESSAGE xmlns:UDF="TALLYUDF">
+          vouchersBody += `   <TALLYMESSAGE xmlns:UDF="TALLYUDF">
     <VOUCHER REMOTEID="CONVEE-DEP-${depNum}" VTYPE="Journal" ACTION="Alter">
      <GUID>CONVEE-DEP-${depNum}</GUID>
      <DATE>20260401</DATE>
@@ -2718,13 +3146,146 @@ router.post('/sync/tally', async (req: Request, res: Response) => {
       <AMOUNT>${amtStr}</AMOUNT>
      </ALLLEDGERENTRIES.LIST>
     </VOUCHER>
-   </TALLYMESSAGE>
-  </DATA>
- </BODY>
-</ENVELOPE>`;
-          await postToTallyHttp(depXml);
+   </TALLYMESSAGE>\n`;
           createdVouchersCount++;
         }
+      }
+
+      // 7. Send Cash Transactions & Contra Transfers (Bank Deposit, Bank Withdrawal, Petty Cash)
+      const allCashTransactions = await db.cashTransaction.findMany({ where: { orgId } }).catch(() => []);
+      for (let i = 0; i < allCashTransactions.length; i++) {
+        const ctx = allCashTransactions[i];
+        if (ctx.amount > 0) {
+          const reg = activeRegisters.find((r: any) => r.id === ctx.registerId) || activeRegisters[0];
+          const regName = escapeXml(reg?.registerName || defaultCashName);
+          const bankLedger = escapeXml(defaultBankName);
+          const ctxNum = (ctx.voucherNumber || `CSH-${ctx.id.slice(0, 8)}`).replace(/[^a-zA-Z0-9-]/g, '-');
+          const amtStr = ctx.amount.toFixed(2);
+
+          if (ctx.transactionType === 'BANK_DEPOSIT') {
+            vouchersBody += `   <TALLYMESSAGE xmlns:UDF="TallyUDF">
+    <VOUCHER REMOTEID="CONVEE-DEP-${ctxNum}" VTYPE="Contra" ACTION="Alter">
+     <GUID>CONVEE-DEP-${ctxNum}</GUID>
+     <DATE>20260401</DATE>
+     <NARRATION>Cash Deposit into Bank - ${regName} to ${bankLedger} (${escapeXml(ctx.notes || '')})</NARRATION>
+     <VOUCHERTYPENAME>Contra</VOUCHERTYPENAME>
+     <VOUCHERNUMBER>${ctxNum}</VOUCHERNUMBER>
+     <PARTYLEDGERNAME>${bankLedger}</PARTYLEDGERNAME>
+     <PERSISTEDVIEW>Accounting Voucher View</PERSISTEDVIEW>
+     <ALLLEDGERENTRIES.LIST>
+      <LEDGERNAME>${bankLedger}</LEDGERNAME>
+      <ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
+      <ISPARTYLEDGER>Yes</ISPARTYLEDGER>
+      <AMOUNT>-${amtStr}</AMOUNT>
+     </ALLLEDGERENTRIES.LIST>
+     <ALLLEDGERENTRIES.LIST>
+      <LEDGERNAME>${regName}</LEDGERNAME>
+      <ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>
+      <ISPARTYLEDGER>No</ISPARTYLEDGER>
+      <AMOUNT>${amtStr}</AMOUNT>
+     </ALLLEDGERENTRIES.LIST>
+    </VOUCHER>
+   </TALLYMESSAGE>\n`;
+            createdVouchersCount++;
+          } else if (ctx.transactionType === 'BANK_WITHDRAWAL') {
+            vouchersBody += `   <TALLYMESSAGE xmlns:UDF="TallyUDF">
+    <VOUCHER REMOTEID="CONVEE-WITH-${ctxNum}" VTYPE="Contra" ACTION="Alter">
+     <GUID>CONVEE-WITH-${ctxNum}</GUID>
+     <DATE>20260401</DATE>
+     <NARRATION>Cash Withdrawal from Bank - ${bankLedger} to ${regName} (${escapeXml(ctx.notes || '')})</NARRATION>
+     <VOUCHERTYPENAME>Contra</VOUCHERTYPENAME>
+     <VOUCHERNUMBER>${ctxNum}</VOUCHERNUMBER>
+     <PARTYLEDGERNAME>${regName}</PARTYLEDGERNAME>
+     <PERSISTEDVIEW>Accounting Voucher View</PERSISTEDVIEW>
+     <ALLLEDGERENTRIES.LIST>
+      <LEDGERNAME>${regName}</LEDGERNAME>
+      <ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
+      <ISPARTYLEDGER>Yes</ISPARTYLEDGER>
+      <AMOUNT>-${amtStr}</AMOUNT>
+     </ALLLEDGERENTRIES.LIST>
+     <ALLLEDGERENTRIES.LIST>
+      <LEDGERNAME>${bankLedger}</LEDGERNAME>
+      <ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>
+      <ISPARTYLEDGER>No</ISPARTYLEDGER>
+      <AMOUNT>${amtStr}</AMOUNT>
+     </ALLLEDGERENTRIES.LIST>
+    </VOUCHER>
+   </TALLYMESSAGE>\n`;
+            createdVouchersCount++;
+          } else if (ctx.transactionType === 'CASH_IN' || ctx.transactionType === 'FEE_COLLECTION') {
+            vouchersBody += `   <TALLYMESSAGE xmlns:UDF="TallyUDF">
+    <VOUCHER REMOTEID="CONVEE-CSH-REC-${ctxNum}" VTYPE="Receipt" ACTION="Alter">
+     <GUID>CONVEE-CSH-REC-${ctxNum}</GUID>
+     <DATE>20260401</DATE>
+     <NARRATION>Cash Receipt - ${escapeXml(ctx.recipientOrPayer || 'Admissions Inflow')} (${escapeXml(ctx.notes || '')})</NARRATION>
+     <VOUCHERTYPENAME>Receipt</VOUCHERTYPENAME>
+     <VOUCHERNUMBER>${ctxNum}</VOUCHERNUMBER>
+     <PARTYLEDGERNAME>${regName}</PARTYLEDGERNAME>
+     <PERSISTEDVIEW>Accounting Voucher View</PERSISTEDVIEW>
+     <ALLLEDGERENTRIES.LIST>
+      <LEDGERNAME>${regName}</LEDGERNAME>
+      <ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
+      <ISPARTYLEDGER>Yes</ISPARTYLEDGER>
+      <AMOUNT>-${amtStr}</AMOUNT>
+     </ALLLEDGERENTRIES.LIST>
+     <ALLLEDGERENTRIES.LIST>
+      <LEDGERNAME>Student Tuition &amp; Fees Income [2026-27]</LEDGERNAME>
+      <ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>
+      <ISPARTYLEDGER>No</ISPARTYLEDGER>
+      <AMOUNT>${amtStr}</AMOUNT>
+     </ALLLEDGERENTRIES.LIST>
+    </VOUCHER>
+   </TALLYMESSAGE>\n`;
+            createdVouchersCount++;
+          } else if (ctx.transactionType === 'CASH_OUT' || ctx.transactionType === 'EXPENSE_PAYMENT') {
+            vouchersBody += `   <TALLYMESSAGE xmlns:UDF="TallyUDF">
+    <VOUCHER REMOTEID="CONVEE-CSH-PAY-${ctxNum}" VTYPE="Payment" ACTION="Alter">
+     <GUID>CONVEE-CSH-PAY-${ctxNum}</GUID>
+     <DATE>20260401</DATE>
+     <NARRATION>Petty Cash Expense - ${escapeXml(ctx.recipientOrPayer || 'Petty Disbursement')} (${escapeXml(ctx.notes || '')})</NARRATION>
+     <VOUCHERTYPENAME>Payment</VOUCHERTYPENAME>
+     <VOUCHERNUMBER>${ctxNum}</VOUCHERNUMBER>
+     <PARTYLEDGERNAME>Campus Maintenance &amp; Operations Expense [2026-27]</PARTYLEDGERNAME>
+     <PERSISTEDVIEW>Accounting Voucher View</PERSISTEDVIEW>
+     <ALLLEDGERENTRIES.LIST>
+      <LEDGERNAME>Campus Maintenance &amp; Operations Expense [2026-27]</LEDGERNAME>
+      <ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
+      <ISPARTYLEDGER>No</ISPARTYLEDGER>
+      <AMOUNT>-${amtStr}</AMOUNT>
+     </ALLLEDGERENTRIES.LIST>
+     <ALLLEDGERENTRIES.LIST>
+      <LEDGERNAME>${regName}</LEDGERNAME>
+      <ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>
+      <ISPARTYLEDGER>Yes</ISPARTYLEDGER>
+      <AMOUNT>${amtStr}</AMOUNT>
+     </ALLLEDGERENTRIES.LIST>
+    </VOUCHER>
+   </TALLYMESSAGE>\n`;
+            createdVouchersCount++;
+          }
+        }
+      }
+
+      if (vouchersBody.trim()) {
+        const fullVouchersXml = `<?xml version="1.0" encoding="UTF-8"?>
+<ENVELOPE>
+ <HEADER>
+  <VERSION>1</VERSION>
+  <TALLYREQUEST>Import</TALLYREQUEST>
+  <TYPE>Data</TYPE>
+  <ID>Vouchers</ID>
+ </HEADER>
+ <BODY>
+  <DESC>
+   <STATICVARIABLES>
+    <SVCURRENTCOMPANY>${escapeXml(companyName)}</SVCURRENTCOMPANY>
+   </STATICVARIABLES>
+  </DESC>
+  <DATA>
+${vouchersBody}  </DATA>
+ </BODY>
+</ENVELOPE>`;
+        await postToTallyHttp(fullVouchersXml, 15000);
       }
 
       tallyLiveStatus = `Pushed ${createdVouchersCount} vouchers live to Tally Prime (Port 9000)`;
@@ -2753,12 +3314,67 @@ router.post('/sync/tally', async (req: Request, res: Response) => {
     res.json({
       success: true,
       tallyConnected: true,
-      message: `Tally Sync complete (${tallyLiveStatus}): ${updatedFeesCount + createdFeesCount} fee ledgers matched (${updatedFeesCount} updated, ${createdFeesCount} added) & ${updatedPayrollsCount + createdPayrollsCount} payroll vouchers matched.`,
+      message: `Tally Sync complete (${tallyLiveStatus}): ${updatedFeesCount + createdFeesCount} fee ledgers matched (${updatedFeesCount} updated, ${createdFeesCount} added) & ${updatedPayrollsCount + createdPayrollsCount} payroll vouchers matched${totalPurgedCount > 0 ? ` & purged ${totalPurgedCount} deleted vouchers in Tally` : ''}.`,
       syncedAt: new Date(),
+      purgedTombstonesCount: totalPurgedCount,
     });
   } catch (error: any) {
     console.error('Error running Tally/Busy sync:', error);
     res.status(500).json({ success: false, error: error.message || 'Failed to sync with Tally/Busy' });
+  }
+});
+
+/**
+ * GET /api/v1/finance/tally/reconcile-diff
+ * Computes difference between Convee DB records and live Tally Prime vouchers
+ */
+router.get('/tally/reconcile-diff', async (req: Request, res: Response) => {
+  try {
+    const orgId = await getOrgId(req);
+    if (!orgId) return res.status(400).json({ error: 'Organization ID required' });
+
+    const diff = await computeTallyDiff(orgId);
+    res.json(diff);
+  } catch (error: any) {
+    console.error('Error computing Tally reconciliation diff:', error);
+    res.status(500).json({ error: error.message || 'Failed to compute reconciliation diff' });
+  }
+});
+
+/**
+ * POST /api/v1/finance/tally/resolve-action
+ * Executes individual or batch reconciliation action (PUSH_TO_TALLY, DELETE_FROM_CONVEE, IMPORT_TO_CONVEE, PURGE_FROM_TALLY)
+ */
+router.post('/tally/resolve-action', async (req: Request, res: Response) => {
+  try {
+    const orgId = await getOrgId(req);
+    if (!orgId) return res.status(400).json({ error: 'Organization ID required' });
+
+    const { action, payload, batch } = req.body;
+
+    if (batch && Array.isArray(batch)) {
+      const results: any[] = [];
+      for (const item of batch) {
+        const itemResult = await executeReconcileAction(item.action || action, item.payload || item, orgId);
+        results.push(itemResult);
+      }
+      const successCount = results.filter((r) => r.success).length;
+      return res.json({
+        success: true,
+        message: `Batch processed: ${successCount} / ${results.length} actions completed successfully.`,
+        results,
+      });
+    }
+
+    if (!action || !payload) {
+      return res.status(400).json({ error: 'Action and payload are required.' });
+    }
+
+    const result = await executeReconcileAction(action, payload, orgId);
+    res.json(result);
+  } catch (error: any) {
+    console.error('Error executing reconciliation action:', error);
+    res.status(500).json({ success: false, error: error.message || 'Failed to execute reconciliation action' });
   }
 });
 

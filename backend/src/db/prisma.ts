@@ -55,11 +55,29 @@ export async function ensureProjectTeamTable() {
     await prisma.$executeRawUnsafe(`
       ALTER TABLE "ProjectTeam" DROP CONSTRAINT IF EXISTS "ProjectTeam_teamId_fkey";
     `);
-    await prisma.$executeRawUnsafe(`
-      ALTER TABLE "ProjectTeam" ADD CONSTRAINT "ProjectTeam_teamId_fkey" FOREIGN KEY ("teamId") REFERENCES "Team"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-    `);
   } catch (e) {
     // ignore
+  }
+
+  try {
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "TallyTombstone" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "orgId" TEXT NOT NULL,
+        "entityType" TEXT NOT NULL,
+        "entityId" TEXT NOT NULL,
+        "voucherNumber" TEXT,
+        "remoteId" TEXT,
+        "tallySyncStatus" TEXT NOT NULL DEFAULT 'PENDING_TALLY_DELETE',
+        "deletedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "TallyTombstone_orgId_idx" ON "TallyTombstone"("orgId");`);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "TallyTombstone_remoteId_idx" ON "TallyTombstone"("remoteId");`);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "TallyTombstone_voucherNumber_idx" ON "TallyTombstone"("voucherNumber");`);
+  } catch (e: any) {
+    console.error('Error ensuring TallyTombstone table:', e.message);
   }
 }
 

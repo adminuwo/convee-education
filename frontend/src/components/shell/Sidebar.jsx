@@ -793,7 +793,15 @@ export function Sidebar({ onNavigate }) {
                             data-testid={`channel-item-${c.name}`}
                           >
                             <div className="flex items-center gap-2 truncate min-w-0">
-                              {c.type === 'PRIVATE' ? <Lock className="h-3.5 w-3.5 shrink-0" /> : c.type === 'ANNOUNCEMENT' ? <Volume2 className="h-3.5 w-3.5 shrink-0" /> : <Hash className="h-3.5 w-3.5 shrink-0" />}
+                              {c.name?.toLowerCase().includes('alumni') ? (
+                                <GraduationCap className="h-3.5 w-3.5 shrink-0 text-amber-400" />
+                              ) : c.type === 'PRIVATE' ? (
+                                <Lock className="h-3.5 w-3.5 shrink-0" />
+                              ) : c.type === 'ANNOUNCEMENT' ? (
+                                <Volume2 className="h-3.5 w-3.5 shrink-0" />
+                              ) : (
+                                <Hash className="h-3.5 w-3.5 shrink-0" />
+                              )}
                               <span className="truncate">{c.name}</span>
                             </div>
                             {hasUnread && (

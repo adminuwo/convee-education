@@ -252,9 +252,11 @@ export const financeApi = {
   getFees: (params) => api.get('/finance/fees', { params }).then((r) => r.data),
   createFee: (data) => api.post('/finance/fees', data).then((r) => r.data),
   updateFee: (id, data) => api.put(`/finance/fees/${id}`, data).then((r) => r.data),
+  deleteFee: (id) => api.delete(`/finance/fees/${id}`).then((r) => r.data),
   getParentFees: () => api.get('/finance/fees/parent').then((r) => r.data),
   getPayroll: () => api.get('/finance/payroll').then((r) => r.data),
   createPayroll: (data) => api.post('/finance/payroll', data).then((r) => r.data),
+  deletePayroll: (id) => api.delete(`/finance/payroll/${id}`).then((r) => r.data),
   getFacultySalary: () => api.get('/finance/salary/faculty').then((r) => r.data),
   getMyPayslips: () => api.get('/finance/my-payslips').then((r) => r.data),
   getExpenses: (params) => api.get('/finance/expenses', { params }).then((r) => r.data),
@@ -274,6 +276,7 @@ export const financeApi = {
   updateCashRegister: (id, data) => api.put(`/finance/cash-registers/${id}`, data).then((r) => r.data),
   getCashTransactions: (params) => api.get('/finance/cash-transactions', { params }).then((r) => r.data),
   createCashTransaction: (data) => api.post('/finance/cash-transactions', data).then((r) => r.data),
+  deleteCashTransaction: (id) => api.delete(`/finance/cash-transactions/${id}`).then((r) => r.data),
   getFixedAssets: (params) => api.get('/finance/fixed-assets', { params }).then((r) => r.data),
   createFixedAsset: (data) => api.post('/finance/fixed-assets', data).then((r) => r.data),
   updateFixedAsset: (id, data) => api.put(`/finance/fixed-assets/${id}`, data).then((r) => r.data),
@@ -281,6 +284,8 @@ export const financeApi = {
   depreciateAsset: (id) => api.post(`/finance/fixed-assets/${id}/depreciate`).then((r) => r.data),
   getTallyCompanies: () => api.get('/finance/tally/companies').then((r) => r.data),
   syncTally: (data) => api.post('/finance/sync/tally', data).then((r) => r.data),
+  getReconcileDiff: () => api.get('/finance/tally/reconcile-diff').then((r) => r.data),
+  resolveReconcileAction: (action, payload, batch) => api.post('/finance/tally/resolve-action', { action, payload, batch }).then((r) => r.data),
 };
 
 export const timetableApi = {

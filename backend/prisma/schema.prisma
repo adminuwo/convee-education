@@ -29,6 +29,7 @@ enum OrgRole {
   STUDENT
   PARENT
   ACCOUNTANT
+  ALUMNI
 }
 
 enum ChannelType {
@@ -1004,5 +1005,18 @@ model FixedAsset {
   @@index([orgId, status])
 }
 
+model TallyTombstone {
+  id              String   @id @default(uuid())
+  orgId           String
+  entityType      String   // FEE, EXPENSE, PAYROLL, SOCIETY_FUND, FIXED_ASSET, CASH_TRANSACTION, BANK_ACCOUNT
+  entityId        String
+  voucherNumber   String?
+  remoteId        String?
+  tallySyncStatus String   @default("PENDING_TALLY_DELETE") // PENDING_TALLY_DELETE, TALLY_PURGED
+  deletedAt       DateTime @default(now())
 
-
+  @@index([orgId])
+  @@index([orgId, entityType])
+  @@index([remoteId])
+  @@index([voucherNumber])
+}
