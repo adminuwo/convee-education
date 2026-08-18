@@ -2,4 +2,5 @@ fastapi>=0.115.0
 uvicorn[standard]>=0.32.0
 python-dotenv>=1.0.0
 pydantic>=2.9.0
-
+google-genai>=2.18.0
+google-auth>=2.56.0

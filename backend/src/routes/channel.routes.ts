@@ -165,7 +165,6 @@ router.get('/', async (req, res, next) => {
     ensureTeamAndProjectChannels(orgId).catch(() => {});
 
     const isOrgAdmin = ['OWNER', 'ADMIN', 'PRINCIPAL', 'DEAN', 'DIRECTOR'].includes(membership.role);
-    const isStudent = membership.role === 'STUDENT';
 
     let channels = await prisma.channel.findMany({
       where: {
@@ -180,16 +179,9 @@ router.get('/', async (req, res, next) => {
               { type: 'PROJECT' },
               { members: { some: { userId: req.user!.id } } },
             ]
-          : isStudent
-          ? [
-              { type: 'PUBLIC' },
-              { type: 'ANNOUNCEMENT' },
-              { members: { some: { userId: req.user!.id } } },
-            ]
           : [
               { type: 'PUBLIC' },
               { type: 'ANNOUNCEMENT' },
-              { type: 'DEPARTMENT' },
               { members: { some: { userId: req.user!.id } } },
             ],
       },
@@ -229,7 +221,6 @@ router.get('/', async (req, res, next) => {
             : [
                 { type: 'PUBLIC' },
                 { type: 'ANNOUNCEMENT' },
-                { type: 'DEPARTMENT' },
                 { members: { some: { userId: req.user!.id } } },
               ],
         },
@@ -265,9 +256,9 @@ router.get('/', async (req, res, next) => {
 export async function canUserAccessChannel(userId: string, channel: { id: string; orgId: string; type: string }) {
   const membership = await prisma.membership.findFirst({ where: { userId, orgId: channel.orgId, isActive: true } });
   if (!membership) return false;
-  const isOrgAdmin = ['OWNER', 'ADMIN', 'PRINCIPAL', 'DEAN', 'HOD', 'DIRECTOR'].includes(membership.role);
+  const isOrgAdmin = ['OWNER', 'ADMIN', 'PRINCIPAL', 'DEAN', 'DIRECTOR'].includes(membership.role);
   if (isOrgAdmin) return true;
-  if (['PUBLIC', 'ANNOUNCEMENT', 'DEPARTMENT'].includes(channel.type)) return true;
+  if (channel.type === 'PUBLIC' || channel.type === 'ANNOUNCEMENT') return true;
   const cm = await prisma.channelMember.findUnique({ where: { channelId_userId: { channelId: channel.id, userId } } });
   return !!cm;
 }
@@ -784,7 +775,23 @@ YOUR MISSION:
 3. Write cleanly without using raw Markdown header symbols like ### or ##. Use bold text, bullet points, or numbered lists for readability.
 4. Be professional, step-by-step, encouraging, and clear.`;
 
-          const aiResp = await callLLM(`channel-${channel.id}`, systemPrompt, promptText);
+          const senderMem = await prisma.membership.findFirst({
+            where: { userId: req.user!.id, orgId: channel.orgId, isActive: true },
+          });
+          const isStudentOrParentOrAlumni =
+            ['STUDENT', 'PARENT', 'ALUMNI'].includes(senderMem?.role || '') ||
+            req.user!.email?.includes('student') ||
+            req.user!.email?.includes('parent') ||
+            req.user!.email?.includes('alumni');
+
+          const chosenProvider = isStudentOrParentOrAlumni
+            ? (env.STUDENT_LLM_PROVIDER || 'vertexai')
+            : (env.FACULTY_LLM_PROVIDER || 'openai');
+          const chosenModel = isStudentOrParentOrAlumni
+            ? (env.STUDENT_LLM_MODEL || 'gemini-2.5-flash')
+            : (env.FACULTY_LLM_MODEL || 'gpt-4o-mini');
+
+          const aiResp = await callLLM(`channel-${channel.id}`, systemPrompt, promptText, chosenProvider, chosenModel);
 
           if (aiResp?.text) {
             const aiMsg = await prisma.message.create({

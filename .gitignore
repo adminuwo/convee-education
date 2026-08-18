@@ -127,4 +127,6 @@ backend/scripts/verify_*.ts
 backend/scripts/security_*.ts
 backend/scripts/seed_students_fees.ts
 backend/src/scripts/seed-accountant.ts
+backend/src/scripts/test-*.ts
+backend/src/scripts/test_*.ts
 frontend/scripts/

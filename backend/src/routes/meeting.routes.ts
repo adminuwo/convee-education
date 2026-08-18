@@ -249,8 +249,8 @@ router.post('/:id/summarize', async (req, res, next) => {
       session_key: `meeting-${meeting.id}-${Date.now()}`,
       system_message: sys,
       user_message: content,
-      provider: env.DEFAULT_LLM_PROVIDER,
-      model: env.DEFAULT_LLM_MODEL,
+      provider: env.FACULTY_LLM_PROVIDER || 'openai',
+      model: env.FACULTY_LLM_MODEL || 'gpt-4o-mini',
     }, { timeout: 60000 });
 
     const summary = resp.data.text;

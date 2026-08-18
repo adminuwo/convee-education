@@ -18,7 +18,16 @@ export const env = {
   LLM_BRIDGE_URL: process.env.LLM_BRIDGE_URL || 'http://localhost:8002',
   EMERGENT_LLM_KEY: process.env.EMERGENT_LLM_KEY || '',
   DEFAULT_LLM_PROVIDER: process.env.DEFAULT_LLM_PROVIDER || 'openai',
-  DEFAULT_LLM_MODEL: process.env.DEFAULT_LLM_MODEL || 'gpt-5.4',
+  DEFAULT_LLM_MODEL: process.env.DEFAULT_LLM_MODEL || 'gpt-4o-mini',
+  // Vertex AI Configuration (Students, Parents & Alumni)
+  VERTEX_PROJECT_ID: process.env.VERTEX_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || 'ai-mall-484810',
+  VERTEX_LOCATION: process.env.VERTEX_LOCATION || 'asia-south1',
+  VERTEX_GEMINI_MODEL: process.env.VERTEX_GEMINI_MODEL || 'gemini-2.5-flash',
+  STUDENT_LLM_PROVIDER: process.env.STUDENT_LLM_PROVIDER || 'vertexai',
+  STUDENT_LLM_MODEL: process.env.STUDENT_LLM_MODEL || 'gemini-2.5-flash',
+  // Faculty & Staff LLM Configuration
+  FACULTY_LLM_PROVIDER: process.env.FACULTY_LLM_PROVIDER || 'openai',
+  FACULTY_LLM_MODEL: process.env.FACULTY_LLM_MODEL || 'gpt-4o-mini',
   APP_URL: process.env.APP_URL || 'http://localhost:3000',
   UPLOAD_DIR: path.resolve(__dirname, '../../uploads'),
   RESEND_API_KEY: process.env.RESEND_API_KEY || '',

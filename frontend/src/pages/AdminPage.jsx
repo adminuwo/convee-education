@@ -659,7 +659,13 @@ export default function AdminPage() {
                     <tbody>
                       {alumniMembers.map((m) => {
                         const canRemove = canRemoveMember(m);
-                        const batchTag = m.title?.match(/\[(.*?)\]/)?.[1] || m.title || 'Alumni Network';
+                        const batchTag = m.title?.match(/\[(.*?)\]/)?.[1] || 'Alumni Network';
+                        const cleanDesignation = (m.title || 'Graduated Alumni')
+                          .replace(/^Student\s*-\s*/i, '')
+                          .replace(/^Alumni\s*·\s*/i, '')
+                          .replace(/\s*\(Roll:\s*.*?\)/gi, '')
+                          .replace(/\s*\[Alumni.*?\]/gi, '')
+                          .trim() || 'Graduated Alumni';
                         return (
                           <tr key={m.id} className="border-b border-border hover:bg-muted/30 transition-colors">
                             <td className="px-4 py-2.5">
@@ -681,7 +687,7 @@ export default function AdminPage() {
                             <td className="px-4 py-2.5 text-muted-foreground">{renderEmailCell(m.user)}</td>
                             <td className="px-4 py-2.5">
                               <span className="text-xs font-medium text-amber-300/90 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
-                                {m.title || 'Graduated Alumni'}
+                                {cleanDesignation}
                               </span>
                             </td>
                             <td className="px-4 py-2.5">

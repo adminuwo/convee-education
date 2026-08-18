@@ -20,6 +20,15 @@ export default function ProfilePage() {
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef(null);
 
+  // Email linking & OTP verification state
+  const isInternalIdEmail = Boolean(user?.email && (user.email.startsWith('STU-') || user.email.startsWith('PAR-') || !user.email.includes('@')));
+  const [emailInput, setEmailInput] = useState('');
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpCode, setOtpCode] = useState('');
+  const [sendingOtp, setSendingOtp] = useState(false);
+  const [verifyingOtp, setVerifyingOtp] = useState(false);
+  const [isEditingEmail, setIsEditingEmail] = useState(false);
+
   // Password state
   const [passForm, setPassForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
   const [passSaving, setPassSaving] = useState(false);
@@ -31,8 +40,12 @@ export default function ProfilePage() {
         bio: user.bio || '',
         avatarUrl: user.avatarUrl || '',
       });
+      setEmailInput(isInternalIdEmail ? '' : user.email || '');
+      setOtpSent(false);
+      setOtpCode('');
+      setIsEditingEmail(false);
     }
-  }, [user]);
+  }, [user, isInternalIdEmail]);
 
   const handleFileChange = async (e) => {
     const file = e.target.files?.[0];
@@ -73,6 +86,59 @@ export default function ProfilePage() {
     }
   };
 
+  const handleSendOtp = async (e) => {
+    if (e) e.preventDefault();
+    const cleanEmail = emailInput.trim().toLowerCase();
+    if (!cleanEmail) {
+      toast.error('Please enter an email address');
+      return;
+    }
+    const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+    if (!emailRegex.test(cleanEmail)) {
+      toast.error('Please enter a valid email format (e.g. name@example.com)');
+      return;
+    }
+
+    setSendingOtp(true);
+    try {
+      const res = await userApi.sendEmailVerification(cleanEmail);
+      setOtpSent(true);
+      if (res.devOtp) {
+        setOtpCode(res.devOtp);
+      }
+      toast.success(res?.message || 'Verification code sent to your email address!');
+    } catch (err) {
+      toast.error(err?.response?.data?.error || 'Failed to send verification code');
+    } finally {
+      setSendingOtp(false);
+    }
+  };
+
+  const handleVerifyOtp = async (e) => {
+    e.preventDefault();
+    const cleanEmail = emailInput.trim().toLowerCase();
+    const cleanCode = otpCode.trim();
+
+    if (!cleanCode || cleanCode.length < 6) {
+      toast.error('Please enter the 6-digit verification code');
+      return;
+    }
+
+    setVerifyingOtp(true);
+    try {
+      const res = await userApi.verifyEmailCode(cleanEmail, cleanCode);
+      toast.success(res?.message || 'Email verified and successfully linked to your account!');
+      setOtpSent(false);
+      setOtpCode('');
+      setIsEditingEmail(false);
+      await refresh();
+    } catch (err) {
+      toast.error(err?.response?.data?.error || 'Invalid or expired verification code');
+    } finally {
+      setVerifyingOtp(false);
+    }
+  };
+
   const handlePasswordSubmit = async (e) => {
     e.preventDefault();
     if (passForm.newPassword !== passForm.confirmPassword) {
@@ -104,7 +170,7 @@ export default function ProfilePage() {
     <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="p-4 sm:p-6 lg:p-8 max-w-2xl mx-auto space-y-6">
       <div>
         <h1 className="font-display text-2xl font-semibold">Profile & Account</h1>
-        <p className="text-muted-foreground">Manage your credentials, director ID, and personal information</p>
+        <p className="text-muted-foreground">Manage your credentials, login email, password, and personal details</p>
       </div>
 
       <Card>
@@ -124,11 +190,22 @@ export default function ProfilePage() {
                 <span>{form.fullName || user?.email}</span>
                 {(currentOrg?.userUniqueId || currentOrg?.directorId || user?.directorId || (user?.memberships?.find((m) => m.orgId === currentOrg?.id)?.title?.match(/\[(.*?)\]/)?.[1])) && (
                   <Badge variant="default" className="font-mono text-xs bg-primary text-primary-foreground px-2 py-0.5">
-                    User / Faculty ID: {currentOrg?.userUniqueId || currentOrg?.directorId || user?.directorId || (user?.memberships?.find((m) => m.orgId === currentOrg?.id)?.title?.match(/\[(.*?)\]/)?.[1])}
+                    ID: {currentOrg?.userUniqueId || currentOrg?.directorId || user?.directorId || (user?.memberships?.find((m) => m.orgId === currentOrg?.id)?.title?.match(/\[(.*?)\]/)?.[1])}
                   </Badge>
                 )}
               </div>
-              <div className="text-sm text-muted-foreground">{user?.email}</div>
+              <div className="text-sm text-muted-foreground">
+                {isInternalIdEmail ? (
+                  <span className="text-amber-400 font-medium">ID Login: {user?.email} (No email linked)</span>
+                ) : (
+                  <span className="text-foreground font-medium flex items-center gap-1.5">
+                    {user?.email}
+                    <Badge variant="outline" className="text-[10px] bg-emerald-500/10 text-emerald-400 border-emerald-500/30">
+                      ✓ Verified Email
+                    </Badge>
+                  </span>
+                )}
+              </div>
               <div className="flex items-center gap-2 pt-1">
                 <input
                   type="file"
@@ -192,6 +269,131 @@ export default function ProfilePage() {
           <Button onClick={save} data-testid="profile-save-btn">
             Save profile changes
           </Button>
+        </CardContent>
+      </Card>
+
+      {/* Email & OTP Verification Card */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-base">Login Email & Inbox Verification</CardTitle>
+              <CardDescription className="text-xs">
+                {isInternalIdEmail
+                  ? 'Verify and link your real email address with a 6-digit verification code to enable email login and notifications.'
+                  : 'Your active verified email for notifications, announcements, and portal sign in.'}
+              </CardDescription>
+            </div>
+            {!isInternalIdEmail && !isEditingEmail && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-xs h-7"
+                onClick={() => setIsEditingEmail(true)}
+              >
+                Change Email
+              </Button>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent>
+          {isInternalIdEmail || isEditingEmail ? (
+            <div className="space-y-4">
+              {isInternalIdEmail && (
+                <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-xs text-amber-300">
+                  ⚠️ <strong>No real email is currently linked to your account.</strong> You are logging in via your ID (<code>{user?.email}</code>). Verify your email below to ensure you never lose access.
+                </div>
+              )}
+
+              {!otpSent ? (
+                <form onSubmit={handleSendOtp} className="space-y-4">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="emailInput">Real Email Address</Label>
+                    <Input
+                      id="emailInput"
+                      type="email"
+                      required
+                      placeholder="e.g. yourname@gmail.com"
+                      value={emailInput}
+                      onChange={(e) => setEmailInput(e.target.value)}
+                    />
+                    <p className="text-[11px] text-muted-foreground">
+                      A 6-digit confirmation code will be sent to this email to verify that the mailbox exists.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button type="submit" disabled={sendingOtp || !emailInput.trim()} className="gap-2">
+                      {sendingOtp && <Loader2 className="h-4 w-4 animate-spin" />}
+                      {sendingOtp ? 'Sending Verification Code…' : 'Send 6-Digit Verification Code'}
+                    </Button>
+                    {isEditingEmail && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={() => {
+                          setIsEditingEmail(false);
+                          setEmailInput(user?.email || '');
+                        }}
+                      >
+                        Cancel
+                      </Button>
+                    )}
+                  </div>
+                </form>
+              ) : (
+                <form onSubmit={handleVerifyOtp} className="space-y-4 p-4 rounded-xl border border-primary/30 bg-primary/5">
+                  <div className="space-y-1">
+                    <div className="text-xs font-semibold text-foreground">
+                      Enter 6-Digit Code Sent to <span className="font-mono text-primary font-bold">{emailInput}</span>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">
+                      Please check your inbox (and spam folder) for the verification code.
+                    </p>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label htmlFor="otpCode" className="text-xs font-semibold">6-Digit Verification Code</Label>
+                    <Input
+                      id="otpCode"
+                      type="text"
+                      maxLength={6}
+                      required
+                      placeholder="e.g. 849201"
+                      className="font-mono text-center tracking-widest text-lg font-bold max-w-[200px]"
+                      value={otpCode}
+                      onChange={(e) => setOtpCode(e.target.value.replace(/[^0-9]/g, ''))}
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-1">
+                    <Button type="submit" disabled={verifyingOtp || otpCode.length < 6} className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white">
+                      {verifyingOtp && <Loader2 className="h-4 w-4 animate-spin" />}
+                      {verifyingOtp ? 'Verifying Code…' : '✓ Confirm & Link Email'}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setOtpSent(false)}
+                      className="text-xs text-muted-foreground"
+                    >
+                      Change Email / Resend
+                    </Button>
+                  </div>
+                </form>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-center justify-between p-3.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl">
+              <div className="space-y-0.5">
+                <div className="text-xs font-medium text-emerald-400">Active Verified Email</div>
+                <div className="text-sm font-semibold text-foreground font-mono">{user?.email}</div>
+              </div>
+              <Badge variant="outline" className="bg-emerald-500/20 text-emerald-300 border-emerald-500/30 text-xs">
+                ✓ Verified
+              </Badge>
+            </div>
+          )}
         </CardContent>
       </Card>
 

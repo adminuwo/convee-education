@@ -10,6 +10,26 @@ import { canUserAccessChannel } from './channel.routes';
 const router = Router();
 router.use(authenticate);
 
+export function resolveLLMProviderAndModel(userRole?: string | null, userEmail?: string | null, systemRole?: string | null) {
+  const email = (userEmail || '').toLowerCase();
+  const isStudent = userRole === 'STUDENT' || email.includes('student');
+  const isParent = userRole === 'PARENT' || email.includes('parent');
+  const isAlumni = userRole === 'ALUMNI' || email.includes('alumni');
+
+  if (isStudent || isParent || isAlumni) {
+    return {
+      provider: env.STUDENT_LLM_PROVIDER || 'vertexai',
+      model: env.STUDENT_LLM_MODEL || 'gemini-2.5-flash',
+    };
+  }
+
+  // Faculty, Staff, Accountants, and Administrators
+  return {
+    provider: env.FACULTY_LLM_PROVIDER || 'openai',
+    model: env.FACULTY_LLM_MODEL || 'gpt-4o-mini',
+  };
+}
+
 async function callLLM(sessionKey: string, systemPrompt: string, userMessage: string, provider?: string, model?: string) {
   try {
     const resp = await axios.post(`${env.LLM_BRIDGE_URL}/chat`, {
@@ -19,7 +39,11 @@ async function callLLM(sessionKey: string, systemPrompt: string, userMessage: st
       provider: provider || env.DEFAULT_LLM_PROVIDER,
       model: model || env.DEFAULT_LLM_MODEL,
     }, { timeout: 60000 });
-    return { text: resp.data?.text || (typeof resp.data === 'string' ? resp.data : '') };
+    return {
+      text: resp.data?.text || (typeof resp.data === 'string' ? resp.data : ''),
+      provider: resp.data?.provider || provider || env.DEFAULT_LLM_PROVIDER,
+      model: resp.data?.model || model || env.DEFAULT_LLM_MODEL,
+    };
   } catch (e: any) {
     logger.error('callLLM error:', e?.response?.data || e?.message);
     throw e;
@@ -109,18 +133,38 @@ router.post('/chat', async (req, res, next) => {
           ? recentAnnouncements.map(m => `- [${new Date(m.createdAt).toLocaleDateString()}] ${m.sender?.fullName || 'School Admin'}: "${m.content}"`).join('\n')
           : 'No recent announcements posted.';
 
-              } else if (membership?.role === 'PARENT' || req.user!.email?.includes('parent')) {
+      } else if (membership?.role === 'PARENT' || req.user!.email?.includes('parent')) {
         const parentName = currentUser?.fullName || req.user!.email || 'Parent / Guardian';
 
         // Fetch linked children for this parent
-        const links = await prisma.parentStudentLink.findMany({
+        let links = await prisma.parentStudentLink.findMany({
           where: { parentUserId: req.user!.id },
         });
 
+        // If no link explicitly in DB, check standard matching pattern for seamless demo/production link
+        if (links.length === 0 && req.user!.email) {
+          const childEmail = req.user!.email.replace('parent.', 'student.').replace('parent_', 'student_');
+          const matchedStudent = await prisma.user.findFirst({
+            where: { email: childEmail },
+            select: { id: true },
+          });
+          if (matchedStudent && membership?.orgId) {
+            const createdLink = await prisma.parentStudentLink.create({
+              data: {
+                orgId: membership.orgId,
+                parentUserId: req.user!.id,
+                studentUserId: matchedStudent.id,
+                relationship: 'Parent',
+              },
+            }).catch(() => null);
+            if (createdLink) links = [createdLink];
+          }
+        }
+
         const studentUserIds = Array.from(new Set(links.map((l) => l.studentUserId)));
 
-        // If no direct link, fallback to finding any student in org for demo/test mode
-        let studentMemberships = await prisma.membership.findMany({
+        // Strictly fetch memberships ONLY for linked student user IDs
+        const studentMemberships = studentUserIds.length > 0 ? await prisma.membership.findMany({
           where: {
             userId: { in: studentUserIds },
             ...(membership?.orgId ? { orgId: membership.orgId } : {}),
@@ -130,21 +174,9 @@ router.post('/chat', async (req, res, next) => {
             team: { select: { id: true, name: true, managerId: true } },
             department: { select: { id: true, name: true, headId: true } },
           },
-        });
+        }) : [];
 
-        if (studentMemberships.length === 0 && membership?.orgId) {
-          studentMemberships = await prisma.membership.findMany({
-            where: { orgId: membership.orgId, role: 'STUDENT', isActive: true },
-            take: 1,
-            include: {
-              user: { select: { id: true, fullName: true, email: true } },
-              team: { select: { id: true, name: true, managerId: true } },
-              department: { select: { id: true, name: true, headId: true } },
-            },
-          });
-        }
-
-        let childrenDetailsSummary = 'No linked student accounts found.';
+        let childrenDetailsSummary = 'No linked student accounts found. Please link your child using their Student ID or contact the school administrator.';
         let facultyContactsSummary = 'No faculty contact details found.';
         let homeworkDetailsSummary = 'No homework records available.';
         let attendanceSummaryText = 'No attendance logs recorded.';
@@ -223,6 +255,10 @@ router.post('/chat', async (req, res, next) => {
         }
 
         sys = `You are an AI Parent Academic Assistant for ${parentName}.
+
+STRICT PRIVACY POLICY:
+You are strictly authorized to display and discuss academic analytics, attendance records, homework, and faculty contacts ONLY for the parent's linked child/children listed below.
+Under NO circumstances should you disclose or analyze records of any other students in the institution.
 
 STUDENT ACADEMIC & PROGRESS PROFILE:
 ${childrenDetailsSummary}
@@ -553,6 +589,48 @@ ${hasTeachingDuties ? `
    - If asked to create homework for a specific class, generate the homework assignment and include the "create_homework" action block with suggested class teams.
 `}
 `;
+      } else if (membership?.role === 'ALUMNI' || req.user!.email?.includes('alumni') || membership?.title?.includes('Alumni')) {
+        const alumniName = currentUser?.fullName || req.user!.email || 'Alumni Graduate';
+        const batchTag = membership?.title || 'Graduated Class & Alumni Network';
+        const deptName = membership?.department?.name || 'Graduating Wing / Department';
+        const orgId = membership?.orgId;
+
+        // Fetch recent announcements
+        const recentAnnouncements = orgId ? await prisma.message.findMany({
+          where: {
+            channel: { orgId, type: { in: ['ANNOUNCEMENT', 'PUBLIC'] }, deletedAt: null },
+            isDeleted: false,
+          },
+          include: { sender: { select: { fullName: true } } },
+          orderBy: { createdAt: 'desc' },
+          take: 6,
+        }).catch(() => []) : [];
+
+        const announcementsSummary = recentAnnouncements.length
+          ? recentAnnouncements.map((m: any) => `- [${new Date(m.createdAt).toLocaleDateString()}] ${m.sender?.fullName || 'Campus'}: "${m.content}"`).join('\n')
+          : 'No recent alumni circulars.';
+
+        sys = `You are the AI Alumni Relations & Career Mentorship Assistant for ${alumniName} (${batchTag}).
+
+ALUMNI PROFILE & ACADEMIC BACKGROUND:
+- Alumni Name: ${alumniName}
+- Designation / Batch: ${batchTag}
+- Department / Wing: ${deptName}
+
+RECENT CAMPUS & ALUMNI ANNOUNCEMENTS:
+${announcementsSummary}
+
+YOUR ROLE & ALUMNI CAPABILITIES:
+1. ALUMNI NETWORKING & CAREER GUIDANCE:
+   - Provide mentorship insights, career guidance, resume reviews, and professional transition advice for fellow alumni and graduating students.
+   - Connect alumni with campus networking events, industry panels, and guest lecture initiatives.
+
+2. TRANSCRIPTS, VERIFICATIONS & CAMPUS SERVICES:
+   - Help alumni with questions about official transcript requests, degree certificates, migration records, and alumni association registration.
+
+3. REUNIONS, HOMECOMING & GIVING:
+   - Provide information on batch reunions, campus homecoming celebrations, mentorship programs, and institutional donation/giving drives.
+   - Keep interactions inspiring, warm, professional, and proud of the Alma Mater.`;
       } else {
         const staffName = currentUser?.fullName || req.user!.email || 'Staff Member';
         const roleName = membership?.role || 'Staff';
@@ -678,7 +756,11 @@ YOUR MISSION & CAPABILITIES:
       }
     }
 
-    const { text } = await callLLM(key, sys, message, provider, model);
+    const llmConfig = resolveLLMProviderAndModel(membership?.role, req.user!.email, currentUser?.systemRole);
+    const chosenProvider = provider || llmConfig.provider;
+    const chosenModel = model || llmConfig.model;
+
+    const { text, provider: usedProvider, model: usedModel } = await callLLM(key, sys, message, chosenProvider, chosenModel);
 
     let finalTitle = convo?.title;
     if (convo) {
@@ -699,7 +781,13 @@ YOUR MISSION & CAPABILITIES:
       }
     }
 
-    res.json({ response: text || '', sessionKey: key, title: finalTitle });
+    res.json({
+      response: text || '',
+      sessionKey: key,
+      title: finalTitle,
+      provider: usedProvider,
+      model: usedModel,
+    });
   } catch (e: any) {
     logger.error('AI chat error:', e?.response?.data || e?.message);
     next(e);
@@ -772,7 +860,13 @@ router.post('/summarize-channel', async (req, res, next) => {
     });
     const transcript = messages.map(m => `${m.sender?.fullName || 'Unknown'}: ${m.content}`).join('\n');
     const sys = 'You are an expert meeting/chat summarizer. Produce a concise summary with: 1) Key topics discussed, 2) Decisions made, 3) Open questions, 4) Action items (with owners if mentioned). Use markdown.';
-    const { text } = await callLLM(`summary-${channelId}-${Date.now()}`, sys, transcript || 'No messages in the last window.');
+
+    const membership = await prisma.membership.findFirst({
+      where: { userId: req.user!.id, orgId: channel.orgId, isActive: true },
+    });
+    const llmConfig = resolveLLMProviderAndModel(membership?.role, req.user!.email);
+
+    const { text } = await callLLM(`summary-${channelId}-${Date.now()}`, sys, transcript || 'No messages in the last window.', llmConfig.provider, llmConfig.model);
     res.json({ summary: text || 'No summary available.', messageCount: messages.length });
   } catch (e: any) {
     logger.error('summarize error', e?.message);
@@ -840,7 +934,12 @@ CRITICAL PERSPECTIVE RULES:
       ? `Recent Chat History:\n${transcript}\n\nUser ${senderName}'s explicit instruction for this draft: ${userPrompt}`
       : `Recent Chat History:\n${transcript}\n\nDraft a direct 1-2 sentence message from ${senderName} to send in this chat.`;
 
-    const { text } = await callLLM(`draft-${channelId}-${Date.now()}`, sys, userMsg);
+    const membership = await prisma.membership.findFirst({
+      where: { userId: req.user!.id, orgId: channel.orgId, isActive: true },
+    });
+    const llmConfig = resolveLLMProviderAndModel(membership?.role, req.user!.email);
+
+    const { text } = await callLLM(`draft-${channelId}-${Date.now()}`, sys, userMsg, llmConfig.provider, llmConfig.model);
     res.json({ draft: text?.trim() || '' });
   } catch (e: any) {
     logger.error('draft-reply error:', e?.message);
@@ -848,7 +947,7 @@ CRITICAL PERSPECTIVE RULES:
   }
 });
 
-// Generate tasks from a thread/messages
+// Generate tasks from a thread/messages (Faculty & Staff feature)
 router.post('/generate-tasks', async (req, res, next) => {
   try {
     const { channelId, sinceMessageId, orgId, projectId: reqProjectId } = req.body;
@@ -874,7 +973,7 @@ router.post('/generate-tasks', async (req, res, next) => {
 
     const transcript = messages.map(m => `${m.sender?.fullName || m.sender?.email || 'Unknown'}: ${m.content}`).join('\n');
     const sys = `Extract actionable tasks from the following chat. Return STRICT JSON array of tasks, no prose. Each task: {"title": string, "description": string, "priority": "LOW|MEDIUM|HIGH|URGENT", "suggestedAssignee": string|null}. Max 6 tasks.`;
-    const { text } = await callLLM(`tasks-${channelId}-${Date.now()}`, sys, transcript || 'No content');
+    const { text } = await callLLM(`tasks-${channelId}-${Date.now()}`, sys, transcript || 'No content', env.FACULTY_LLM_PROVIDER, env.FACULTY_LLM_MODEL);
 
     let tasks: any[] = [];
     if (text && typeof text === 'string') {
@@ -953,7 +1052,7 @@ router.post('/generate-tasks', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// Sprint planning suggestion
+// Sprint planning suggestion (Faculty & Staff feature)
 router.post('/sprint-plan', async (req, res, next) => {
   try {
     const { orgId, goal, durationDays } = req.body;
@@ -966,12 +1065,12 @@ router.post('/sprint-plan', async (req, res, next) => {
     const backlogText = backlog.map(t => `- [${t.priority}] ${t.title}: ${t.description?.slice(0, 100) || ''}`).join('\n');
     const sys = 'You are an agile coach. Suggest a sprint plan based on backlog and goal. Return sections: Sprint Goal, Committed Items, Rationale, Risks. Markdown.';
     const user = `Goal: ${goal || 'General progress'}\nDuration: ${durationDays || 14} days\nBacklog:\n${backlogText}`;
-    const { text } = await callLLM(`sprint-${orgId}-${Date.now()}`, sys, user);
+    const { text } = await callLLM(`sprint-${orgId}-${Date.now()}`, sys, user, env.FACULTY_LLM_PROVIDER, env.FACULTY_LLM_MODEL);
     res.json({ plan: text || 'No plan generated.' });
   } catch (e) { next(e); }
 });
 
-// AI Exam & Quiz Question Bank Generator
+// AI Exam & Quiz Question Bank Generator (Faculty & Teachers)
 router.post('/generate-quiz', async (req, res, next) => {
   try {
     const { notes, subject, numQuestions } = req.body;
@@ -988,7 +1087,7 @@ Format your output cleanly in Markdown with two distinct sections:
 
     const userPrompt = `Subject/Topic: ${subject || 'General Academic Studies'}\nTarget Question Count: ${numQuestions || 5}\n\nLesson Notes / Content:\n${notes}`;
 
-    const { text } = await callLLM(`quiz-${Date.now()}`, sys, userPrompt);
+    const { text } = await callLLM(`quiz-${Date.now()}`, sys, userPrompt, env.FACULTY_LLM_PROVIDER, env.FACULTY_LLM_MODEL);
     res.json({ quiz: text || 'Failed to generate quiz.' });
   } catch (e: any) {
     logger.error('generate-quiz error:', e?.message);
@@ -996,7 +1095,7 @@ Format your output cleanly in Markdown with two distinct sections:
   }
 });
 
-// Executive Daily Briefing for Directors, Principals & Deans
+// Executive Daily Briefing for Directors, Principals & Deans (Executive/Faculty)
 router.post('/daily-briefing', async (req, res, next) => {
   try {
     const { orgId } = req.body;
@@ -1030,7 +1129,7 @@ ${taskSummary || 'No active tasks.'}
 Recent Campus Announcements:
 ${annSummary || 'No recent announcements.'}`;
 
-    const { text } = await callLLM(`briefing-${orgId}-${Date.now()}`, sys, prompt);
+    const { text } = await callLLM(`briefing-${orgId}-${Date.now()}`, sys, prompt, env.FACULTY_LLM_PROVIDER, env.FACULTY_LLM_MODEL);
     res.json({ briefing: text || 'Daily briefing currently unavailable.' });
   } catch (e: any) {
     logger.error('daily-briefing error:', e?.message);

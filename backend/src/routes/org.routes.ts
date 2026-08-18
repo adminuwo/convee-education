@@ -1704,30 +1704,13 @@ async function generateStudentAccount({
 
   const studentId = `STU-${currentYear}-${admSuffix}`;
   const parentId = `PAR-${currentYear}-${admSuffix}`;
-
-  let email: string;
-  let isCustomStudentEmail = false;
-
-  if (studentEmail && studentEmail.trim()) {
-    email = studentEmail.trim().toLowerCase();
-    isCustomStudentEmail = true;
-
-    // Validate email syntax and DNS MX records
-    const domainCheck = await verifyEmailDomain(email);
-    if (!domainCheck.valid) {
-      throw new Error(domainCheck.reason || 'Invalid student email address or non-existent domain');
-    }
-  } else {
-    // If no email provided, use internal studentId as unique email identifier in database
-    email = studentId;
-  }
+  const email = studentId;
 
   const tempPassword = generateTempPassword();
   const passwordHash = await hashPassword(tempPassword);
 
   // Create or Update User for Student
   let user = await prisma.user.findUnique({ where: { email } });
-  let studentEmailVerificationSent = false;
 
   if (!user) {
     user = await prisma.user.create({
@@ -1735,7 +1718,7 @@ async function generateStudentAccount({
         email,
         fullName: cleanName,
         passwordHash,
-        isVerified: !isCustomStudentEmail,
+        isVerified: true,
         systemRole: 'USER',
       },
     });
@@ -1744,24 +1727,6 @@ async function generateStudentAccount({
       where: { id: user.id },
       data: { fullName: cleanName, passwordHash },
     });
-  }
-
-  // Send verification email to custom student email if configured
-  if (isCustomStudentEmail && isEmailConfigured()) {
-    try {
-      const vToken = crypto.randomBytes(32).toString('hex');
-      await prisma.emailVerificationToken.create({
-        data: {
-          userId: user.id,
-          token: vToken,
-          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24h
-        },
-      });
-      await sendVerificationEmail(user.email, user.fullName, vToken);
-      studentEmailVerificationSent = true;
-    } catch (vErr) {
-      console.error('Failed to send student verification email:', vErr);
-    }
   }
 
   // Create Membership as STUDENT
@@ -1776,30 +1741,13 @@ async function generateStudentAccount({
     },
   });
 
-  // ALWAYS create parent user & link (whether info provided or not)
-  let pEmailToUse: string;
-  let isCustomEmail = false;
-
-  if (parentEmail && parentEmail.trim()) {
-    pEmailToUse = parentEmail.trim().toLowerCase();
-    isCustomEmail = true;
-
-    // Validate email syntax and DNS MX records
-    const domainCheck = await verifyEmailDomain(pEmailToUse);
-    if (!domainCheck.valid) {
-      throw new Error(domainCheck.reason || 'Invalid parent email address or non-existent domain');
-    }
-  } else {
-    // If no parent email provided, use parentId as unique email identifier in database
-    pEmailToUse = parentId;
-  }
-
+  // ALWAYS create parent user & link with Parent ID
+  const pEmailToUse = parentId;
   const pName = parentFullName?.trim() || `Parent of ${cleanName}`;
   const parentTempPassword = generateTempPassword();
   const parentPasswordHash = await hashPassword(parentTempPassword);
 
   let parentUser = await prisma.user.findUnique({ where: { email: pEmailToUse } });
-  let emailVerificationSent = false;
 
   if (!parentUser) {
     parentUser = await prisma.user.create({
@@ -1807,7 +1755,7 @@ async function generateStudentAccount({
         email: pEmailToUse,
         fullName: pName,
         passwordHash: parentPasswordHash,
-        isVerified: !isCustomEmail, // Default internal accounts are verified; custom emails require verification link
+        isVerified: true,
         systemRole: 'USER',
       },
     });
@@ -1816,24 +1764,6 @@ async function generateStudentAccount({
       where: { id: parentUser.id },
       data: { fullName: pName, passwordHash: parentPasswordHash },
     });
-  }
-
-  // Send verification email to custom parent email if configured
-  if (isCustomEmail && isEmailConfigured()) {
-    try {
-      const vToken = crypto.randomBytes(32).toString('hex');
-      await prisma.emailVerificationToken.create({
-        data: {
-          userId: parentUser.id,
-          token: vToken,
-          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24h
-        },
-      });
-      await sendVerificationEmail(parentUser.email, parentUser.fullName, vToken);
-      emailVerificationSent = true;
-    } catch (vErr) {
-      console.error('Failed to send parent verification email:', vErr);
-    }
   }
 
   // Create or update parent membership as PARENT
@@ -1915,7 +1845,7 @@ async function generateStudentAccount({
     fullName: cleanName,
     admissionNo: cleanAdm || 'N/A',
     studentId,
-    email: isCustomStudentEmail ? email : 'N/A',
+    email: studentId,
     tempPassword,
     departmentName: deptName || 'General',
     className: teamName || 'Unassigned',
@@ -1924,15 +1854,12 @@ async function generateStudentAccount({
       id: parentUser.id,
       parentId,
       fullName: pName,
-      email: isCustomEmail ? pEmailToUse : 'N/A',
+      email: parentId,
       tempPassword: parentTempPassword,
-      isCustomEmail,
-      emailVerificationSent,
     },
-    parentEmail: isCustomEmail ? pEmailToUse : 'N/A',
+    parentEmail: parentId,
     parentPassword: parentTempPassword,
     parentName: pName,
-    emailVerificationSent,
   };
 }
 
@@ -1946,7 +1873,7 @@ router.post('/:orgId/students/generate-single', async (req, res, next) => {
       return res.status(403).json({ error: 'Only Admins, Directors, Principals, and Deans can access the Student ID Generator.' });
     }
 
-    const { admissionNo, fullName, departmentId, teamId, departmentName, className, studentEmail, parentEmail, parentFullName } = req.body;
+    const { admissionNo, fullName, departmentId, teamId, departmentName, className, parentFullName } = req.body;
     if (!admissionNo || !admissionNo.trim()) {
       return res.status(400).json({ error: 'Student Admission Number is required.' });
     }
@@ -1962,8 +1889,6 @@ router.post('/:orgId/students/generate-single', async (req, res, next) => {
       teamId,
       departmentName,
       className,
-      studentEmail,
-      parentEmail,
       parentFullName,
     });
 
@@ -2007,8 +1932,6 @@ router.post('/:orgId/students/generate-mass', async (req, res, next) => {
           admissionNo: row.admissionNo || row.admissionId || '',
           departmentName: row.departmentName || row.wing || '',
           className: row.className || row.section || '',
-          studentEmail: row.studentEmail || row.student_email || '',
-          parentEmail: row.parentEmail || row.parent_email || '',
           parentFullName: row.parentFullName || row.parentName || row.parent_name || '',
         });
         results.push(generated);

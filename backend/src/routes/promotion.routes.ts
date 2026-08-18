@@ -252,7 +252,7 @@ router.post('/execute', async (req, res, next) => {
               data: {
                 teamId: null, // Clear classroom team so next batch can occupy it
                 role: 'ALUMNI' as any, // Assign dedicated ALUMNI role
-                title: `${(st.title || '').replace(/\[Alumni.*?\]/g, '').trim()} [Alumni ${currentYear}]`,
+                title: `Alumni · ${(st.title || '').replace(/^Student\s*-\s*/i, '').replace(/\[Alumni.*?\]/g, '').trim()} [Alumni ${currentYear}]`,
               },
             });
 

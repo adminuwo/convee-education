@@ -172,6 +172,8 @@ export const userApi = {
   get: (id) => api.get(`/users/${id}`).then((r) => r.data),
   updateMe: (data) => api.patch('/users/me', data).then((r) => r.data),
   setPassword: (data) => api.post('/users/me/password', data).then((r) => r.data),
+  sendEmailVerification: (email) => api.post('/users/me/send-email-verification', { email }).then((r) => r.data),
+  verifyEmailCode: (email, code) => api.post('/users/me/verify-email-code', { email, code }).then((r) => r.data),
 };
 
 export const notifApi = {

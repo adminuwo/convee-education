@@ -18,9 +18,7 @@ const SYSTEM_FIELDS = [
   { key: 'admissionNo', label: 'Admission / Roll Number', required: true, aliases: ['admission no', 'admissionno', 'adm no', 'admno', 'roll no', 'rollno', 'reg no', 'registration no', 'id', 'student id', 'enrollment no', 'adm_no'] },
   { key: 'departmentName', label: 'School Wing / Department', required: true, aliases: ['wing', 'school wing', 'department', 'dept', 'division', 'school_wing'] },
   { key: 'className', label: 'Class & Section', required: true, aliases: ['class', 'section', 'grade', 'standard', 'class/sec', 'team', 'class section', 'class_name'] },
-  { key: 'studentEmail', label: 'Student Email (Optional)', required: false, aliases: ['student email', 'studentemail', 'student mail', 'email', 'mail', 'student_email'] },
   { key: 'parentFullName', label: 'Parent Full Name (Optional)', required: false, aliases: ['father name', 'mother name', 'guardian name', 'parent name', 'parentname', 'father', 'mother', 'guardian', 'parent_name'] },
-  { key: 'parentEmail', label: 'Parent Email (Optional)', required: false, aliases: ['parent email', 'parentemail', 'father email', 'guardian email', 'parent mail', 'parent_email'] },
 ];
 
 export default function StudentIDGenerator({ departments = [], onStudentCreated }) {
@@ -34,9 +32,7 @@ export default function StudentIDGenerator({ departments = [], onStudentCreated 
     fullName: '',
     departmentId: '',
     teamId: '',
-    studentEmail: '',
     parentFullName: '',
-    parentEmail: '',
   });
   const [singleLoading, setSingleLoading] = useState(false);
   const [singleResult, setSingleResult] = useState(null);
@@ -83,8 +79,6 @@ export default function StudentIDGenerator({ departments = [], onStudentCreated 
         fullName: singleForm.fullName,
         departmentId: singleForm.departmentId || undefined,
         teamId: singleForm.teamId || undefined,
-        studentEmail: singleForm.studentEmail || undefined,
-        parentEmail: singleForm.parentEmail || undefined,
         parentFullName: singleForm.parentFullName || undefined,
       });
       setSingleResult(res);
@@ -93,9 +87,7 @@ export default function StudentIDGenerator({ departments = [], onStudentCreated 
         fullName: '',
         departmentId: '',
         teamId: '',
-        studentEmail: '',
         parentFullName: '',
-        parentEmail: '',
       });
       toast.success(`Student ID generated & enrolled into ${res.className}!`);
       if (onStudentCreated) onStudentCreated();
@@ -252,9 +244,7 @@ Parent Temp Password: ${pPass}`;
         admissionNo: getVal('admissionNo'),
         departmentName: getVal('departmentName'),
         className: getVal('className'),
-        studentEmail: getVal('studentEmail'),
         parentFullName: getVal('parentFullName'),
-        parentEmail: getVal('parentEmail'),
       };
     }).filter((r) => r.fullName.length > 0);
 
@@ -269,10 +259,10 @@ Parent Temp Password: ${pPass}`;
   };
 
   const downloadSampleTemplate = () => {
-    const template = `FullName,AdmissionNo,DepartmentName,ClassName,StudentEmail,ParentFullName,ParentEmail
-John Smith,ADM-2026-001,High School,Grade 10 - Sec A,john.smith@gmail.com,Robert Smith,parent.smith@gmail.com
-Emily Davis,ADM-2026-002,High School,Grade 10 - Sec A,,,
-Michael Brown,ADM-2026-003,Middle School,Grade 8 - Sec B,,Sarah Brown,sarah.brown@gmail.com
+    const template = `FullName,AdmissionNo,DepartmentName,ClassName,ParentFullName
+John Smith,ADM-2026-001,High School,Grade 10 - Sec A,Robert Smith
+Emily Davis,ADM-2026-002,High School,Grade 10 - Sec A,
+Michael Brown,ADM-2026-003,Middle School,Grade 8 - Sec B,Sarah Brown
 `;
     const blob = new Blob([template], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -303,70 +293,64 @@ Michael Brown,ADM-2026-003,Middle School,Grade 8 - Sec B,,Sarah Brown,sarah.brow
   const downloadMassResultsCSV = () => {
     if (!massResults || !massResults.students?.length) return;
 
-    let csv = 'Student Full Name,Admission No,Student ID,Student Email,Student Temp Password,Parent Name,Parent Email,Parent Temp Password,Department,Class Section\n';
+    let csv = 'Student Full Name,Admission No,Student ID,Student Temp Password,Parent Name,Parent ID,Parent Temp Password,Department,Class Section\n';
     massResults.students.forEach((s) => {
       const pName = s.parentName || s.parent?.fullName || '';
-      const rawPEmail = s.parentEmail || s.parent?.email || '';
-      const pEmail = (rawPEmail && rawPEmail.includes('@') && !rawPEmail.startsWith('PAR-')) ? rawPEmail : '';
-      const rawSEmail = s.email || '';
-      const sEmail = (rawSEmail && rawSEmail.includes('@') && !rawSEmail.startsWith('STU-')) ? rawSEmail : '';
+      const pId = s.parentId || s.parent?.parentId || '';
       const pPass = s.parentPassword || s.parent?.tempPassword || '';
-      csv += `"${s.fullName}","${s.admissionNo}","${s.studentId}","${sEmail}","${s.tempPassword}","${pName}","${pEmail}","${pPass}","${s.departmentName}","${s.className}"\n`;
+      csv += `"${s.fullName}","${s.admissionNo}","${s.studentId}","${s.tempPassword}","${pName}","${pId}","${pPass}","${s.departmentName}","${s.className}"\n`;
     });
 
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `Generated_Students_And_Parents_Credentials_${new Date().toISOString().slice(0, 10)}.csv`;
+    link.download = `Mass_Student_Credentials_${new Date().toISOString().slice(0, 10)}.csv`;
     link.click();
   };
 
   return (
-    <Card className="border-amber-500/30 bg-card/60 backdrop-blur-sm shadow-xl">
-      <CardHeader className="border-b border-border/60 pb-4">
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center border border-amber-500/20">
-              <Key className="h-5 w-5" />
-            </div>
-            <div>
-              <CardTitle className="text-lg font-bold flex items-center gap-2">
-                Student ID & Credentials Generator
-                <Badge variant="outline" className="text-[10px] bg-amber-500/10 text-amber-400 border-amber-500/30">
+    <div className="space-y-6">
+      {/* Header Banner */}
+      <Card className="border-amber-500/20 bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <CardTitle className="text-lg font-bold">Student ID & Credentials Generator</CardTitle>
+                <Badge variant="outline" className="text-amber-500 border-amber-500/30 font-semibold text-[10px] tracking-wider uppercase">
                   Admin Exclusive
                 </Badge>
-              </CardTitle>
+              </div>
               <CardDescription className="text-xs">
                 Generate unique Student IDs, passwords, and auto-enrol into database, class channels, and projects.
               </CardDescription>
             </div>
+            <div className="flex items-center gap-1 bg-background/80 p-1 rounded-xl border border-border/60">
+              <Button
+                size="sm"
+                variant={mode === 'single' ? 'default' : 'ghost'}
+                onClick={() => setMode('single')}
+                className="text-xs h-7 gap-1.5"
+              >
+                <UserCheck className="h-3.5 w-3.5" /> Single Student
+              </Button>
+              <Button
+                size="sm"
+                variant={mode === 'mass' ? 'default' : 'ghost'}
+                onClick={() => setMode('mass')}
+                className="text-xs h-7 gap-1.5"
+              >
+                <Users className="h-3.5 w-3.5" /> Mass File Generator
+              </Button>
+            </div>
           </div>
+        </CardHeader>
+      </Card>
 
-          <div className="flex items-center gap-1.5 bg-muted/40 p-1 rounded-lg border border-border">
-            <button
-              type="button"
-              onClick={() => setMode('single')}
-              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center gap-1.5 ${mode === 'single' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
-                }`}
-            >
-              <UserCheck className="h-3.5 w-3.5 text-amber-400" />
-              <span>Single Student</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setMode('mass')}
-              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center gap-1.5 ${mode === 'mass' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
-                }`}
-            >
-              <Users className="h-3.5 w-3.5 text-blue-400" />
-              <span>Mass File Generator</span>
-            </button>
-          </div>
-        </div>
-      </CardHeader>
-
-      <CardContent className="pt-6">
+      {/* Mode Content */}
+      <Card>
+        <CardContent className="p-6">
         {mode === 'single' ? (
           <div className="space-y-6">
             <form onSubmit={handleSingleGenerate} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -387,16 +371,6 @@ Michael Brown,ADM-2026-003,Middle School,Grade 8 - Sec B,,Sarah Brown,sarah.brow
                   placeholder="e.g. Sarah Jenkins"
                   value={singleForm.fullName}
                   onChange={(e) => setSingleForm({ ...singleForm, fullName: e.target.value })}
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold">Student Email Address (Optional)</Label>
-                <Input
-                  type="email"
-                  placeholder="e.g. student.jenkins@gmail.com"
-                  value={singleForm.studentEmail}
-                  onChange={(e) => setSingleForm({ ...singleForm, studentEmail: e.target.value })}
                 />
               </div>
 
@@ -446,21 +420,12 @@ Michael Brown,ADM-2026-003,Middle School,Grade 8 - Sec B,,Sarah Brown,sarah.brow
                 </Select>
               </div>
 
-              <div className="space-y-1.5">
+              <div className="space-y-1.5 sm:col-span-2">
                 <Label className="text-xs font-semibold">Parent Full Name (Optional)</Label>
                 <Input
                   placeholder="e.g. Robert Smith"
                   value={singleForm.parentFullName}
                   onChange={(e) => setSingleForm({ ...singleForm, parentFullName: e.target.value })}
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold">Parent Email Address (Optional)</Label>
-                <Input
-                  placeholder="e.g. parent.smith@gmail.com"
-                  value={singleForm.parentEmail}
-                  onChange={(e) => setSingleForm({ ...singleForm, parentEmail: e.target.value })}
                 />
               </div>
 
@@ -813,5 +778,6 @@ Michael Brown,ADM-2026-003,Middle School,Grade 8 - Sec B,,Sarah Brown,sarah.brow
         )}
       </CardContent>
     </Card>
+    </div>
   );
 }

@@ -60,6 +60,13 @@ const TEACHER_PROMPTS = [
   { icon: MessageSquareText, label: 'Draft Class Announcement', prompt: 'Draft an announcement for my class students about upcoming homework due dates.' },
 ];
 
+const ALUMNI_PROMPTS = [
+  { icon: GraduationCap, label: 'Alumni Network & Connections 🎓', prompt: 'How can I connect with fellow alumni, graduating batches, and departmental networks from my Alma Mater?' },
+  { icon: Sparkles, label: 'Career Mentorship & Guidance 💼', prompt: 'Suggest ways I can mentor current students or share job opportunities and career guidance with the campus.' },
+  { icon: FileText, label: 'Transcript & Degree Verification 📜', prompt: 'What is the procedure for requesting official academic transcripts, degree verification, and duplicate certificates?' },
+  { icon: MessageSquareText, label: 'Alumni Reunions & Campus Events 🏛️', prompt: 'Are there any upcoming campus reunions, alumni guest lectures, or homecoming events scheduled?' },
+];
+
 function initials(n) { return (n || '?').split(' ').map((x) => x[0]).slice(0, 2).join('').toUpperCase(); }
 
 export default function AIPage() {
@@ -73,8 +80,9 @@ export default function AIPage() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const scrollRef = useRef();
 
-  const isStudent = currentOrg?.role === 'STUDENT';
+  const isStudent = currentOrg?.role === 'STUDENT' || user?.email?.includes('student');
   const isParent = currentOrg?.role === 'PARENT' || user?.email?.includes('parent');
+  const isAlumni = currentOrg?.role === 'ALUMNI' || user?.email?.includes('alumni') || currentOrg?.title?.includes('Alumni');
   const isAccountant = currentOrg?.role === 'ACCOUNTANT' || user?.systemRole === 'ACCOUNTANT' || user?.email?.includes('accountant');
   const isAdminOrDirector = ['DIRECTOR', 'PRINCIPAL', 'ADMIN', 'OWNER'].includes(currentOrg?.role) || user?.systemRole === 'SUPER_ADMIN' || user?.systemRole === 'ADMIN';
 
@@ -82,6 +90,8 @@ export default function AIPage() {
     ? STUDENT_PROMPTS
     : isParent
     ? PARENT_PROMPTS
+    : isAlumni
+    ? ALUMNI_PROMPTS
     : isAccountant
     ? ACCOUNTANT_PROMPTS
     : isAdminOrDirector
@@ -518,6 +528,8 @@ export default function AIPage() {
                 ? 'bg-emerald-500/15 text-emerald-500'
                 : isParent
                 ? 'bg-purple-500/15 text-purple-500'
+                : isAlumni
+                ? 'bg-amber-500/15 text-amber-400'
                 : isAccountant
                 ? 'bg-blue-500/15 text-blue-500'
                 : isAdminOrDirector
@@ -528,6 +540,8 @@ export default function AIPage() {
                 <GraduationCap className="h-4.5 w-4.5" />
               ) : isParent ? (
                 <UserCheck className="h-4.5 w-4.5" />
+              ) : isAlumni ? (
+                <GraduationCap className="h-4.5 w-4.5" />
               ) : isAccountant ? (
                 <Landmark className="h-4.5 w-4.5" />
               ) : isAdminOrDirector ? (
@@ -542,6 +556,8 @@ export default function AIPage() {
                   ? 'Academic AI Study Buddy'
                   : isParent
                   ? 'Parent AI Academic Assistant'
+                  : isAlumni
+                  ? 'AI Alumni Relations & Career Mentor'
                   : isAccountant
                   ? 'AI Financial & Accounting Assistant'
                   : isAdminOrDirector
@@ -553,6 +569,8 @@ export default function AIPage() {
                   ? 'Your 24/7 personal tutor for homework, class tasks, and projects'
                   : isParent
                   ? "Monitor your child's progress & homework, and connect with Teachers & HOD"
+                  : isAlumni
+                  ? 'Networking with peers, career mentoring, transcript assistance & batch archives'
                   : isAccountant
                   ? 'Financial analysis, fee collection insights, payroll support & Tally synchronization'
                   : isAdminOrDirector
