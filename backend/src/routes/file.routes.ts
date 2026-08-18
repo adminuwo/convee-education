@@ -5,6 +5,7 @@ import fs from 'fs';
 import prisma from '../db/prisma';
 import { authenticate } from '../middleware/auth';
 import { env } from '../config/env';
+import { canUserAccessChannel } from './channel.routes';
 
 if (!fs.existsSync(env.UPLOAD_DIR)) {
   fs.mkdirSync(env.UPLOAD_DIR, { recursive: true });
@@ -80,6 +81,30 @@ router.get('/:id/download', async (req, res, next) => {
   try {
     const asset = await prisma.fileAsset.findUnique({ where: { id: req.params.id } });
     if (!asset) return res.status(404).json({ error: 'Not found' });
+
+    // Enforce authorization
+    if (asset.orgId) {
+      const membership = await prisma.membership.findFirst({
+        where: { userId: req.user!.id, orgId: asset.orgId, isActive: true },
+      });
+      if (!membership && req.user!.systemRole !== 'SUPER_ADMIN' && asset.uploaderId !== req.user!.id) {
+        return res.status(403).json({ error: 'Access denied to this file' });
+      }
+    } else if (asset.uploaderId !== req.user!.id && req.user!.systemRole !== 'SUPER_ADMIN') {
+      return res.status(403).json({ error: 'Access denied to this file' });
+    }
+
+    const channelId = (asset.metadata as any)?.channelId;
+    if (channelId) {
+      const channel = await prisma.channel.findUnique({ where: { id: channelId } });
+      if (channel) {
+        const hasAccess = await canUserAccessChannel(req.user!.id, channel);
+        if (!hasAccess && req.user!.systemRole !== 'SUPER_ADMIN' && asset.uploaderId !== req.user!.id) {
+          return res.status(403).json({ error: 'Access denied to this channel file' });
+        }
+      }
+    }
+
     const filepath = path.join(env.UPLOAD_DIR, asset.storedPath);
     if (!fs.existsSync(filepath)) return res.status(404).json({ error: 'File missing' });
     res.setHeader('Content-Type', asset.mimeType || 'application/octet-stream');
@@ -92,6 +117,15 @@ router.get('/', async (req, res, next) => {
   try {
     const orgId = req.query.orgId as string | undefined;
     const channelId = req.query.channelId as string | undefined;
+
+    if (orgId) {
+      const membership = await prisma.membership.findFirst({
+        where: { userId: req.user!.id, orgId, isActive: true },
+      });
+      if (!membership && req.user!.systemRole !== 'SUPER_ADMIN') {
+        return res.status(403).json({ error: 'Not a member of this organization' });
+      }
+    }
 
     let files = await prisma.fileAsset.findMany({
       where: orgId ? { orgId } : { uploaderId: req.user!.id },
@@ -116,6 +150,21 @@ router.delete('/:id', async (req, res, next) => {
   try {
     const asset = await prisma.fileAsset.findUnique({ where: { id: req.params.id } });
     if (!asset) return res.status(404).json({ error: 'File not found' });
+
+    let isAuthorized = asset.uploaderId === req.user!.id || req.user!.systemRole === 'SUPER_ADMIN';
+    if (!isAuthorized && asset.orgId) {
+      const membership = await prisma.membership.findFirst({
+        where: { userId: req.user!.id, orgId: asset.orgId, isActive: true },
+      });
+      if (membership && ['OWNER', 'DIRECTOR', 'PRINCIPAL', 'ADMIN'].includes(membership.role)) {
+        isAuthorized = true;
+      }
+    }
+
+    if (!isAuthorized) {
+      return res.status(403).json({ error: 'Unauthorized to delete this file' });
+    }
+
     const filepath = path.join(env.UPLOAD_DIR, asset.storedPath);
     if (fs.existsSync(filepath)) {
       try { fs.unlinkSync(filepath); } catch (e) {}

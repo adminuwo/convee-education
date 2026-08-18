@@ -333,6 +333,10 @@ export default function App() {
                     </RequireRole>
                   }
                 />
+                <Route
+                  path="student_id_generator"
+                  element={<Navigate to="/app/student-id-generator" replace />}
+                />
                 <Route path="profile" element={<ProfilePage />} />
               </Route>
               <Route path="*" element={<Navigate to="/" replace />} />

@@ -22,6 +22,14 @@ import AcademicPromotionModal from '@/components/admin/AcademicPromotionModal';
 
 function initials(n) { return (n || '?').split(' ').map((x) => x[0]).slice(0, 2).join('').toUpperCase(); }
 
+function extractMemberId(title) {
+  if (!title) return null;
+  const bracketMatch = title.match(/\[(.*?)\]/);
+  if (bracketMatch) return bracketMatch[1];
+  const idMatch = title.match(/([A-Z]{3,4}-\d{4}-[A-Za-z0-9]+)/i) || title.match(/([A-Z]{3,4}-[A-Za-z0-9]+)/i);
+  return idMatch ? idMatch[1] : null;
+}
+
 function renderEmailCell(u) {
   const email = u?.email;
   if (!email || !email.includes('@') || email.startsWith('STU-') || email.startsWith('PAR-') || email.startsWith('stu-') || email.startsWith('par-') || email.endsWith('.convee.local')) {
@@ -481,9 +489,9 @@ export default function AdminPage() {
                                 </Avatar>
                                 <div className="flex items-center gap-2 flex-wrap">
                                   <span className="font-medium">{m.user?.fullName || m.user?.email || 'Unnamed'}</span>
-                                  {(m.title?.match(/\[(.*?)\]/)?.[1] || m.title?.match(/([A-Z]{3}-\d{4}-\d{3,4})/i)?.[1]) && (
+                                  {extractMemberId(m.title) && (
                                     <Badge variant="outline" className="font-mono text-[10px] px-1.5 py-0 h-4 font-bold bg-primary/10 text-primary border-primary/20">
-                                      {m.title?.match(/\[(.*?)\]/)?.[1] || m.title?.match(/([A-Z]{3}-\d{4}-\d{3,4})/i)?.[1]}
+                                      {extractMemberId(m.title)}
                                     </Badge>
                                   )}
                                 </div>
@@ -579,9 +587,9 @@ export default function AdminPage() {
                                 </Avatar>
                                 <div className="flex items-center gap-2 flex-wrap">
                                   <span className="font-medium">{m.user?.fullName || m.user?.email || 'Unassigned Student'}</span>
-                                  {(m.title?.match(/\[(.*?)\]/)?.[1] || m.title?.match(/([A-Z]{3}-\d{4}-\d{3,4})/i)?.[1]) && (
+                                  {extractMemberId(m.title) && (
                                     <Badge variant="outline" className="font-mono text-[10px] px-1.5 py-0 h-4 font-bold bg-amber-500/10 text-amber-400 border-amber-500/20">
-                                      {m.title?.match(/\[(.*?)\]/)?.[1] || m.title?.match(/([A-Z]{3}-\d{4}-\d{3,4})/i)?.[1]}
+                                      {extractMemberId(m.title)}
                                     </Badge>
                                   )}
                                 </div>
@@ -749,9 +757,9 @@ export default function AdminPage() {
                                 </Avatar>
                                 <div className="flex items-center gap-2 flex-wrap">
                                   <span className="font-medium">{m.user?.fullName || m.user?.email || 'Parent / Guardian'}</span>
-                                  {(m.title?.match(/\[(.*?)\]/)?.[1] || m.title?.match(/([A-Z]{3}-\d{4}-\d{3,4})/i)?.[1]) && (
+                                  {extractMemberId(m.title) && (
                                     <Badge variant="outline" className="font-mono text-[10px] px-1.5 py-0 h-4 font-bold bg-purple-500/10 text-purple-400 border-purple-500/20">
-                                      {m.title?.match(/\[(.*?)\]/)?.[1] || m.title?.match(/([A-Z]{3}-\d{4}-\d{3,4})/i)?.[1]}
+                                      {extractMemberId(m.title)}
                                     </Badge>
                                   )}
                                 </div>
@@ -863,9 +871,9 @@ export default function AdminPage() {
                                 </Avatar>
                                 <div className="flex items-center gap-2 flex-wrap">
                                   <span className="font-medium">{m.user?.fullName || m.user?.email || 'Unnamed Student'}</span>
-                                  {(m.title?.match(/\[(.*?)\]/)?.[1] || m.title?.match(/([A-Z]{3}-\d{4}-\d{3,4})/i)?.[1]) && (
+                                  {extractMemberId(m.title) && (
                                     <Badge variant="outline" className="font-mono text-[10px] px-1.5 py-0 h-4 font-bold bg-emerald-500/10 text-emerald-500 border-emerald-500/20">
-                                      {m.title?.match(/\[(.*?)\]/)?.[1] || m.title?.match(/([A-Z]{3}-\d{4}-\d{3,4})/i)?.[1]}
+                                      {extractMemberId(m.title)}
                                     </Badge>
                                   )}
                                 </div>

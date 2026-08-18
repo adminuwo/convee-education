@@ -146,8 +146,10 @@ export default function StudentFeeStatusPage() {
 
     const totalCollected = filteredRecords.reduce((acc, r) => acc + (r.paidAmount || 0), 0);
     const totalPending = filteredRecords.reduce((acc, r) => acc + (r.pendingBalance || 0), 0);
+    const partialPending = filteredRecords.filter((r) => r.status === 'PARTIAL').reduce((acc, r) => acc + (r.pendingBalance || 0), 0);
+    const unpaidPending = filteredRecords.filter((r) => r.status === 'PENDING' || r.status === 'OVERDUE').reduce((acc, r) => acc + (r.pendingBalance || 0), 0);
 
-    return { total, paid, partial, unpaid, totalCollected, totalPending };
+    return { total, paid, partial, unpaid, totalCollected, totalPending, partialPending, unpaidPending };
   }, [filteredRecords]);
 
   if (loading || orgLoading) {
@@ -223,7 +225,9 @@ export default function StudentFeeStatusPage() {
             <div>
               <div className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Partial Dues</div>
               <div className="text-2xl font-extrabold text-amber-400 mt-1 tabular-nums">{stats.partial}</div>
-              <div className="text-[11px] text-amber-400 font-medium mt-0.5">Installments active</div>
+              <div className="text-[11px] text-amber-400 font-semibold mt-0.5">
+                ₹{stats.partialPending.toLocaleString('en-IN')} Remaining
+              </div>
             </div>
             <div className="h-10 w-10 rounded-lg bg-amber-500/10 text-amber-400 flex items-center justify-center">
               <Clock className="h-5 w-5" />
@@ -234,10 +238,12 @@ export default function StudentFeeStatusPage() {
         <Card className="bg-card/50 border-border">
           <CardContent className="p-4 flex items-center justify-between">
             <div>
-              <div className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Pending Dues</div>
-              <div className="text-2xl font-extrabold text-rose-400 mt-1 tabular-nums">{stats.unpaid}</div>
-              <div className="text-[11px] text-rose-400 font-bold mt-0.5">
-                ₹{stats.totalPending.toLocaleString('en-IN')} Due
+              <div className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Total Outstanding</div>
+              <div className="text-2xl font-extrabold text-rose-400 mt-1 tabular-nums">
+                ₹{stats.totalPending.toLocaleString('en-IN')}
+              </div>
+              <div className="text-[11px] text-rose-400/90 font-semibold mt-0.5">
+                {stats.partial + stats.unpaid} students ({stats.partial} partial{stats.unpaid > 0 ? `, ${stats.unpaid} unpaid` : ''})
               </div>
             </div>
             <div className="h-10 w-10 rounded-lg bg-rose-500/10 text-rose-400 flex items-center justify-center">

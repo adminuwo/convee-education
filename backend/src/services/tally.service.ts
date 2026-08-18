@@ -1574,6 +1574,7 @@ export async function computeTallyDiff(orgId: string): Promise<ReconcileDiffResu
         tv.remoteId === recRemote ||
         tv.voucherNumber === invNum ||
         tv.voucherNumber === recNum ||
+        (f.tallyVoucherId && (tv.voucherNumber === f.tallyVoucherId || tv.remoteId === f.tallyVoucherId || tv.guid === f.tallyVoucherId)) ||
         (rollNo && (tv.partyLedger.includes(rollNo) || tv.narration.includes(rollNo) || tv.allLedgers?.some((l: string) => l.includes(rollNo)))) ||
         (studentName && (tv.partyLedger.includes(studentName) || tv.narration.includes(studentName) || tv.allLedgers?.some((l: string) => l.includes(studentName))))
       ) {
@@ -1742,10 +1743,12 @@ export async function computeTallyDiff(orgId: string): Promise<ReconcileDiffResu
     const cleanParty = (v1.partyLedger || '').replace(/\(.*?\)/g, '').replace(/\[.*?\]/g, '').trim();
 
     // Look for paired voucher (e.g. Journal Due + Payment Disbursement for same salary)
-    const pairedIdx = rawUnmatched.findIndex(
+    const isFeeVoucher = (v1.narration || '').toLowerCase().includes('student') || (v1.narration || '').toLowerCase().includes('fee') || (v1.partyLedger || '').includes('STU-');
+    const pairedIdx = isFeeVoucher ? -1 : rawUnmatched.findIndex(
       (v2, idx2) =>
         idx2 !== i &&
         !processedIndices.has(idx2) &&
+        !((v2.narration || '').toLowerCase().includes('fee') || (v2.partyLedger || '').includes('STU-')) &&
         Math.abs(v2.amount - v1.amount) < 0.01 &&
         ((cleanParty && v2.partyLedger.includes(cleanParty)) || (v1.narration && v2.narration && v1.narration.slice(0, 20) === v2.narration.slice(0, 20)))
     );
@@ -1837,12 +1840,14 @@ export async function executeReconcileAction(
         return { success: true, message: `Removed expense record from Convee database.` };
       }
     } else if (action === 'IMPORT_TO_CONVEE') {
-      const { voucherType, voucherNumber, partyLedger, amount, narration, date, pairedVouchers } = payload;
+      const { voucherType, voucherNumber, partyLedger, amount, narration, date, pairedVouchers, guid, remoteId } = payload;
       const vType = (voucherType || '').toUpperCase();
       const yr = '2026-27';
 
-      if (vType === 'RECEIPT' || (narration || '').toLowerCase().includes('fee')) {
-        const rollMatch = (partyLedger || narration || '').match(/\[(STU-[^\]]+)\]/i);
+      if (vType === 'RECEIPT' || (narration || '').toLowerCase().includes('fee') || (narration || '').toLowerCase().includes('student') || (partyLedger || '').includes('STU-')) {
+        const rollMatch = (partyLedger || narration || '').match(/\[(STU-[^\]]+)\]/i) ||
+          (partyLedger || narration || '').match(/\((STU-[^)]+)\)/i) ||
+          (partyLedger || narration || '').match(/(STU-[A-Za-z0-9-]+)/i);
         const nameClean = (partyLedger || '').replace(/\[.*?\]/g, '').replace(/\(.*?\)/g, '').trim() || 'Imported Student';
         const feeAmt = parseFloat(amount) || 0;
 
@@ -1851,21 +1856,21 @@ export async function executeReconcileAction(
             orgId,
             studentRollNo: rollMatch ? rollMatch[1] : `STU-${Math.floor(1000 + Math.random() * 9000)}`,
             studentName: nameClean,
-            feeHeader: 'Imported Tally Tuition Fee',
+            feeHeader: narration && narration.includes('-') ? narration.split('-')[1]?.split('(')[0]?.trim() || 'Imported Tally Tuition Fee' : 'Imported Tally Tuition Fee',
             academicYear: yr,
             totalAmount: feeAmt,
             paidAmount: feeAmt,
             pendingBalance: 0,
             status: 'PAID',
             receiptNo: voucherNumber ? `REC-${voucherNumber}` : `REC-IMP-${Date.now().toString().slice(-6)}`,
-            tallyVoucherId: voucherNumber || `VCH-${Date.now().toString().slice(-6)}`,
+            tallyVoucherId: voucherNumber || guid || remoteId || `VCH-${Date.now().toString().slice(-6)}`,
             paymentMethod: 'Tally Direct Receipt',
             notes: `Imported from Tally Prime: ${narration || partyLedger}`,
             tallySyncStatus: 'TALLY_VOUCHER_SYNCED',
             syncedAt: new Date(),
           },
         });
-        return { success: true, message: `Imported receipt voucher '${voucherNumber}' into Student Fees.` };
+        return { success: true, message: `Imported student fee voucher '${voucherNumber || nameClean}' into Student Fees.` };
       } else if (vType.includes('PAYMENT') || vType.includes('JOURNAL') || (narration || '').toLowerCase().includes('salary') || pairedVouchers) {
         const payAmt = parseFloat(amount) || 0;
         const isSalary = (partyLedger || narration || '').toLowerCase().includes('salary') || (partyLedger || narration || '').toLowerCase().includes('accountant') || (partyLedger || narration || '').toLowerCase().includes('fac-');

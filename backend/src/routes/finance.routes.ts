@@ -37,19 +37,30 @@ const db = prisma as any;
 router.use(authenticate);
 
 async function getOrgId(req: Request): Promise<string | null> {
-  let orgId = (req.headers['x-org-id'] as string) || (req.headers['org-id'] as string);
-  if (!orgId || orgId === 'undefined' || orgId === 'null') {
-    const userId = req.user?.id;
-    if (userId) {
-      const membership = await prisma.membership.findFirst({ where: { userId } });
-      if (membership) orgId = membership.orgId;
-    }
+  if (!req.user) return null;
+  const rawOrgId = (req.headers['x-org-id'] as string) || (req.headers['org-id'] as string) || (req.query.orgId as string);
+  const targetOrgId = (rawOrgId && rawOrgId !== 'undefined' && rawOrgId !== 'null') ? rawOrgId : undefined;
+
+  const membership = await prisma.membership.findFirst({
+    where: {
+      userId: req.user.id,
+      ...(targetOrgId ? { orgId: targetOrgId } : {}),
+      isActive: true,
+    },
+  });
+
+  if (!membership) {
+    if (req.user.systemRole === 'SUPER_ADMIN' && targetOrgId) return targetOrgId;
+    return null;
   }
-  if (!orgId || orgId === 'undefined' || orgId === 'null') {
-    const firstOrg = await prisma.organization.findFirst();
-    if (firstOrg) orgId = firstOrg.id;
+
+  const roleUpper = (membership.role || '').toUpperCase();
+  const allowedRoles = ['OWNER', 'DIRECTOR', 'PRINCIPAL', 'ADMIN', 'ACCOUNTANT'];
+  if (!allowedRoles.includes(roleUpper) && req.user.systemRole !== 'SUPER_ADMIN') {
+    return null;
   }
-  return orgId || null;
+
+  return membership.orgId;
 }
 
 const syncLockMap = new Map<string, Promise<void>>();
@@ -737,6 +748,53 @@ router.get('/overview', async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error('Error fetching financial overview:', error);
     res.status(500).json({ error: error.message || 'Failed to fetch financial overview' });
+  }
+});
+
+/**
+ * GET /api/v1/finance/fees/parent
+ * Fetch fees and payment receipts for children linked to the logged-in parent
+ */
+router.get('/fees/parent', async (req: Request, res: Response) => {
+  try {
+    const parentId = req.user?.id;
+    if (!parentId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const links = await prisma.parentStudentLink.findMany({
+      where: { parentUserId: parentId },
+    });
+
+    const studentIds = links.map((l) => l.studentUserId);
+    if (studentIds.length === 0) {
+      return res.json({ fees: [] });
+    }
+
+    const studentMembers = await prisma.membership.findMany({
+      where: { userId: { in: studentIds }, role: 'STUDENT', isActive: true },
+      include: { user: true },
+    });
+
+    const studentNames = studentMembers.map((m) => m.user?.fullName).filter(Boolean) as string[];
+    const rollNumbers = studentMembers.map((m) => {
+      const match = m.title?.match(/\[(.*?)\]/)?.[1] || m.title?.match(/([A-Z]{3,4}-\d{4}-[A-Za-z0-9]+)/i)?.[1];
+      return match;
+    }).filter(Boolean) as string[];
+
+    const fees = await db.studentFeeLedger.findMany({
+      where: {
+        OR: [
+          { studentId: { in: studentIds } },
+          { studentName: { in: studentNames } },
+          { studentRollNo: { in: rollNumbers } },
+        ],
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    res.json({ fees });
+  } catch (error: any) {
+    console.error('Error fetching parent fees:', error);
+    res.status(500).json({ error: error.message || 'Failed to fetch parent fees' });
   }
 });
 

@@ -11,10 +11,11 @@ import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { Building2, Users, Layers, Crown, ChevronRight, GraduationCap, UserCheck, Search, BookOpen, Sparkles, FolderGit2, CalendarCheck, AlertTriangle, CheckCircle, Clock, IndianRupee, CreditCard, FileText } from 'lucide-react';
+import { Building2, Users, Layers, Crown, ChevronRight, GraduationCap, UserCheck, Search, BookOpen, Sparkles, FolderGit2, CalendarCheck, AlertTriangle, CheckCircle, Clock, IndianRupee, CreditCard, FileText, BarChart3 } from 'lucide-react';
 import { connectSocket, getSocket } from '@/lib/socket';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
+import ClassAcademicAnalytics from '@/components/classroom/ClassAcademicAnalytics';
 
 function initials(n) {
   return (n || '?').split(' ').map((x) => x[0]).slice(0, 2).join('').toUpperCase();
@@ -225,13 +226,17 @@ export default function TeacherPage() {
 
       {/* Tabs Section */}
       <Tabs value={activeTab} onValueChange={(val) => setSearchParams({ tab: val })} className="space-y-4">
-        <TabsList className="grid w-full grid-cols-3 max-w-md bg-muted/50 p-1 rounded-lg">
+        <TabsList className="grid w-full grid-cols-4 max-w-lg bg-muted/50 p-1 rounded-lg">
           <TabsTrigger value="students" className="text-xs font-semibold flex items-center gap-1.5" data-testid="tab-students">
             <GraduationCap className="h-3.5 w-3.5 text-emerald-500" />
             <span>Class Students</span>
           </TabsTrigger>
+          <TabsTrigger value="analytics" className="text-xs font-semibold flex items-center gap-1.5" data-testid="tab-analytics">
+            <BarChart3 className="h-3.5 w-3.5 text-blue-500" />
+            <span>Class Analytics</span>
+          </TabsTrigger>
           <TabsTrigger value="structures" className="text-xs font-semibold flex items-center gap-1.5" data-testid="tab-structures">
-            <Building2 className="h-3.5 w-3.5 text-blue-500" />
+            <Building2 className="h-3.5 w-3.5 text-indigo-500" />
             <span>My Classes</span>
           </TabsTrigger>
           <TabsTrigger value="projects" className="text-xs font-semibold flex items-center gap-1.5" data-testid="tab-projects">
@@ -531,6 +536,15 @@ export default function TeacherPage() {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* Tab 4: Class Academic & Attendance Analytics */}
+        <TabsContent value="analytics">
+          <ClassAcademicAnalytics
+            orgId={currentOrg?.id}
+            classTeams={myClassTeacherTeams.length > 0 ? myClassTeacherTeams : allTeams}
+            user={user}
+          />
         </TabsContent>
       </Tabs>
     </motion.div>

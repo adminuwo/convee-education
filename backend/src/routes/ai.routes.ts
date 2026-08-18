@@ -52,15 +52,20 @@ async function callLLM(sessionKey: string, systemPrompt: string, userMessage: st
 
 router.post('/chat', async (req, res, next) => {
   try {
-    const { message, sessionKey, systemPrompt, provider, model } = req.body;
+    const { message, sessionKey } = req.body;
     if (!message) return res.status(400).json({ error: 'message required' });
-    const key = sessionKey || `user-${req.user!.id}-default`;
-    let convo = await prisma.aIConversation.findFirst({ where: { sessionKey: key } }).catch(() => null);
+
+    // Ensure sessionKey is always securely scoped to current authenticated user
+    const key = sessionKey
+      ? (sessionKey.startsWith(`user-${req.user!.id}-`) ? sessionKey : `user-${req.user!.id}-${sessionKey.replace(/^user-[^-]+-/, '')}`)
+      : `user-${req.user!.id}-default`;
+
+    let convo = await prisma.aIConversation.findFirst({ where: { sessionKey: key, userId: req.user!.id } }).catch(() => null);
     if (!convo) {
       convo = await prisma.aIConversation.create({
         data: { userId: req.user!.id, sessionKey: key, title: 'New Conversation' },
       }).catch(async () => {
-        return (await prisma.aIConversation.findFirst({ where: { sessionKey: key } }).catch(() => null)) as any;
+        return (await prisma.aIConversation.findFirst({ where: { sessionKey: key, userId: req.user!.id } }).catch(() => null)) as any;
       });
     }
     if (convo) {
@@ -77,9 +82,9 @@ router.post('/chat', async (req, res, next) => {
       include: { department: true, team: true },
     });
 
-    let sys = systemPrompt;
+    let sys = '';
 
-    if (!sys) {
+    if (true) {
       if (membership?.role === 'STUDENT') {
         // Fetch active tasks/homework for student
         const userTasks = await prisma.task.findMany({
@@ -756,9 +761,10 @@ YOUR MISSION & CAPABILITIES:
       }
     }
 
+    // Server-enforced model routing based strictly on authenticated role & user permissions
     const llmConfig = resolveLLMProviderAndModel(membership?.role, req.user!.email, currentUser?.systemRole);
-    const chosenProvider = provider || llmConfig.provider;
-    const chosenModel = model || llmConfig.model;
+    const chosenProvider = llmConfig.provider;
+    const chosenModel = llmConfig.model;
 
     const { text, provider: usedProvider, model: usedModel } = await callLLM(key, sys, message, chosenProvider, chosenModel);
 

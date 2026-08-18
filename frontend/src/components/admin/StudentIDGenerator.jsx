@@ -21,7 +21,7 @@ const SYSTEM_FIELDS = [
   { key: 'parentFullName', label: 'Parent Full Name (Optional)', required: false, aliases: ['father name', 'mother name', 'guardian name', 'parent name', 'parentname', 'father', 'mother', 'guardian', 'parent_name'] },
 ];
 
-export default function StudentIDGenerator({ departments = [], onStudentCreated }) {
+function StudentIDGenerator({ departments = [], onStudentCreated }) {
   const { currentOrg } = useAuth();
   const { refreshOrgData } = useOrgData() || {};
   const [mode, setMode] = useState('single'); // 'single' | 'mass'
@@ -377,15 +377,15 @@ Michael Brown,ADM-2026-003,Middle School,Grade 8 - Sec B,Sarah Brown
               <div className="space-y-1.5">
                 <Label className="text-xs font-semibold">School Wing / Department *</Label>
                 <Select
-                  value={singleForm.departmentId}
-                  onValueChange={(val) => setSingleForm({ ...singleForm, departmentId: val, teamId: '' })}
+                  value={singleForm.departmentId || undefined}
+                  onValueChange={(val) => setSingleForm({ ...singleForm, departmentId: val || '', teamId: '' })}
                 >
                   <SelectTrigger className="text-xs">
                     <SelectValue placeholder="Select Wing / Department" />
                   </SelectTrigger>
                   <SelectContent>
                     {departments.map((d) => (
-                      <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
+                      <SelectItem key={d.id || d.name} value={String(d.id)}>{d.name}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -395,8 +395,8 @@ Michael Brown,ADM-2026-003,Middle School,Grade 8 - Sec B,Sarah Brown
                 <Label className="text-xs font-semibold">Class & Section *</Label>
                 <Select
                   disabled={!singleForm.departmentId}
-                  value={singleForm.teamId}
-                  onValueChange={(val) => setSingleForm({ ...singleForm, teamId: val })}
+                  value={singleForm.teamId || undefined}
+                  onValueChange={(val) => setSingleForm({ ...singleForm, teamId: val || '' })}
                 >
                   <SelectTrigger className={`text-xs ${!singleForm.departmentId ? 'opacity-60 bg-muted/30 cursor-not-allowed' : ''}`}>
                     <SelectValue
@@ -408,13 +408,14 @@ Michael Brown,ADM-2026-003,Middle School,Grade 8 - Sec B,Sarah Brown
                     />
                   </SelectTrigger>
                   <SelectContent>
-                    {availableTeams.map((t) => (
-                      <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-                    ))}
-                    {availableTeams.length === 0 && (
-                      <div className="p-2.5 text-xs text-muted-foreground text-center">
+                    {availableTeams.length > 0 ? (
+                      availableTeams.map((t) => (
+                        <SelectItem key={t.id || t.name} value={String(t.id)}>{t.name}</SelectItem>
+                      ))
+                    ) : (
+                      <SelectItem value="__NO_TEAMS__" disabled>
                         No class sections found for this wing
-                      </div>
+                      </SelectItem>
                     )}
                   </SelectContent>
                 </Select>
@@ -611,11 +612,13 @@ Michael Brown,ADM-2026-003,Middle School,Grade 8 - Sec B,Sarah Brown
                           <SelectItem value="__UNMAPPED__" className="text-muted-foreground italic">
                             -- Do Not Map --
                           </SelectItem>
-                          {rawHeaders.map((header, idx) => (
-                            <SelectItem key={idx} value={header}>
-                              📄 {header}
-                            </SelectItem>
-                          ))}
+                          {rawHeaders
+                            .filter((header) => header && String(header).trim().length > 0)
+                            .map((header, idx) => (
+                              <SelectItem key={idx} value={String(header)}>
+                                📄 {String(header)}
+                              </SelectItem>
+                            ))}
                         </SelectContent>
                       </Select>
                     </div>
@@ -781,3 +784,6 @@ Michael Brown,ADM-2026-003,Middle School,Grade 8 - Sec B,Sarah Brown
     </div>
   );
 }
+
+export { StudentIDGenerator };
+export default StudentIDGenerator;

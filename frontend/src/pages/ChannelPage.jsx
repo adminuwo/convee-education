@@ -387,7 +387,7 @@ export default function ChannelPage() {
     });
 
     const memberTags = filteredMembers.flatMap((m) => {
-      const memId = m.title?.match(/\[(.*?)\]/)?.[1] || m.title?.match(/([A-Z]{3}-\d{4}-\d{3,4})/i)?.[1] || null;
+      const memId = m.title?.match(/\[(.*?)\]/)?.[1] || m.title?.match(/([A-Z]{3,4}-\d{4}-[A-Za-z0-9]+)/i)?.[1] || null;
       const tags = [
         {
           tag: m.user?.fullName?.toLowerCase().replace(/\s+/g, '') || m.user?.email?.split('@')[0] || 'user',

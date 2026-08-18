@@ -1,11 +1,14 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { orgApi } from '@/lib/api';
-import StudentIDGenerator from '@/components/admin/StudentIDGenerator';
+import StudentIDGenerator, { StudentIDGenerator as NamedStudentIDGenerator } from '@/components/admin/StudentIDGenerator';
 import { ShieldAlert } from 'lucide-react';
 import { motion } from 'framer-motion';
 
-export default function StudentIDGeneratorPage() {
+const MotionDiv = (motion && motion.div) ? motion.div : 'div';
+const GeneratorComponent = StudentIDGenerator || NamedStudentIDGenerator;
+
+export function StudentIDGeneratorPage() {
   const { currentOrg } = useAuth();
   const [departments, setDepartments] = useState([]);
   const isAdmin = ['ADMIN', 'DIRECTOR', 'OWNER', 'PRINCIPAL', 'DEAN'].includes(currentOrg?.role);
@@ -37,13 +40,17 @@ export default function StudentIDGeneratorPage() {
   }
 
   return (
-    <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="p-4 sm:p-6 lg:p-8 space-y-6" data-testid="student-id-generator-page">
+    <MotionDiv initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="p-4 sm:p-6 lg:p-8 space-y-6" data-testid="student-id-generator-page">
       <div>
         <h1 className="font-display text-2xl font-semibold text-foreground">Student ID Generator</h1>
         <p className="text-muted-foreground text-sm">Exclusive Admin dashboard to generate unique student IDs, passwords, and auto-enrol students.</p>
       </div>
 
-      <StudentIDGenerator departments={departments} onStudentCreated={load} />
-    </motion.div>
+      {GeneratorComponent ? (
+        <GeneratorComponent departments={departments} onStudentCreated={load} />
+      ) : null}
+    </MotionDiv>
   );
 }
+
+export default StudentIDGeneratorPage;

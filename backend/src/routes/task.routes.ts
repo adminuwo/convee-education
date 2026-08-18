@@ -199,6 +199,14 @@ router.get('/:taskId', async (req, res, next) => {
       },
     });
     if (!task) return res.status(404).json({ error: 'Task not found' });
+
+    const m = await prisma.membership.findFirst({
+      where: { userId: req.user!.id, orgId: task.orgId, isActive: true },
+    });
+    if (!m && req.user!.systemRole !== 'SUPER_ADMIN') {
+      return res.status(403).json({ error: 'Access denied: You are not a member of this organization' });
+    }
+
     res.json(task);
   } catch (e) { next(e); }
 });
@@ -271,6 +279,14 @@ router.patch('/:taskId', async (req, res, next) => {
 
 router.post('/:taskId/comments', async (req, res, next) => {
   try {
+    const task = await prisma.task.findUnique({ where: { id: req.params.taskId } });
+    if (!task) return res.status(404).json({ error: 'Task not found' });
+    const m = await prisma.membership.findFirst({
+      where: { userId: req.user!.id, orgId: task.orgId, isActive: true },
+    });
+    if (!m && req.user!.systemRole !== 'SUPER_ADMIN') {
+      return res.status(403).json({ error: 'Not a member of this organization' });
+    }
     const c = await prisma.taskComment.create({
       data: { taskId: req.params.taskId, userId: req.user!.id, content: req.body.content },
       include: { user: { select: { id: true, fullName: true, avatarUrl: true } } },
@@ -286,8 +302,23 @@ router.post('/:taskId/assignees/:userId/respond', async (req, res, next) => {
     if (existingTask.status === 'CANCELLED' || existingTask.status === 'COMPLETED') {
       return res.status(400).json({ error: 'This task is locked and cannot accept responses.' });
     }
+
+    const m = await prisma.membership.findFirst({
+      where: { userId: req.user!.id, orgId: existingTask.orgId, isActive: true },
+    });
+    if (!m && req.user!.systemRole !== 'SUPER_ADMIN') {
+      return res.status(403).json({ error: 'Not a member of this organization' });
+    }
+
     const { status, note, requestedDueDate } = req.body;
     const targetUserId = req.params.userId || req.user!.id;
+
+    // Enforce that a user can only respond for themselves unless they are task creator or org leadership
+    const isSelf = targetUserId === req.user!.id;
+    const isManager = existingTask.createdById === req.user!.id || (m && ['OWNER', 'DIRECTOR', 'PRINCIPAL', 'ADMIN'].includes(m.role));
+    if (!isSelf && !isManager && req.user!.systemRole !== 'SUPER_ADMIN') {
+      return res.status(403).json({ error: 'Forbidden: You cannot respond to assignments on behalf of another user' });
+    }
 
     let parsedDate: Date | null = null;
     if (requestedDueDate) {

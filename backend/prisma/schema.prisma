@@ -678,7 +678,7 @@ model AttendanceRecord {
   studentId    String
   date         DateTime
   status       AttendanceStatus @default(PRESENT)
-  recordedById String
+  recordedById String?
   notes        String?
   createdAt    DateTime         @default(now())
   updatedAt    DateTime         @updatedAt
@@ -1013,6 +1013,7 @@ model TallyTombstone {
   voucherNumber   String?
   remoteId        String?
   tallySyncStatus String   @default("PENDING_TALLY_DELETE") // PENDING_TALLY_DELETE, TALLY_PURGED
+  createdAt       DateTime @default(now())
   deletedAt       DateTime @default(now())
 
   @@index([orgId])
@@ -1020,3 +1021,4 @@ model TallyTombstone {
   @@index([remoteId])
   @@index([voucherNumber])
 }
+

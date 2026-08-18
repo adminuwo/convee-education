@@ -395,6 +395,21 @@ router.post('/:channelId/members', async (req, res, next) => {
     const hasAccess = await canUserAccessChannel(req.user!.id, channel);
     if (!hasAccess) return res.status(403).json({ error: 'Forbidden' });
 
+    const callerMember = await prisma.channelMember.findUnique({
+      where: { channelId_userId: { channelId, userId: req.user!.id } },
+    });
+    const callerOrgMem = await prisma.membership.findFirst({
+      where: { userId: req.user!.id, orgId: channel.orgId, isActive: true },
+    });
+
+    const isChannelAdmin = Boolean(callerMember?.isAdmin || channel.createdById === req.user!.id);
+    const isOrgAdmin = callerOrgMem && ['OWNER', 'DIRECTOR', 'PRINCIPAL', 'ADMIN', 'DEAN', 'HOD'].includes(callerOrgMem.role);
+    const isTeacher = callerOrgMem && callerOrgMem.role === 'TEACHER';
+
+    if (!isChannelAdmin && !isOrgAdmin && !isTeacher && req.user!.systemRole !== 'SUPER_ADMIN') {
+      return res.status(403).json({ error: 'Only channel admins or faculty can add members to this channel' });
+    }
+
     const { userId, userIds } = req.body;
     const targetUserIds: string[] = Array.isArray(userIds) && userIds.length > 0 ? userIds : (userId ? [userId] : []);
     if (targetUserIds.length === 0) return res.status(400).json({ error: 'User ID(s) required' });
@@ -448,6 +463,22 @@ router.delete('/:channelId/members/:targetUserId', async (req, res, next) => {
 
     const hasAccess = await canUserAccessChannel(req.user!.id, channel);
     if (!hasAccess) return res.status(403).json({ error: 'Forbidden' });
+
+    const callerMember = await prisma.channelMember.findUnique({
+      where: { channelId_userId: { channelId, userId: req.user!.id } },
+    });
+    const callerOrgMem = await prisma.membership.findFirst({
+      where: { userId: req.user!.id, orgId: channel.orgId, isActive: true },
+    });
+
+    const isSelf = targetUserId === req.user!.id;
+    const isChannelAdmin = Boolean(callerMember?.isAdmin || channel.createdById === req.user!.id);
+    const isOrgAdmin = callerOrgMem && ['OWNER', 'DIRECTOR', 'PRINCIPAL', 'ADMIN', 'DEAN', 'HOD'].includes(callerOrgMem.role);
+    const isTeacher = callerOrgMem && callerOrgMem.role === 'TEACHER';
+
+    if (!isSelf && !isChannelAdmin && !isOrgAdmin && !isTeacher && req.user!.systemRole !== 'SUPER_ADMIN') {
+      return res.status(403).json({ error: 'Only channel admins or faculty can remove members from this channel' });
+    }
 
     await prisma.channelMember.deleteMany({
       where: { channelId, userId: targetUserId },

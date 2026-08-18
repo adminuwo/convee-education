@@ -12,10 +12,11 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { Building2, Users, Layers, Plus, Mail, Trash2, Crown, ChevronRight, GraduationCap, UserCheck, Filter } from 'lucide-react';
+import { Building2, Users, Layers, Plus, Mail, Trash2, Crown, ChevronRight, GraduationCap, UserCheck, Filter, BarChart3 } from 'lucide-react';
 import { connectSocket, getSocket } from '@/lib/socket';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
+import DepartmentAcademicAnalytics from '@/components/department/DepartmentAcademicAnalytics';
 
 function initials(n) { return (n || '?').split(' ').map((x) => x[0]).slice(0, 2).join('').toUpperCase(); }
 
@@ -296,6 +297,7 @@ export default function DepartmentPage() {
           <TabsTrigger value="members"><Users className="h-3.5 w-3.5 mr-1" /> Department Members</TabsTrigger>
           <TabsTrigger value="structure"><Layers className="h-3.5 w-3.5 mr-1" /> Classes & Sections</TabsTrigger>
           <TabsTrigger value="projects"><Building2 className="h-3.5 w-3.5 mr-1" /> Projects</TabsTrigger>
+          <TabsTrigger value="analytics"><BarChart3 className="h-3.5 w-3.5 mr-1" /> Academic Analytics</TabsTrigger>
         </TabsList>
 
         <TabsContent value="members">
@@ -634,6 +636,15 @@ export default function DepartmentPage() {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="analytics">
+          <DepartmentAcademicAnalytics
+            orgId={currentOrg?.id}
+            scopedDepartments={scopedDepartments}
+            currentRole={currentUserRole}
+            currentUser={user}
+          />
         </TabsContent>
       </Tabs>
 

@@ -49,6 +49,27 @@ router.get('/child/:studentId/report', async (req, res, next) => {
 
     if (!studentMem) return res.status(404).json({ error: 'Student not found' });
 
+    // Authorization: User must be either the student themselves, a linked parent, an authorized faculty member, or SUPER_ADMIN
+    const isSelf = req.user!.id === studentId;
+    const isSuperAdmin = req.user!.systemRole === 'SUPER_ADMIN';
+    const isLinkedParent = await prisma.parentStudentLink.findFirst({
+      where: { parentUserId: req.user!.id, studentUserId: studentId },
+    });
+
+    let isFaculty = false;
+    if (studentMem.orgId) {
+      const callerMem = await prisma.membership.findFirst({
+        where: { userId: req.user!.id, orgId: studentMem.orgId, isActive: true },
+      });
+      if (callerMem && ['TEACHER', 'HOD', 'DEAN', 'PRINCIPAL', 'DIRECTOR', 'ADMIN', 'OWNER'].includes(callerMem.role)) {
+        isFaculty = true;
+      }
+    }
+
+    if (!isSelf && !isSuperAdmin && !isLinkedParent && !isFaculty) {
+      return res.status(403).json({ error: 'Access denied: You are not authorized to view this student report' });
+    }
+
     // Class Teacher details
     let classTeacher: any = null;
     if (studentMem.team?.managerId) {

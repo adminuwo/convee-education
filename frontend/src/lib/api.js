@@ -227,6 +227,8 @@ export const attendanceApi = {
   batchLog: (data) => api.post('/attendance/batch', data).then((r) => r.data),
   getByTeam: (teamId, date) => api.get(`/attendance/team/${teamId}`, { params: { date } }).then((r) => r.data),
   getStats: (orgId) => api.get('/attendance/stats', { params: { orgId } }).then((r) => r.data),
+  getDepartmentAnalytics: (departmentId, orgId) => api.get(`/attendance/department/${departmentId}/analytics`, { params: { orgId } }).then((r) => r.data),
+  getTeamAnalytics: (teamId, orgId) => api.get(`/attendance/team/${teamId}/analytics`, { params: { orgId } }).then((r) => r.data),
 };
 
 export const homeworkApi = {
@@ -236,6 +238,8 @@ export const homeworkApi = {
   getDepartmentOverview: (orgId) => api.get('/homework/oversight/departments-overview', { params: { orgId } }).then((r) => r.data),
   getDepartmentTeachers: (orgId, departmentId) => api.get('/homework/oversight/department-teachers', { params: { orgId, departmentId } }).then((r) => r.data),
   getTeacherAssignments: (orgId, teacherId) => api.get('/homework/oversight/teacher-assignments', { params: { orgId, teacherId } }).then((r) => r.data),
+  getDepartmentAnalytics: (departmentId, orgId) => api.get(`/homework/department/${departmentId}/analytics`, { params: { orgId } }).then((r) => r.data),
+  getTeamAnalytics: (teamId, orgId) => api.get(`/homework/team/${teamId}/analytics`, { params: { orgId } }).then((r) => r.data),
 };
 
 export const parentApi = {

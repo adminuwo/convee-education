@@ -3,6 +3,7 @@ import { Server as SocketIOServer, Socket } from 'socket.io';
 import { verifyAccessToken } from '../utils/jwt';
 import prisma from '../db/prisma';
 import { logger } from '../utils/logger';
+import { canUserAccessChannel } from '../routes/channel.routes';
 
 export function setupSocketIO(httpServer: HttpServer): SocketIOServer {
   const io = new SocketIOServer(httpServer, {
@@ -70,8 +71,18 @@ export function setupSocketIO(httpServer: HttpServer): SocketIOServer {
       channelIdsToJoin.forEach((cid) => socket.join(`channel:${cid}`));
     } catch (e: any) { logger.error('presence init error', e?.message); }
 
-    socket.on('channel:join', (channelId: string) => {
-      socket.join(`channel:${channelId}`);
+    socket.on('channel:join', async (channelId: string) => {
+      try {
+        if (!channelId) return;
+        const channel = await prisma.channel.findUnique({ where: { id: channelId } });
+        if (channel && (await canUserAccessChannel(user.id, channel))) {
+          socket.join(`channel:${channelId}`);
+        } else {
+          socket.emit('error', { message: 'Unauthorized to join channel room' });
+        }
+      } catch (e: any) {
+        logger.error('socket channel:join error', e?.message);
+      }
     });
     socket.on('channel:leave', (channelId: string) => {
       socket.leave(`channel:${channelId}`);

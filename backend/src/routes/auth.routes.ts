@@ -212,7 +212,7 @@ router.get('/verify-email', async (req, res, next) => {
 });
 
 // -------- Resend Verification Email --------
-router.post('/resend-verification', async (req, res, next) => {
+router.post('/resend-verification', authLimiter, async (req, res, next) => {
   try {
     const { email } = req.body;
     const rawInput = (email || '').trim();
@@ -277,7 +277,7 @@ router.post('/resend-verification', async (req, res, next) => {
 });
 
 // -------- Forgot Password --------
-router.post('/forgot-password', validate(ForgotPasswordSchema), async (req, res, next) => {
+router.post('/forgot-password', authLimiter, validate(ForgotPasswordSchema), async (req, res, next) => {
   try {
     const { email } = req.body;
     const rawInput = (email || '').trim();
@@ -331,7 +331,7 @@ router.post('/forgot-password', validate(ForgotPasswordSchema), async (req, res,
 });
 
 // -------- Reset Password --------
-router.post('/reset-password', validate(ResetPasswordSchema), async (req, res, next) => {
+router.post('/reset-password', authLimiter, validate(ResetPasswordSchema), async (req, res, next) => {
   try {
     const { token, password } = req.body;
 

@@ -230,8 +230,21 @@ router.patch('/:id', async (req, res, next) => {
 
 router.post('/:id/summarize', async (req, res, next) => {
   try {
-    const meeting = await prisma.meeting.findUnique({ where: { id: req.params.id } });
+    const meeting = await prisma.meeting.findUnique({
+      where: { id: req.params.id },
+      include: { attendees: true },
+    });
     if (!meeting) return res.status(404).json({ error: 'Not found' });
+
+    const m = await prisma.membership.findFirst({ where: { userId: req.user!.id, orgId: meeting.orgId, isActive: true } });
+    if (!m && req.user!.systemRole !== 'SUPER_ADMIN') return res.status(403).json({ error: 'Not a member' });
+
+    const isAttendeeOrCreator = meeting.createdById === req.user!.id || meeting.attendees.some(a => a.userId === req.user!.id);
+    const isLeadership = m && ['OWNER', 'DIRECTOR', 'PRINCIPAL', 'ADMIN'].includes(m.role);
+
+    if (!isAttendeeOrCreator && !isLeadership && req.user!.systemRole !== 'SUPER_ADMIN') {
+      return res.status(403).json({ error: 'Access denied: You are not authorized to view or summarize this meeting' });
+    }
 
     const hasNotes = meeting.notes && meeting.notes.trim().length >= 5;
     const hasAgenda = meeting.agenda && meeting.agenda.trim().length >= 5;

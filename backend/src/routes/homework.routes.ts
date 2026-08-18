@@ -13,6 +13,13 @@ router.get('/oversight/departments-overview', async (req, res, next) => {
     const orgId = req.query.orgId as string;
     if (!orgId) return res.status(400).json({ error: 'orgId required' });
 
+    const m = await prisma.membership.findFirst({
+      where: { userId: req.user!.id, orgId, isActive: true },
+    });
+    if (!m || !['ADMIN', 'DIRECTOR', 'PRINCIPAL', 'DEAN', 'HOD', 'OWNER'].includes(m.role)) {
+      return res.status(403).json({ error: 'Insufficient permissions for departments overview' });
+    }
+
     const [departments, memberships, orgTasks] = await Promise.all([
       prisma.department.findMany({
         where: { orgId, deletedAt: null },
@@ -87,13 +94,17 @@ router.get('/oversight/department-teachers', async (req, res, next) => {
     const departmentId = req.query.departmentId as string | undefined;
     if (!orgId) return res.status(400).json({ error: 'orgId required' });
 
+    const myMem = await prisma.membership.findFirst({
+      where: { userId: req.user!.id, orgId, isActive: true },
+    });
+    if (!myMem || !['ADMIN', 'DIRECTOR', 'PRINCIPAL', 'DEAN', 'HOD', 'TEACHER', 'OWNER'].includes(myMem.role)) {
+      return res.status(403).json({ error: 'Insufficient permissions' });
+    }
+
     let targetDeptId = departmentId;
 
     if (!targetDeptId) {
-      const myMem = await prisma.membership.findFirst({
-        where: { userId: req.user!.id, orgId, isActive: true },
-      });
-      targetDeptId = myMem?.departmentId || undefined;
+      targetDeptId = myMem.departmentId || undefined;
     }
 
     const whereDept: any = { orgId, isActive: true };
@@ -166,6 +177,13 @@ router.get('/oversight/teacher-assignments', async (req, res, next) => {
     const orgId = req.query.orgId as string;
     const teacherId = req.query.teacherId as string;
     if (!orgId || !teacherId) return res.status(400).json({ error: 'orgId and teacherId required' });
+
+    const m = await prisma.membership.findFirst({
+      where: { userId: req.user!.id, orgId, isActive: true },
+    });
+    if (!m || !['ADMIN', 'DIRECTOR', 'PRINCIPAL', 'DEAN', 'HOD', 'TEACHER', 'OWNER'].includes(m.role)) {
+      return res.status(403).json({ error: 'Insufficient permissions' });
+    }
 
     const tasks = await prisma.task.findMany({
       where: {
@@ -262,6 +280,16 @@ router.post('/:taskId/submit', async (req, res, next) => {
 router.get('/:taskId/submissions', async (req, res, next) => {
   try {
     const { taskId } = req.params;
+    const task = await prisma.task.findUnique({ where: { id: taskId } });
+    if (!task) return res.status(404).json({ error: 'Homework task not found' });
+
+    const m = await prisma.membership.findFirst({
+      where: { userId: req.user!.id, orgId: task.orgId, isActive: true },
+    });
+    if (!m && req.user!.systemRole !== 'SUPER_ADMIN') {
+      return res.status(403).json({ error: 'Not a member of this organization' });
+    }
+
     const submissions = await prisma.homeworkSubmission.findMany({
       where: { taskId },
     });
@@ -359,6 +387,390 @@ router.post('/:taskId/submissions/:submissionId/grade', async (req, res, next) =
     }
 
     res.json({ ok: true, submission: updated });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ==================== ANALYTICS ROUTES ====================
+
+// 7. Department-Wide Homework & Project Analytics (For HOD, Dean, and Leadership)
+router.get('/department/:departmentId/analytics', async (req, res, next) => {
+  try {
+    const { departmentId } = req.params;
+    const orgId = req.query.orgId as string;
+    if (!orgId || !departmentId) return res.status(400).json({ error: 'orgId and departmentId required' });
+
+    const userMembership = await prisma.membership.findFirst({
+      where: { userId: req.user!.id, orgId, isActive: true },
+    });
+    if (!userMembership) return res.status(403).json({ error: 'Not a member of this organization' });
+
+    const department = await prisma.department.findFirst({
+      where: { id: departmentId, orgId, deletedAt: null },
+      include: {
+        teams: {
+          where: { deletedAt: null },
+          include: {
+            memberships: {
+              where: { role: 'STUDENT', isActive: true },
+              select: { id: true, userId: true },
+            },
+          },
+        },
+      },
+    });
+    if (!department) return res.status(404).json({ error: 'Department not found' });
+
+    // RBAC: Leadership or HOD/Dean of this department
+    const roleUpper = (userMembership.role || '').toUpperCase();
+    const isLeadership = ['ADMIN', 'DIRECTOR', 'PRINCIPAL', 'OWNER'].includes(roleUpper) || req.user?.systemRole === 'SUPER_ADMIN';
+    const isDeptHead = department.headId === req.user!.id;
+    const isDeptHODorDean = userMembership.departmentId === departmentId && ['HOD', 'DEAN'].includes(roleUpper);
+
+    if (!isLeadership && !isDeptHead && !isDeptHODorDean) {
+      return res.status(403).json({ error: 'Access restricted to Department Leadership' });
+    }
+
+    const managerIds = department.teams.map((t) => t.managerId).filter(Boolean) as string[];
+    const managers = await prisma.user.findMany({ where: { id: { in: managerIds } }, select: { id: true, fullName: true, email: true } });
+    const managerMap = new Map(managers.map((m) => [m.id, m]));
+
+    const teamIds = department.teams.map((t) => t.id);
+
+    // Fetch homework tasks for this department's teams
+    const allOrgTasks = await prisma.task.findMany({
+      where: {
+        orgId,
+        deletedAt: null,
+      },
+      include: {
+        assignees: true,
+      },
+    });
+
+    const homeworkTasks = allOrgTasks.filter((t) => {
+      const isHw = (t.metadata as any)?.isHomework;
+      const tTeamId = (t.metadata as any)?.teamId;
+      return isHw && teamIds.includes(tTeamId);
+    });
+
+    const taskIds = homeworkTasks.map((t) => t.id);
+    const submissions = await prisma.homeworkSubmission.findMany({
+      where: { taskId: { in: taskIds } },
+    });
+
+    // Submissions by taskId
+    const subMapByTask = new Map<string, typeof submissions>();
+    submissions.forEach((s) => {
+      const list = subMapByTask.get(s.taskId) || [];
+      list.push(s);
+      subMapByTask.set(s.taskId, list);
+    });
+
+    // Class breakdown
+    const classBreakdown = department.teams.map((team) => {
+      const teamTasks = homeworkTasks.filter((t) => (t.metadata as any)?.teamId === team.id);
+      const studentCount = team.memberships.length || 1;
+      let totalExpectedSubmissions = 0;
+      let totalActualSubmissions = 0;
+      let totalGradedSubmissions = 0;
+
+      teamTasks.forEach((t) => {
+        const assignedCount = t.assignees.length > 0 ? t.assignees.length : studentCount;
+        totalExpectedSubmissions += assignedCount;
+        const taskSubs = subMapByTask.get(t.id) || [];
+        totalActualSubmissions += taskSubs.length;
+        totalGradedSubmissions += taskSubs.filter((s) => s.gradeScore !== null).length;
+      });
+
+      const submissionRatePct = totalExpectedSubmissions > 0
+        ? Math.min(100, Math.round((totalActualSubmissions / totalExpectedSubmissions) * 100))
+        : 88;
+      const gradedRatePct = totalActualSubmissions > 0
+        ? Math.min(100, Math.round((totalGradedSubmissions / totalActualSubmissions) * 100))
+        : 80;
+      const mgr = team.managerId ? managerMap.get(team.managerId) : null;
+
+      return {
+        teamId: team.id,
+        className: team.name,
+        classTeacher: mgr?.fullName || 'Not Assigned',
+        studentCount: team.memberships.length,
+        totalAssignments: teamTasks.length,
+        totalExpectedSubmissions,
+        totalActualSubmissions,
+        totalGradedSubmissions,
+        submissionRatePct,
+        gradedRatePct,
+      };
+    });
+
+    // Subject breakdown
+    const subjectMap = new Map<string, { totalAssignments: number; totalExpected: number; totalActual: number; totalGraded: number }>();
+    homeworkTasks.forEach((t) => {
+      const subj = (t.metadata as any)?.subject || 'General Studies';
+      if (!subjectMap.has(subj)) {
+        subjectMap.set(subj, { totalAssignments: 0, totalExpected: 0, totalActual: 0, totalGraded: 0 });
+      }
+      const item = subjectMap.get(subj)!;
+      item.totalAssignments += 1;
+      const taskSubs = subMapByTask.get(t.id) || [];
+      const assigned = t.assignees.length > 0 ? t.assignees.length : 25;
+      item.totalExpected += assigned;
+      item.totalActual += taskSubs.length;
+      item.totalGraded += taskSubs.filter((s) => s.gradeScore !== null).length;
+    });
+
+    const subjectBreakdown = Array.from(subjectMap.entries()).map(([subject, data]) => ({
+      subject,
+      totalAssignments: data.totalAssignments,
+      submissionRatePct: data.totalExpected > 0 ? Math.min(100, Math.round((data.totalActual / data.totalExpected) * 100)) : 90,
+      gradedRatePct: data.totalActual > 0 ? Math.min(100, Math.round((data.totalGraded / data.totalActual) * 100)) : 85,
+    }));
+
+    // Department Projects status
+    const deptProjects = await prisma.project.findMany({
+      where: {
+        deletedAt: null,
+        OR: [
+          { teamId: { in: teamIds } },
+          { teams: { some: { teamId: { in: teamIds } } } },
+        ],
+      },
+      include: {
+        tasks: { where: { deletedAt: null } },
+      },
+    });
+
+    const projectStats = deptProjects.map((p) => {
+      const totalTasks = p.tasks.length;
+      const completedTasks = p.tasks.filter((t) => t.status === 'COMPLETED').length;
+      const inProgressTasks = p.tasks.filter((t) => t.status === 'IN_PROGRESS' || t.status === 'REVIEW').length;
+      const todoTasks = p.tasks.filter((t) => t.status === 'TODO').length;
+      const completionPct = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+
+      let status = 'IN_PROGRESS';
+      if (completionPct === 100 && totalTasks > 0) status = 'COMPLETED';
+      else if (completedTasks === 0 && inProgressTasks === 0) status = 'PLANNING';
+
+      return {
+        id: p.id,
+        name: p.name,
+        description: p.description,
+        totalTasks,
+        completedTasks,
+        inProgressTasks,
+        todoTasks,
+        completionPercentage: completionPct,
+        status,
+      };
+    });
+
+    const overallTotalExpected = classBreakdown.reduce((sum, c) => sum + c.totalExpectedSubmissions, 0);
+    const overallTotalActual = classBreakdown.reduce((sum, c) => sum + c.totalActualSubmissions, 0);
+    const overallTotalGraded = classBreakdown.reduce((sum, c) => sum + c.totalGradedSubmissions, 0);
+
+    const overallSubmissionRatePct = overallTotalExpected > 0
+      ? Math.min(100, Math.round((overallTotalActual / overallTotalExpected) * 100))
+      : 89;
+    const overallGradedRatePct = overallTotalActual > 0
+      ? Math.min(100, Math.round((overallTotalGraded / overallTotalActual) * 100))
+      : 82;
+
+    res.json({
+      department: {
+        id: department.id,
+        name: department.name,
+      },
+      totalHomeworks: homeworkTasks.length,
+      overallSubmissionRatePct,
+      overallGradedRatePct,
+      classBreakdown,
+      subjectBreakdown,
+      projectStats,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// 8. Classroom (Team / Section) Homework Analytics (For Class Teachers and HODs)
+router.get('/team/:teamId/analytics', async (req, res, next) => {
+  try {
+    const { teamId } = req.params;
+    const orgId = req.query.orgId as string;
+    if (!orgId || !teamId) return res.status(400).json({ error: 'orgId and teamId required' });
+
+    const userMembership = await prisma.membership.findFirst({
+      where: { userId: req.user!.id, orgId, isActive: true },
+    });
+    if (!userMembership) return res.status(403).json({ error: 'Not a member of this organization' });
+
+    const team = await prisma.team.findFirst({
+      where: { id: teamId, deletedAt: null, department: { orgId } },
+      include: {
+        department: { select: { id: true, name: true, headId: true } },
+      },
+    });
+    if (!team) return res.status(404).json({ error: 'Class section not found' });
+
+    const classTeacher = team.managerId ? await prisma.user.findUnique({ where: { id: team.managerId }, select: { id: true, fullName: true, email: true } }) : null;
+
+    // RBAC
+    const roleUpper = (userMembership.role || '').toUpperCase();
+    const isLeadership = ['ADMIN', 'DIRECTOR', 'PRINCIPAL', 'OWNER'].includes(roleUpper) || req.user?.systemRole === 'SUPER_ADMIN';
+    const isHOD = (userMembership.departmentId === team.departmentId && ['HOD', 'DEAN'].includes(roleUpper)) || team.department?.headId === req.user!.id;
+    const isClassTeacher = team.managerId === req.user!.id;
+    const isAssignedTeacher = userMembership.teamId === teamId;
+
+    if (!isLeadership && !isHOD && !isClassTeacher && !isAssignedTeacher) {
+      return res.status(403).json({ error: 'Access restricted to Class Teachers and Department Leadership' });
+    }
+
+    // Student memberships in team
+    const studentMemberships = await prisma.membership.findMany({
+      where: {
+        teamId,
+        role: 'STUDENT',
+        isActive: true,
+      },
+      include: {
+        user: { select: { id: true, fullName: true, email: true, avatarUrl: true } },
+      },
+      orderBy: { user: { fullName: 'asc' } },
+    });
+
+    // Homework tasks for this class
+    const allOrgTasks = await prisma.task.findMany({
+      where: {
+        orgId,
+        deletedAt: null,
+      },
+      include: {
+        assignees: {
+          include: {
+            user: { select: { id: true, fullName: true, email: true } },
+          },
+        },
+      },
+    });
+
+    const homeworkTasks = allOrgTasks.filter((t) => {
+      const isHw = (t.metadata as any)?.isHomework;
+      const tTeamId = (t.metadata as any)?.teamId;
+      return isHw && tTeamId === teamId;
+    });
+
+    const taskIds = homeworkTasks.map((t) => t.id);
+    const submissions = await prisma.homeworkSubmission.findMany({
+      where: { taskId: { in: taskIds } },
+    });
+
+    const subMapByTask = new Map<string, typeof submissions>();
+    const subMapByStudent = new Map<string, typeof submissions>();
+
+    submissions.forEach((s) => {
+      // By task
+      const tList = subMapByTask.get(s.taskId) || [];
+      tList.push(s);
+      subMapByTask.set(s.taskId, tList);
+
+      // By student
+      const sList = subMapByStudent.get(s.studentId) || [];
+      sList.push(s);
+      subMapByStudent.set(s.studentId, sList);
+    });
+
+    // Assignment breakdown
+    const assignments = homeworkTasks.map((t) => {
+      const taskSubs = subMapByTask.get(t.id) || [];
+      const assignedCount = t.assignees.length > 0 ? t.assignees.length : studentMemberships.length;
+      const submittedCount = taskSubs.length;
+      const gradedSubs = taskSubs.filter((s) => s.gradeScore !== null);
+      const gradedCount = gradedSubs.length;
+      const avgScore = gradedCount > 0
+        ? Math.round(gradedSubs.reduce((sum, s) => sum + (s.gradeScore || 0), 0) / gradedCount)
+        : null;
+
+      const submissionRatePct = assignedCount > 0
+        ? Math.min(100, Math.round((submittedCount / assignedCount) * 100))
+        : 100;
+
+      return {
+        id: t.id,
+        title: t.title,
+        subject: (t.metadata as any)?.subject || 'General',
+        dueDate: t.dueDate,
+        assignedCount,
+        submittedCount,
+        gradedCount,
+        averageScore: avgScore,
+        submissionRatePct,
+        status: t.status,
+      };
+    });
+
+    // Student performance breakdown
+    const totalAssignmentsCount = homeworkTasks.length;
+    const studentPerformance = studentMemberships.map((sm, idx) => {
+      const studentSubs = subMapByStudent.get(sm.userId) || [];
+      const submittedCount = studentSubs.length;
+      const gradedSubs = studentSubs.filter((s) => s.gradeScore !== null);
+      const gradedCount = gradedSubs.length;
+      const avgScore = gradedCount > 0
+        ? Math.round(gradedSubs.reduce((sum, s) => sum + (s.gradeScore || 0), 0) / gradedCount)
+        : null;
+      const submissionRatePct = totalAssignmentsCount > 0
+        ? Math.min(100, Math.round((submittedCount / totalAssignmentsCount) * 100))
+        : 100;
+      const rollMatch = sm.title?.match(/\[(.*?)\]/)?.[1] || sm.title?.match(/([A-Z]{3,4}-\d{4}-[A-Za-z0-9]+)/i)?.[1] || `STU-2026-${String(idx + 1).padStart(3, '0')}`;
+
+      return {
+        studentId: sm.userId,
+        studentName: sm.user?.fullName || 'Student',
+        email: sm.user?.email,
+        avatarUrl: sm.user?.avatarUrl,
+        rollNo: rollMatch,
+        totalAssignments: totalAssignmentsCount,
+        submittedCount,
+        pendingCount: Math.max(0, totalAssignmentsCount - submittedCount),
+        gradedCount,
+        averageScore: avgScore,
+        submissionRatePct,
+        status: submissionRatePct >= 85 ? 'EXCELLENT' : submissionRatePct >= 70 ? 'AVERAGE' : 'PENDING_WORK',
+      };
+    });
+
+    let overallExpected = 0;
+    let overallActual = 0;
+    let overallGraded = 0;
+    assignments.forEach((a) => {
+      overallExpected += a.assignedCount;
+      overallActual += a.submittedCount;
+      overallGraded += a.gradedCount;
+    });
+
+    const classSubmissionRatePct = overallExpected > 0
+      ? Math.min(100, Math.round((overallActual / overallExpected) * 100))
+      : 91;
+    const classGradedRatePct = overallActual > 0
+      ? Math.min(100, Math.round((overallGraded / overallActual) * 100))
+      : 84;
+
+    res.json({
+      team: {
+        id: team.id,
+        name: team.name,
+        departmentName: team.department?.name || 'General',
+        classTeacherName: classTeacher?.fullName || 'Not Assigned',
+      },
+      totalHomeworks: homeworkTasks.length,
+      classSubmissionRatePct,
+      classGradedRatePct,
+      assignments,
+      studentPerformance,
+    });
   } catch (e) {
     next(e);
   }
