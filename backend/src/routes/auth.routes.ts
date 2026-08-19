@@ -183,7 +183,7 @@ router.get('/verify-email', async (req, res, next) => {
 
     const record = await prisma.emailVerificationToken.findUnique({
       where: { token },
-      include: { user: true },
+      include: { user: { select: { id: true, email: true, isVerified: true } } },
     });
 
     if (!record) return res.status(400).json({ error: 'Invalid or non-existent verification link.' });

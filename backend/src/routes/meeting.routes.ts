@@ -104,7 +104,7 @@ router.post('/', async (req, res, next) => {
           create: uniqueAttendees.map((id: string) => ({ userId: id })),
         },
       },
-      include: { attendees: { include: { user: true } } },
+      include: { attendees: { include: { user: { select: { id: true, fullName: true, email: true, avatarUrl: true } } } } },
     });
     const io = req.app.locals.io;
     if (io) {
@@ -127,8 +127,8 @@ router.get('/:id', async (req, res, next) => {
     const meeting = await prisma.meeting.findUnique({
       where: { id: req.params.id },
       include: {
-        attendees: { include: { user: true } },
-        createdBy: true,
+        attendees: { include: { user: { select: { id: true, fullName: true, email: true, avatarUrl: true } } } },
+        createdBy: { select: { id: true, fullName: true, email: true, avatarUrl: true } },
         attachments: { include: { file: true } },
       },
     });
@@ -181,7 +181,7 @@ router.patch('/:id', async (req, res, next) => {
         ...(startTime !== undefined ? { startTime: new Date(startTime) } : {}),
         ...(endTime !== undefined ? { endTime: new Date(endTime) } : {}),
       },
-      include: { attendees: { include: { user: true } }, createdBy: true },
+      include: { attendees: { include: { user: { select: { id: true, fullName: true, email: true, avatarUrl: true } } } }, createdBy: { select: { id: true, fullName: true, email: true, avatarUrl: true } } },
     });
 
     // Send notifications to attendees if meeting was cancelled or rescheduled

@@ -85,7 +85,7 @@ async function ensureSampleTimetableData(orgId: string) {
           orgId,
           role: { in: ['TEACHER', 'HOD', 'DEAN', 'PRINCIPAL', 'DIRECTOR', 'ADMIN'] },
         },
-        include: { user: true, department: true },
+        include: { user: { select: { id: true, fullName: true, email: true, avatarUrl: true } }, department: true },
       });
 
       const teacherNames = facultyMembers.map((m) => m.user.fullName).filter(Boolean);
@@ -294,7 +294,7 @@ router.get('/free-teachers', async (req: Request, res: Response) => {
 
     const members = await prisma.membership.findMany({
       where: membersWhere,
-      include: { user: true, department: true },
+      include: { user: { select: { id: true, fullName: true, email: true, avatarUrl: true } }, department: true },
     });
 
     const freeTeachers = members

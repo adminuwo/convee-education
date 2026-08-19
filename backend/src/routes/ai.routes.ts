@@ -1066,7 +1066,7 @@ router.post('/sprint-plan', async (req, res, next) => {
       where: { orgId, status: 'TODO', deletedAt: null },
       take: 30,
       orderBy: [{ priority: 'desc' }, { createdAt: 'asc' }],
-      include: { assignees: { include: { user: true } } },
+      include: { assignees: { include: { user: { select: { id: true, fullName: true, email: true, avatarUrl: true } } } } },
     });
     const backlogText = backlog.map(t => `- [${t.priority}] ${t.title}: ${t.description?.slice(0, 100) || ''}`).join('\n');
     const sys = 'You are an agile coach. Suggest a sprint plan based on backlog and goal. Return sections: Sprint Goal, Committed Items, Rationale, Risks. Markdown.';

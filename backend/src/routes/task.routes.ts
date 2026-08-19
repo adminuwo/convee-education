@@ -191,7 +191,7 @@ router.get('/:taskId', async (req, res, next) => {
         assignees: { include: { user: { select: { id: true, fullName: true, avatarUrl: true, email: true } } } },
         createdBy: { select: { id: true, fullName: true, avatarUrl: true } },
         project: true,
-        subtasks: { include: { assignees: { include: { user: true } } } },
+        subtasks: { include: { assignees: { include: { user: { select: { id: true, fullName: true, email: true, avatarUrl: true } } } } } },
         comments: { include: { user: { select: { id: true, fullName: true, avatarUrl: true } } }, orderBy: { createdAt: 'asc' } },
         checklist: { orderBy: { position: 'asc' } },
         dependencies: { include: { dependsOn: true } },
@@ -269,7 +269,7 @@ router.patch('/:taskId', async (req, res, next) => {
     const updated = await prisma.task.update({
       where: { id: task.id },
       data,
-      include: { assignees: { include: { user: true } }, checklist: true },
+      include: { assignees: { include: { user: { select: { id: true, fullName: true, email: true, avatarUrl: true } } } }, checklist: true },
     });
     const io = req.app.locals.io;
     if (io) io.to(`org:${task.orgId}`).emit('task:updated', updated);

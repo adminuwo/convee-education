@@ -115,7 +115,7 @@ async function ensureSampleFinanceData(orgId: string) {
       // 3. Fetch REAL registered students for this organization strictly from the database
       const realStudents = await db.membership.findMany({
         where: { orgId, role: 'STUDENT', isActive: true },
-        include: { user: true },
+        include: { user: { select: { id: true, fullName: true, email: true, avatarUrl: true } } },
         orderBy: { joinedAt: 'asc' },
       }).catch(() => []);
 
@@ -126,7 +126,7 @@ async function ensureSampleFinanceData(orgId: string) {
           role: { in: ['OWNER', 'ADMIN', 'DIRECTOR', 'PRINCIPAL', 'DEAN', 'HOD', 'TEACHER', 'ACCOUNTANT'] },
           isActive: true,
         },
-        include: { user: true },
+        include: { user: { select: { id: true, fullName: true, email: true, avatarUrl: true } } },
         orderBy: { joinedAt: 'asc' },
       }).catch(() => []);
 
@@ -771,7 +771,7 @@ router.get('/fees/parent', async (req: Request, res: Response) => {
 
     const studentMembers = await prisma.membership.findMany({
       where: { userId: { in: studentIds }, role: 'STUDENT', isActive: true },
-      include: { user: true },
+      include: { user: { select: { id: true, fullName: true, email: true, avatarUrl: true } } },
     });
 
     const studentNames = studentMembers.map((m) => m.user?.fullName).filter(Boolean) as string[];

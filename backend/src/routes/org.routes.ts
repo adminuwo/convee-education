@@ -1159,7 +1159,7 @@ router.post('/:orgId/transfer-request', async (req, res, next) => {
 
     const currentMember = await prisma.membership.findFirst({
       where: { userId: req.user!.id, orgId, isActive: true },
-      include: { user: true },
+      include: { user: { select: { id: true, fullName: true, email: true, avatarUrl: true } } },
     });
 
     if (!currentMember || !['OWNER', 'DIRECTOR'].includes(currentMember.role)) {
@@ -1682,7 +1682,7 @@ async function generateStudentAccount({
           { user: { email: { contains: `.${admSlug}@`, mode: 'insensitive' } } },
         ],
       },
-      include: { user: true },
+      include: { user: { select: { id: true, fullName: true, email: true, avatarUrl: true } } },
     });
 
     if (existingStudent) {
