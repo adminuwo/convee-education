@@ -4,6 +4,7 @@ LLM Bridge - Internal Python microservice that proxies to:
 2. OpenAI API (gpt-4o-mini for faculty/admin)
 Listens on localhost:8002.
 """
+#this is ai
 import os
 import asyncio
 import logging
