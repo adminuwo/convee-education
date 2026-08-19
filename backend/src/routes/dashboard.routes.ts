@@ -40,7 +40,16 @@ router.get('/employee', async (req, res, next) => {
         where: { orgId, deletedAt: null, assignees: { some: { userId: req.user!.id } } },
         take: 10,
         orderBy: { dueDate: 'asc' },
-        include: { project: true, assignees: { include: { user: true } } },
+        include: {
+          project: true,
+          assignees: {
+            include: {
+              user: {
+                select: { id: true, fullName: true, email: true, avatarUrl: true },
+              },
+            },
+          },
+        },
       }),
       prisma.meeting.findMany({
         where: { orgId, startTime: { gte: new Date() }, attendees: { some: { userId: req.user!.id } } },
@@ -84,7 +93,18 @@ router.get('/manager', async (req, res, next) => {
         where: { orgId, deletedAt: null },
         orderBy: { updatedAt: 'desc' },
         take: 8,
-        include: { assignees: { include: { user: true } }, createdBy: true },
+        include: {
+          assignees: {
+            include: {
+              user: {
+                select: { id: true, fullName: true, email: true, avatarUrl: true },
+              },
+            },
+          },
+          createdBy: {
+            select: { id: true, fullName: true, email: true, avatarUrl: true },
+          },
+        },
       }),
     ]);
 
