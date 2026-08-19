@@ -8,6 +8,8 @@ import { OrgDataProvider } from '@/contexts/OrgDataContext';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
 import OrgRenameModal from '@/components/org/OrgRenameModal';
 
+import ErrorBoundary from '@/components/common/ErrorBoundary';
+
 export default function AppShell() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [cmdOpen, setCmdOpen] = useState(false);
@@ -76,7 +78,9 @@ export default function AppShell() {
         <div className="flex flex-1 flex-col overflow-hidden">
           <TopBar onMenuClick={() => setSidebarOpen(true)} onSearchClick={() => setCmdOpen(true)} />
           <main className="flex-1 overflow-auto bg-background">
-            <Outlet />
+            <ErrorBoundary>
+              <Outlet />
+            </ErrorBoundary>
           </main>
         </div>
 
