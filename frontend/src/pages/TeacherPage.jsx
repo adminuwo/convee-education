@@ -16,6 +16,8 @@ import { connectSocket, getSocket } from '@/lib/socket';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
 import ClassAcademicAnalytics from '@/components/classroom/ClassAcademicAnalytics';
+import HODExamManager from '@/components/classroom/HODExamManager';
+import ClassTeacherGradingMatrix from '@/components/classroom/ClassTeacherGradingMatrix';
 
 function initials(n) {
   return (n || '?').split(' ').map((x) => x[0]).slice(0, 2).join('').toUpperCase();
@@ -197,6 +199,9 @@ export default function TeacherPage() {
     });
   }, [projects, myAssignedTeams, user?.id]);
 
+  const isLeader = ['HOD', 'DEAN', 'PRINCIPAL', 'DIRECTOR', 'ADMIN', 'OWNER'].includes((currentOrg?.role || '').toUpperCase());
+  const [examSubTab, setExamSubTab] = useState('hod');
+
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto">
       {/* Header Banner */}
@@ -226,9 +231,13 @@ export default function TeacherPage() {
 
       {/* Tabs Section */}
       <Tabs value={activeTab} onValueChange={(val) => setSearchParams({ tab: val })} className="space-y-4">
-        <TabsList className="grid w-full grid-cols-4 max-w-lg bg-muted/50 p-1 rounded-lg">
+        <TabsList className="grid w-full grid-cols-5 max-w-2xl bg-muted/50 p-1 rounded-lg">
+          <TabsTrigger value="exams" className="text-xs font-semibold flex items-center gap-1.5" data-testid="tab-exams">
+            <GraduationCap className="h-3.5 w-3.5 text-purple-500" />
+            <span>Exams & Marks</span>
+          </TabsTrigger>
           <TabsTrigger value="students" className="text-xs font-semibold flex items-center gap-1.5" data-testid="tab-students">
-            <GraduationCap className="h-3.5 w-3.5 text-emerald-500" />
+            <UserCheck className="h-3.5 w-3.5 text-emerald-500" />
             <span>Class Students</span>
           </TabsTrigger>
           <TabsTrigger value="analytics" className="text-xs font-semibold flex items-center gap-1.5" data-testid="tab-analytics">
@@ -240,10 +249,68 @@ export default function TeacherPage() {
             <span>My Classes</span>
           </TabsTrigger>
           <TabsTrigger value="projects" className="text-xs font-semibold flex items-center gap-1.5" data-testid="tab-projects">
-            <FolderGit2 className="h-3.5 w-3.5 text-purple-500" />
+            <FolderGit2 className="h-3.5 w-3.5 text-amber-500" />
             <span>My Projects</span>
           </TabsTrigger>
         </TabsList>
+
+        {/* Tab 0: Exams, Assessments & Marks Governance */}
+        <TabsContent value="exams" className="space-y-4">
+          {isLeader ? (
+            <div className="space-y-4">
+              {/* Leader Sub-Navigation Toggle */}
+              <div className="flex items-center justify-between bg-muted/40 p-1.5 rounded-xl border border-border">
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    variant={examSubTab === 'hod' ? 'default' : 'ghost'}
+                    size="sm"
+                    onClick={() => setExamSubTab('hod')}
+                    className="text-xs font-semibold gap-1.5 h-8"
+                  >
+                    <GraduationCap className="h-4 w-4" />
+                    Department Exam Manager (HOD)
+                  </Button>
+                  <Button
+                    variant={examSubTab === 'classTeacher' ? 'default' : 'ghost'}
+                    size="sm"
+                    onClick={() => setExamSubTab('classTeacher')}
+                    className="text-xs font-semibold gap-1.5 h-8"
+                  >
+                    <FileText className="h-4 w-4" />
+                    Class Teacher Marks Submission
+                  </Button>
+                </div>
+                <Badge variant="outline" className="text-[11px] font-normal text-muted-foreground hidden sm:inline-flex">
+                  {examSubTab === 'hod' ? 'HOD / Dean Scheduling & Defaulters View' : 'Class Teacher Scorecard Entry View'}
+                </Badge>
+              </div>
+
+              {examSubTab === 'hod' ? (
+                <HODExamManager
+                  orgId={currentOrg?.id}
+                  user={user}
+                  departments={departments}
+                  currentOrg={currentOrg}
+                  onSelectExamForGrading={() => setExamSubTab('classTeacher')}
+                />
+              ) : (
+                <ClassTeacherGradingMatrix
+                  orgId={currentOrg?.id}
+                  user={user}
+                  classTeams={myClassTeacherTeams.length > 0 ? myClassTeacherTeams : allTeams}
+                  currentOrg={currentOrg}
+                />
+              )}
+            </div>
+          ) : (
+            <ClassTeacherGradingMatrix
+              orgId={currentOrg?.id}
+              user={user}
+              classTeams={myClassTeacherTeams.length > 0 ? myClassTeacherTeams : allTeams}
+              currentOrg={currentOrg}
+            />
+          )}
+        </TabsContent>
 
         {/* Tab 1: Class Students (Class Teacher View) */}
         <TabsContent value="students" className="space-y-4">

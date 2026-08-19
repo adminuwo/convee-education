@@ -16,6 +16,9 @@
 .credentials
 credentials.json
 *token.json*
+*key*.json
+*serviceaccount*.json
+*service-account*.json
 
 # Allow tracked template examples
 !.env.example

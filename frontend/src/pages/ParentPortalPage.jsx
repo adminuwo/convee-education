@@ -2,14 +2,15 @@ import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { parentApi, channelApi, financeApi } from '@/lib/api';
+import { parentApi, channelApi, financeApi, examApi } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { UserCheck, CalendarCheck, BookOpen, MessageSquare, AlertTriangle, CheckCircle, Clock, Award, Shield, Sparkles, GraduationCap, Building, IndianRupee, CreditCard, Download, Printer, Receipt, Building2, CheckCircle2 } from 'lucide-react';
+import { UserCheck, CalendarCheck, BookOpen, MessageSquare, AlertTriangle, CheckCircle, Clock, Award, Shield, Sparkles, GraduationCap, Building, IndianRupee, CreditCard, Download, Printer, Receipt, Building2, CheckCircle2, FileSpreadsheet } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
+import StudentReportCardModal from '@/components/classroom/StudentReportCardModal';
 
 function initials(n) {
   return (n || '?').split(' ').map((x) => x[0]).slice(0, 2).join('').toUpperCase();
@@ -23,6 +24,9 @@ export default function ParentPortalPage() {
   const [report, setReport] = useState(null);
   const [feeData, setFeeData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [studentReportCards, setStudentReportCards] = useState([]);
+  const [activeReportCard, setActiveReportCard] = useState(null);
+  const [reportCardModalOpen, setReportCardModalOpen] = useState(false);
   const [printableReceipt, setPrintableReceipt] = useState(null);
 
   useEffect(() => {
@@ -43,8 +47,12 @@ export default function ParentPortalPage() {
         if (uniqueChildren?.length > 0) {
           const firstId = uniqueChildren[0].userId || uniqueChildren[0].user?.id;
           setSelectedStudentId(firstId);
-          const r = await parentApi.getChildReport(firstId, currentOrg?.id);
+          const [r, rc] = await Promise.all([
+            parentApi.getChildReport(firstId, currentOrg?.id).catch(() => null),
+            examApi.getStudentReportCards(firstId, currentOrg?.id).catch(() => []),
+          ]);
           setReport(r);
+          setStudentReportCards(rc || []);
         }
 
         // Fetch parent fees via financeApi
@@ -65,8 +73,12 @@ export default function ParentPortalPage() {
     setSelectedStudentId(studentId);
     setLoading(true);
     try {
-      const r = await parentApi.getChildReport(studentId, currentOrg?.id);
+      const [r, rc] = await Promise.all([
+        parentApi.getChildReport(studentId, currentOrg?.id).catch(() => null),
+        examApi.getStudentReportCards(studentId, currentOrg?.id).catch(() => []),
+      ]);
       setReport(r);
+      setStudentReportCards(rc || []);
     } catch (e) {
       toast.error('Failed to load child report');
     } finally {
@@ -347,6 +359,99 @@ export default function ParentPortalPage() {
             </CardContent>
           </Card>
 
+          {/* Official Examination Performance & Term Report Cards */}
+          <Card className="border-border shadow-sm bg-gradient-to-r from-purple-500/5 via-blue-500/5 to-transparent">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-base font-bold flex items-center gap-2 text-foreground">
+                    <GraduationCap className="h-4 w-4 text-purple-500" /> Official Exam Marks & Term Report Cards
+                  </CardTitle>
+                  <CardDescription className="text-xs">
+                    View published examination marks, subject breakdown, pass/fail status, and download official report cards.
+                  </CardDescription>
+                </div>
+                {studentReportCards.length > 0 && (
+                  <Badge variant="outline" className="bg-purple-500/10 text-purple-500 border-purple-500/30 text-xs font-semibold">
+                    {studentReportCards.length} Report Card(s) Available
+                  </Badge>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {studentReportCards.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {studentReportCards.map((rc) => {
+                    const isPassed = rc.resultStatus === 'PASSED';
+                    const isAbsent = rc.resultStatus === 'ABSENT';
+
+                    return (
+                      <div key={rc.id} className="p-4 rounded-xl border border-border bg-card space-y-3 hover:border-purple-500/40 transition-all shadow-sm">
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <Badge variant="outline" className="text-[10px] font-mono mb-1">
+                              {rc.term} • Session {rc.academicSession}
+                            </Badge>
+                            <h4 className="text-sm font-bold text-foreground">{rc.exam?.title || `${rc.term} Evaluation`}</h4>
+                          </div>
+
+                          <Badge
+                            variant={isPassed ? 'default' : isAbsent ? 'outline' : 'destructive'}
+                            className="text-[10px] font-bold"
+                          >
+                            {rc.resultStatus}
+                          </Badge>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-2 bg-muted/40 p-2.5 rounded-lg text-center text-xs border border-border/60">
+                          <div>
+                            <span className="text-[10px] text-muted-foreground block">Percentage</span>
+                            <span className="font-bold text-primary text-sm">{rc.percentage}%</span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-muted-foreground block">Grade</span>
+                            <span className="font-bold text-foreground text-sm">{rc.overallGrade}</span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-muted-foreground block">Total Marks</span>
+                            <span className="font-bold text-foreground text-sm">{rc.totalMarksObtained}/{rc.totalMaxMarks}</span>
+                          </div>
+                        </div>
+
+                        {rc.aiRemarks && (
+                          <p className="text-[11px] text-muted-foreground italic line-clamp-2 bg-purple-500/5 p-2 rounded border border-purple-500/10">
+                            "{rc.aiRemarks}"
+                          </p>
+                        )}
+
+                        <div className="pt-2 border-t border-border flex items-center justify-between">
+                          <span className="text-[10px] text-muted-foreground">
+                            Generated on {new Date(rc.publishedAt || rc.createdAt).toLocaleDateString('en-GB')}
+                          </span>
+                          <Button
+                            size="sm"
+                            onClick={() => {
+                              setActiveReportCard(rc);
+                              setReportCardModalOpen(true);
+                            }}
+                            className="h-7 text-xs gap-1.5 bg-primary text-primary-foreground font-semibold"
+                          >
+                            <Printer className="h-3 w-3" /> View & Print Report Card
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="text-xs text-muted-foreground py-6 text-center bg-card rounded-lg border border-dashed border-border">
+                  <GraduationCap className="h-7 w-7 text-muted-foreground mx-auto mb-1.5 opacity-60" />
+                  <span>No official report cards published yet for this term. Graded examinations will appear here once finalized by faculty.</span>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           {/* Graded Homework & Rubric Scores Section */}
           <Card className="border-border shadow-sm">
             <CardHeader className="pb-3">
@@ -553,6 +658,14 @@ export default function ParentPortalPage() {
         </div>,
         document.body
       )}
+
+      {/* Official Student Report Card Modal */}
+      <StudentReportCardModal
+        open={reportCardModalOpen}
+        onOpenChange={setReportCardModalOpen}
+        reportCard={activeReportCard}
+        currentOrg={currentOrg}
+      />
     </motion.div>
   );
 }

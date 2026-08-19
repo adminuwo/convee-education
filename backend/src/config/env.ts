@@ -30,6 +30,10 @@ export const env = {
   FACULTY_LLM_MODEL: process.env.FACULTY_LLM_MODEL || 'gpt-4o-mini',
   APP_URL: process.env.APP_URL || 'http://localhost:3000',
   UPLOAD_DIR: path.resolve(__dirname, '../../uploads'),
+  // Google Cloud Storage (GCS) Configuration
+  GCS_BUCKET_NAME: process.env.GCS_BUCKET_NAME || 'education-tool-objects',
+  GCS_PROJECT_ID: process.env.GCS_PROJECT_ID || process.env.VERTEX_PROJECT_ID || 'ai-mall-484810',
+  GCS_SIGNED_URL_EXPIRY_MINUTES: parseInt(process.env.GCS_SIGNED_URL_EXPIRY_MINUTES || '1440', 10), // 24 hours default
   RESEND_API_KEY: process.env.RESEND_API_KEY || '',
   EMAIL_FROM: process.env.EMAIL_FROM || '',
 };

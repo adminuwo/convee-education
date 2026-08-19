@@ -308,9 +308,20 @@ export const promotionApi = {
   getConfig: (orgId) => api.get(`/orgs/${orgId}/promotion/config`).then((r) => r.data),
   saveConfig: (orgId, pipeline) => api.post(`/orgs/${orgId}/promotion/config`, { pipeline }).then((r) => r.data),
   getArchives: (orgId) => api.get(`/orgs/${orgId}/promotion/archives`).then((r) => r.data),
-  execute: (orgId, data) => api.post(`/orgs/${orgId}/promotion/execute`, data).then((r) => r.data),
-  allocateStream: (orgId, data) => api.post(`/orgs/${orgId}/promotion/allocate-stream`, data).then((r) => r.data),
+  promoteBatch: (orgId, payload) => api.post(`/orgs/${orgId}/promotion/promote-batch`, payload).then((r) => r.data),
+  getAlumniStats: (orgId) => api.get(`/orgs/${orgId}/promotion/alumni-stats`).then((r) => r.data),
 };
 
-
-
+export const examApi = {
+  getExams: (params) => api.get('/exams', { params }).then((r) => r.data),
+  createExam: (data) => api.post('/exams', data).then((r) => r.data),
+  updateExam: (id, data) => api.put(`/exams/${id}`, data).then((r) => r.data),
+  deleteExam: (id) => api.delete(`/exams/${id}`).then((r) => r.data),
+  openGrading: (id) => api.patch(`/exams/${id}/open-grading`).then((r) => r.data),
+  getGradingSheet: (examId, teamId) => api.get(`/exams/${examId}/class/${teamId}/grading-sheet`).then((r) => r.data),
+  submitGrades: (examId, teamId, data) => api.post(`/exams/${examId}/class/${teamId}/submit-grades`, data).then((r) => r.data),
+  getDefaulters: (examId) => api.get(`/exams/${examId}/defaulters`).then((r) => r.data),
+  generateReportCards: (examId, data) => api.post(`/exams/${examId}/generate-report-cards`, data).then((r) => r.data),
+  getStudentReportCards: (studentId, orgId) => api.get(`/exams/student/${studentId}/report-cards`, { params: { orgId } }).then((r) => r.data),
+  updateReportCardSignatures: (id, data) => api.patch(`/exams/report-card/${id}/signatures`, data).then((r) => r.data),
+};

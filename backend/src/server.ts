@@ -31,6 +31,7 @@ import parentRoutes from './routes/parent.routes';
 import financeRoutes from './routes/finance.routes';
 import timetableRoutes from './routes/timetable.routes';
 import promotionRoutes from './routes/promotion.routes';
+import examRoutes from './routes/exam.routes';
 
 const app: Application = express();
 const server = http.createServer(app);
@@ -84,6 +85,7 @@ app.use('/api/v1/parent', parentRoutes);
 app.use('/api/v1/finance', financeRoutes);
 app.use('/api/v1/timetable', timetableRoutes);
 app.use('/api/v1/orgs/:orgId/promotion', promotionRoutes);
+app.use('/api/v1/exams', examRoutes);
 
 app.use('/api', notFound);
 app.use(errorHandler);

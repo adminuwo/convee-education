@@ -1022,3 +1022,118 @@ model TallyTombstone {
   @@index([voucherNumber])
 }
 
+// ============ EXAMS, ASSESSMENTS & REPORT CARDS ============
+
+model Exam {
+  id                 String        @id @default(uuid())
+  orgId              String
+  departmentId       String?
+  title              String        // e.g. "Mid-Term Examination 2026", "Unit Test 1"
+  term               String        @default("Term 1") // Term 1, Term 2, Annual, Mid Term
+  academicSession    String        @default("2026-2027")
+  examType           String        @default("MID_TERM") // MID_TERM, FINAL, UNIT_TEST, SURPRISE_TEST, PRACTICAL
+  startDate          DateTime?
+  endDate            DateTime?
+  status             String        @default("DRAFT") // DRAFT, OPEN_FOR_GRADING, COMPLETED, PUBLISHED
+  defaultGradingType String        @default("NUMERICAL") // NUMERICAL, LETTER_GRADE
+  defaultMaxMarks    Float         @default(100)
+  defaultPassingMarks Float        @default(33)
+  targetClassIds     Json          @default("[]") // Array of Team IDs (Class Sections)
+  createdById        String
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  subjects           ExamSubject[]
+  scores             ExamScore[]
+  reportCards        ReportCard[]
+
+  @@index([orgId])
+  @@index([departmentId])
+  @@index([status])
+}
+
+model ExamSubject {
+  id              String      @id @default(uuid())
+  examId          String
+  subjectName     String      // e.g. "Physics Theory", "Physics Lab", "Mathematics"
+  isLabOrPractical Boolean    @default(false)
+  gradingType     String      @default("NUMERICAL") // NUMERICAL, LETTER_GRADE
+  maxMarks        Float       @default(100)
+  passingMarks    Float       @default(33)
+  passingGrade    String?     @default("D")
+  examDate        DateTime?
+  orderIndex      Int         @default(0)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  exam            Exam        @relation(fields: [examId], references: [id], onDelete: Cascade)
+  scores          ExamScore[]
+
+  @@index([examId])
+}
+
+model ExamScore {
+  id            String      @id @default(uuid())
+  examId        String
+  subjectId     String
+  studentId     String      // User ID of student
+  teamId        String      // Class Section ID
+  marksObtained Float?
+  grade         String?     // e.g. "A+", "A", "B", "C", "D", "F"
+  isAbsent      Boolean     @default(false)
+  isPassed      Boolean     @default(true)
+  remarks       String?     // Notes / Reason for absence / Teacher observation
+  gradedById    String?     // Class Teacher User ID
+  gradedAt      DateTime?
+  status        String      @default("SUBMITTED") // DRAFT, SUBMITTED
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  exam          Exam        @relation(fields: [examId], references: [id], onDelete: Cascade)
+  subject       ExamSubject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@unique([examId, subjectId, studentId])
+  @@index([examId])
+  @@index([subjectId])
+  @@index([studentId])
+  @@index([teamId])
+  @@index([isAbsent, isPassed])
+}
+
+model ReportCard {
+  id                 String    @id @default(uuid())
+  orgId              String
+  departmentId       String?
+  studentId          String
+  teamId             String    // Class Section ID
+  examId             String?
+  academicSession    String    @default("2026-2027")
+  term               String    @default("Term 1")
+  subjectsJson       Json      // Array of subject breakdown: { subjectName, maxMarks, passingMarks, marksObtained, grade, isAbsent, isPassed, remarks }
+  totalMarksObtained Float     @default(0)
+  totalMaxMarks      Float     @default(0)
+  percentage         Float     @default(0)
+  overallGrade       String    @default("N/A")
+  resultStatus       String    @default("PASSED") // PASSED, FAILED, WITHHELD, ABSENT
+  attendanceStats    Json?     // { totalDays: 90, daysPresent: 85, percentage: 94.4 }
+  aiRemarks          String?   // AI-synthesized qualitative feedback
+  teacherRemarks     String?   // Teacher's overall remarks
+  classTeacherSignUrl String?  // Digital signature PNG/SVG of Class Teacher
+  hodSignUrl         String?   // Digital signature PNG/SVG of HOD / Dean
+  principalSignUrl   String?   // Digital signature PNG/SVG of Principal
+  stampUrl           String?   // Official Institution Stamp / Seal PNG
+  isPublished        Boolean   @default(false)
+  publishedAt        DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  exam               Exam?     @relation(fields: [examId], references: [id], onDelete: SetNull)
+
+  @@unique([orgId, studentId, academicSession, term])
+  @@index([orgId])
+  @@index([studentId])
+  @@index([teamId])
+}
+
+
+

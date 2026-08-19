@@ -16,6 +16,7 @@
     "seed": "ts-node src/seed.ts"
   },
   "dependencies": {
+    "@google-cloud/storage": "^8.0.1",
     "@prisma/client": "5.22.0",
     "axios": "1.7.7",
     "bcryptjs": "2.4.3",
