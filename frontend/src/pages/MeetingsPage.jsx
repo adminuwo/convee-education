@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { connectSocket, getSocket } from '@/lib/socket';
@@ -1095,8 +1096,8 @@ export default function MeetingsPage() {
       </Sheet>
 
       {/* In-App Jitsi Video Call Full-Screen Modal Overlay using Official Jitsi External API */}
-      {activeCall && (
-        <div className="fixed inset-0 z-50 bg-black/95 flex flex-col animate-in fade-in duration-200">
+      {activeCall && createPortal(
+        <div className="fixed inset-0 z-[100] bg-black/95 flex flex-col animate-in fade-in duration-200">
           {/* Top Bar */}
           <div className="h-14 px-6 bg-slate-900 border-b border-slate-800 flex items-center justify-between z-10">
             <div className="flex items-center gap-3">
@@ -1164,7 +1165,8 @@ export default function MeetingsPage() {
               </div>
             )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </motion.div>
   );
