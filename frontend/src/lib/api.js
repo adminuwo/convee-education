@@ -1,8 +1,8 @@
 import axios from 'axios';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8001';
-export const API_BASE = `${BACKEND_URL}/api/v1`;
-export const SOCKET_URL = BACKEND_URL;
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
+export const API_BASE = BACKEND_URL ? (BACKEND_URL.endsWith('/api/v1') ? BACKEND_URL : `${BACKEND_URL}/api/v1`) : '/api/v1';
+export const SOCKET_URL = BACKEND_URL || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:8001');
 
 
 const api = axios.create({ baseURL: API_BASE });
