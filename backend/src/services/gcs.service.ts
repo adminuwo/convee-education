@@ -31,15 +31,18 @@ export function getGcsClient(): Storage {
     }
   }
 
-  // Check if we need token-assisted client
-  const activeToken = getActiveGcloudToken();
-  if (activeToken) {
-    const authClient = new OAuth2Client();
-    authClient.setCredentials({ access_token: activeToken });
-    return new Storage({
-      projectId: env.GCS_PROJECT_ID,
-      authClient,
-    });
+  // Only check for local gcloud CLI token when developing locally outside Cloud Run
+  const isCloudRunOrProd = Boolean(process.env.K_SERVICE || process.env.NODE_ENV === 'production');
+  if (!isCloudRunOrProd) {
+    const activeToken = getActiveGcloudToken();
+    if (activeToken) {
+      const authClient = new OAuth2Client();
+      authClient.setCredentials({ access_token: activeToken });
+      return new Storage({
+        projectId: env.GCS_PROJECT_ID,
+        authClient,
+      });
+    }
   }
 
   return storageClient || new Storage({ projectId: env.GCS_PROJECT_ID });

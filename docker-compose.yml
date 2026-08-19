@@ -1,0 +1,102 @@
+# ==============================================================================
+# Convee Platform - Local Multi-Container Stack (Docker Compose)
+# ==============================================================================
+# Usage:
+#   docker compose up --build
+# ==============================================================================
+
+version: '3.8'
+
+services:
+  # ----------------------------------------------------------------------------
+  # PostgreSQL Database (Local Simulation of Cloud SQL)
+  # ----------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: convee-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+      POSTGRES_DB: convee
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d convee"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ----------------------------------------------------------------------------
+  # LLM Bridge Microservice (Python FastAPI / Vertex AI / OpenAI)
+  # ----------------------------------------------------------------------------
+  llm-bridge:
+    build:
+      context: ./llm_bridge
+      dockerfile: Dockerfile
+    container_name: convee-llm-bridge
+    restart: unless-stopped
+    ports:
+      - "8002:8080"
+    environment:
+      PORT: 8080
+      VERTEX_PROJECT_ID: ${VERTEX_PROJECT_ID:-ai-mall-484810}
+      VERTEX_LOCATION: ${VERTEX_LOCATION:-asia-south1}
+      VERTEX_GEMINI_MODEL: ${VERTEX_GEMINI_MODEL:-gemini-2.5-flash}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ----------------------------------------------------------------------------
+  # Backend Server (Node.js / Express / Prisma / WebSockets)
+  # ----------------------------------------------------------------------------
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: convee-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      llm-bridge:
+        condition: service_started
+    ports:
+      - "8001:8080"
+    environment:
+      PORT: 8080
+      NODE_ENV: development
+      DATABASE_URL: postgresql://postgres:postgrespassword@postgres:5432/convee?schema=public
+      JWT_SECRET: super-secret-local-jwt-key
+      JWT_REFRESH_SECRET: super-secret-local-jwt-refresh-key
+      CORS_ORIGINS: "*"
+      LLM_BRIDGE_URL: http://llm-bridge:8080
+      VERTEX_PROJECT_ID: ${VERTEX_PROJECT_ID:-ai-mall-484810}
+      VERTEX_LOCATION: ${VERTEX_LOCATION:-asia-south1}
+      AUTO_MIGRATE: "true"
+
+  # ----------------------------------------------------------------------------
+  # Frontend Application (React SPA + Nginx)
+  # ----------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        REACT_APP_BACKEND_URL: http://localhost:8001
+    container_name: convee-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "3000:8080"
+    environment:
+      PORT: 8080
+
+volumes:
+  pgdata:

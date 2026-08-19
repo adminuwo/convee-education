@@ -1,0 +1,146 @@
+# ==============================================================================
+# Google Cloud Build Pipeline for Convee Platform
+# ==============================================================================
+# Usage:
+#   gcloud builds submit --config=cloudbuild.yaml \
+#     --substitutions=_REGION=asia-south1,_DATABASE_URL="postgresql://...",_JWT_SECRET="..."
+# ==============================================================================
+
+substitutions:
+  _REGION: asia-south1
+  _REPO_NAME: convee-docker-repo
+  _LLM_SERVICE: convee-llm-bridge
+  _BACKEND_SERVICE: convee-backend
+  _FRONTEND_SERVICE: convee-frontend
+
+steps:
+  # ----------------------------------------------------------------------------
+  # 1. Build and Push LLM Bridge Image
+  # ----------------------------------------------------------------------------
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'build-llm-bridge'
+    args:
+      - 'build'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_LLM_SERVICE}:${BUILD_ID}'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_LLM_SERVICE}:latest'
+      - './llm_bridge'
+
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-llm-bridge'
+    args:
+      - 'push'
+      - '--all-tags'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_LLM_SERVICE}'
+
+  # ----------------------------------------------------------------------------
+  # 2. Build and Push Backend Image
+  # ----------------------------------------------------------------------------
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'build-backend'
+    args:
+      - 'build'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_BACKEND_SERVICE}:${BUILD_ID}'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_BACKEND_SERVICE}:latest'
+      - './backend'
+
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-backend'
+    args:
+      - 'push'
+      - '--all-tags'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_BACKEND_SERVICE}'
+
+  # ----------------------------------------------------------------------------
+  # 3. Deploy LLM Bridge to Cloud Run (Serverless Vertex AI / OpenAI Proxy)
+  # ----------------------------------------------------------------------------
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'deploy-llm-bridge'
+    entrypoint: 'gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - '${_LLM_SERVICE}'
+      - '--image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_LLM_SERVICE}:${BUILD_ID}'
+      - '--region=${_REGION}'
+      - '--platform=managed'
+      - '--allow-unauthenticated'
+      - '--cpu=1'
+      - '--memory=1Gi'
+      - '--min-instances=0'
+      - '--max-instances=10'
+      - '--set-env-vars=VERTEX_PROJECT_ID=${PROJECT_ID},VERTEX_LOCATION=${_REGION},VERTEX_GEMINI_MODEL=gemini-2.5-flash'
+
+  # ----------------------------------------------------------------------------
+  # 4. Deploy Backend to Cloud Run
+  # ----------------------------------------------------------------------------
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'deploy-backend'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        LLM_URL=$$(gcloud run services describe ${_LLM_SERVICE} --region=${_REGION} --format='value(status.url)')
+        echo "Found LLM Bridge URL: $$LLM_URL"
+        
+        gcloud run deploy ${_BACKEND_SERVICE} \
+          --image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_BACKEND_SERVICE}:${BUILD_ID} \
+          --region=${_REGION} \
+          --platform=managed \
+          --allow-unauthenticated \
+          --cpu=1 \
+          --memory=1Gi \
+          --min-instances=0 \
+          --max-instances=10 \
+          --session-affinity \
+          --set-env-vars=NODE_ENV=production,LLM_BRIDGE_URL=$$LLM_URL,VERTEX_PROJECT_ID=${PROJECT_ID},GCS_PROJECT_ID=${PROJECT_ID}
+
+  # ----------------------------------------------------------------------------
+  # 5. Build and Push Frontend Image (injecting deployed Backend URL)
+  # ----------------------------------------------------------------------------
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'build-frontend'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        BACKEND_URL=$$(gcloud run services describe ${_BACKEND_SERVICE} --region=${_REGION} --format='value(status.url)')
+        echo "Wiring Frontend to Backend URL: $$BACKEND_URL"
+        
+        docker build \
+          --build-arg REACT_APP_BACKEND_URL="$$BACKEND_URL" \
+          -t "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_FRONTEND_SERVICE}:${BUILD_ID}" \
+          -t "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_FRONTEND_SERVICE}:latest" \
+          ./frontend
+        
+        docker push --all-tags "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_FRONTEND_SERVICE}"
+
+  # ----------------------------------------------------------------------------
+  # 6. Deploy Frontend to Cloud Run
+  # ----------------------------------------------------------------------------
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'deploy-frontend'
+    entrypoint: 'gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - '${_FRONTEND_SERVICE}'
+      - '--image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_FRONTEND_SERVICE}:${BUILD_ID}'
+      - '--region=${_REGION}'
+      - '--platform=managed'
+      - '--allow-unauthenticated'
+      - '--cpu=1'
+      - '--memory=512Mi'
+      - '--min-instances=0'
+      - '--max-instances=10'
+
+images:
+  - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_LLM_SERVICE}:${BUILD_ID}'
+  - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_BACKEND_SERVICE}:${BUILD_ID}'
+  - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_FRONTEND_SERVICE}:${BUILD_ID}'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
