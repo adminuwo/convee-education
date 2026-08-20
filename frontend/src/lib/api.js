@@ -84,6 +84,8 @@ export const orgApi = {
   create: (data) => api.post('/orgs', data).then((r) => r.data),
   get: (id) => api.get(`/orgs/${id}`).then((r) => r.data),
   update: (id, data) => api.patch(`/orgs/${id}`, data).then((r) => r.data),
+  uploadLogo: (id, formData) => api.post(`/orgs/${id}/logo`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }).then((r) => r.data),
+  removeLogo: (id) => api.delete(`/orgs/${id}/logo`).then((r) => r.data),
   members: (id) => api.get(`/orgs/${id}/members`).then((r) => r.data),
   invite: (id, data) => api.post(`/orgs/${id}/invite`, data).then((r) => r.data),
   getPendingInvitations: (id) => api.get(`/orgs/${id}/pending-invitations`).then((r) => r.data),

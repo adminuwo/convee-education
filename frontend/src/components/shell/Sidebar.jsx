@@ -392,30 +392,46 @@ export function Sidebar({ onNavigate }) {
               className="flex w-full items-center gap-2 rounded-md px-2 py-2 hover:bg-black/5 dark:hover:bg-white/5"
               data-testid="workspace-switcher"
             >
-              <div className="flex h-8 w-8 items-center justify-center rounded-md gradient-brand text-white font-semibold text-sm">
-                {initials(currentOrg?.name)}
-              </div>
+              {currentOrg?.logoUrl ? (
+                <img
+                  src={currentOrg.logoUrl}
+                  alt={currentOrg.name}
+                  className="h-8 w-8 rounded-md object-cover border border-border/80 bg-background shadow-xs shrink-0"
+                />
+              ) : (
+                <div className="flex h-8 w-8 items-center justify-center rounded-md gradient-brand text-white font-semibold text-sm shrink-0">
+                  {initials(currentOrg?.name)}
+                </div>
+              )}
               <div className="flex-1 min-w-0 text-left">
                 <div className="text-sm font-semibold truncate font-display">{currentOrg?.name}</div>
                 <div className="text-xs text-muted-foreground truncate">{currentOrg?.role}</div>
               </div>
-              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+              <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent className="w-64" align="start">
             <DropdownMenuLabel>Workspaces</DropdownMenuLabel>
             {memberships.map((m) => (
               <DropdownMenuItem key={m.orgId} onClick={() => switchOrg(m.orgId)} data-testid={`workspace-item-${m.organization.slug}`}>
-                <Building2 className="h-4 w-4 mr-2" />
+                {m.organization.logoUrl ? (
+                  <img
+                    src={m.organization.logoUrl}
+                    alt={m.organization.name}
+                    className="h-4 w-4 rounded-xs object-cover mr-2 shrink-0"
+                  />
+                ) : (
+                  <Building2 className="h-4 w-4 mr-2 shrink-0" />
+                )}
                 <div className="flex-1 truncate">{m.organization.name}</div>
                 <Badge variant="secondary" className="ml-2 text-[10px]">{m.role}</Badge>
               </DropdownMenuItem>
             ))}
-            {['DIRECTOR', 'ADMIN', 'PRINCIPAL', 'DEAN'].includes(currentOrg?.role) && (
+            {(currentOrg?.role === 'DIRECTOR' || currentOrg?.role === 'OWNER') && (
               <>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => setRenameModalOpen(true)}>
-                  <Pencil className="h-4 w-4 mr-2" /> Rename Institution
+                  <Settings className="h-4 w-4 mr-2" /> Institution Logo & Settings
                 </DropdownMenuItem>
               </>
             )}

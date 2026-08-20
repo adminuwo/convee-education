@@ -1,4 +1,6 @@
 import crypto from 'crypto';
+import path from 'path';
+import multer from 'multer';
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
@@ -8,9 +10,23 @@ import { requireRole } from '../middleware/rbac';
 import { validate } from '../middleware/validate';
 import { hashPassword } from '../utils/password';
 import { isEmailConfigured, sendVerificationEmail, verifyEmailDomain, sendInviteCredentialsEmail } from '../utils/email';
+import { uploadBufferToGcs } from '../services/gcs.service';
+import { logger } from '../utils/logger';
 
 const router = Router();
 router.use(authenticate);
+
+const logoUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only image files (PNG, JPEG, WebP, SVG, GIF) are allowed for organization logo'));
+    }
+  },
+});
 
 const inviteLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -73,14 +89,15 @@ router.get('/:orgId', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// Update Organization Settings (Strictly Director / Owner Only)
 router.patch('/:orgId', async (req, res, next) => {
   try {
     const orgId = req.params.orgId as string;
     const membership = await prisma.membership.findFirst({
       where: { userId: req.user!.id, orgId, isActive: true },
     });
-    if (!membership || !['ADMIN', 'DIRECTOR', 'PRINCIPAL', 'DEAN'].includes(membership.role)) {
-      return res.status(403).json({ error: 'Only Directors or Admins can update organization settings' });
+    if (!membership || (membership.role !== 'DIRECTOR' && membership.role !== 'OWNER')) {
+      return res.status(403).json({ error: 'Only Directors can update organization settings or logo.' });
     }
     const { name, description, logoUrl } = req.body;
     if (name !== undefined && !name.trim()) {
@@ -101,6 +118,76 @@ router.patch('/:orgId', async (req, res, next) => {
     }
 
     res.json({ success: true, org });
+  } catch (e) { next(e); }
+});
+
+// Dedicated Director-only Logo Upload endpoint (Supports multipart file & direct URL/Base64)
+router.post('/:orgId/logo', logoUpload.single('logo'), async (req, res, next) => {
+  try {
+    const orgId = req.params.orgId as string;
+    const membership = await prisma.membership.findFirst({
+      where: { userId: req.user!.id, orgId, isActive: true },
+    });
+    if (!membership || (membership.role !== 'DIRECTOR' && membership.role !== 'OWNER')) {
+      return res.status(403).json({ error: 'Only Directors can change or upload the institution logo.' });
+    }
+
+    let finalLogoUrl = req.body?.logoUrl;
+    const file = (req as any).file;
+
+    if (file) {
+      const ext = path.extname(file.originalname).toLowerCase() || '.png';
+      const uid = Math.random().toString(36).substring(2, 10);
+      const gcsKey = `orgs/${orgId}/branding/logo-${Date.now()}-${uid}${ext}`;
+      try {
+        const uploadResult = await uploadBufferToGcs(file.buffer, gcsKey, file.mimetype);
+        finalLogoUrl = uploadResult.signedUrl || uploadResult.publicUrl;
+      } catch (gcsErr: any) {
+        logger.warn(`GCS upload fallback to base64 data URI for org logo: ${gcsErr?.message}`);
+        finalLogoUrl = `data:${file.mimetype};base64,${file.buffer.toString('base64')}`;
+      }
+    }
+
+    if (!finalLogoUrl) {
+      return res.status(400).json({ error: 'No logo file or image URL provided.' });
+    }
+
+    const org = await prisma.organization.update({
+      where: { id: orgId },
+      data: { logoUrl: finalLogoUrl },
+    });
+
+    const io = req.app.locals.io;
+    if (io) {
+      io.to(`org:${orgId}`).emit('org:updated', org);
+    }
+
+    res.json({ success: true, logoUrl: finalLogoUrl, org });
+  } catch (e) { next(e); }
+});
+
+// Dedicated Director-only Logo Removal endpoint
+router.delete('/:orgId/logo', async (req, res, next) => {
+  try {
+    const orgId = req.params.orgId as string;
+    const membership = await prisma.membership.findFirst({
+      where: { userId: req.user!.id, orgId, isActive: true },
+    });
+    if (!membership || (membership.role !== 'DIRECTOR' && membership.role !== 'OWNER')) {
+      return res.status(403).json({ error: 'Only Directors can remove the institution logo.' });
+    }
+
+    const org = await prisma.organization.update({
+      where: { id: orgId },
+      data: { logoUrl: null },
+    });
+
+    const io = req.app.locals.io;
+    if (io) {
+      io.to(`org:${orgId}`).emit('org:updated', org);
+    }
+
+    res.json({ success: true, message: 'Institution logo removed successfully.', org });
   } catch (e) { next(e); }
 });
 

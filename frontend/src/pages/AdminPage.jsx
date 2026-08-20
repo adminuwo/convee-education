@@ -324,7 +324,12 @@ export default function AdminPage() {
             Admin
             {isCurrentUserOwner && (
               <Button variant="outline" size="sm" onClick={() => setRenameModalOpen(true)} className="h-8 gap-1.5 text-xs">
-                <Pencil className="h-3.5 w-3.5" /> Rename Institution
+                {currentOrg?.logoUrl ? (
+                  <img src={currentOrg.logoUrl} alt="Logo" className="h-4 w-4 rounded-xs object-cover border border-border/80" />
+                ) : (
+                  <Building2 className="h-3.5 w-3.5" />
+                )}
+                Institution Logo & Settings
               </Button>
             )}
           </h1>
