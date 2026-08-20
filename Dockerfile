@@ -16,7 +16,8 @@ ENV REACT_APP_BACKEND_URL=${REACT_APP_BACKEND_URL} \
     ENABLE_HEALTH_CHECK=${ENABLE_HEALTH_CHECK} \
     NODE_ENV=production \
     GENERATE_SOURCEMAP=false \
-    CI=false
+    CI=false \
+    NODE_OPTIONS="--max-old-space-size=4096"
 
 # Copy package manifests & configs
 COPY frontend/package*.json ./
@@ -46,24 +47,20 @@ WORKDIR /app/backend
 # Install OpenSSL for Prisma
 RUN apt-get update -y && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
 
-# Copy package files from backend/
+# Copy backend package manifests and configs
 COPY backend/package*.json ./
 COPY backend/tsconfig.json ./
 COPY backend/prisma ./prisma/
-
-# Install all dependencies (including devDependencies for TypeScript & Prisma)
-RUN npm ci
-
-# Generate Prisma Client
-RUN npx prisma generate
-
-# Copy application source code from backend/
 COPY backend/src ./src
+
+# Install dependencies and compile Prisma client
+RUN npm install
+RUN npx prisma generate
 
 # Build TypeScript to dist/
 RUN npm run build
 
-# Prune devDependencies to keep image lean
+# Prune devDependencies (keeps runtime dependencies including Prisma client)
 RUN npm prune --production
 
 # ============================================================
@@ -73,7 +70,7 @@ FROM node:20-slim AS runner
 WORKDIR /app
 
 # Install OpenSSL, ca-certificates, and dumb-init for proper signal handling
-RUN apt-get update -y && apt-get install -y openssl ca-certificates dumb-init && rm -rf /var/lib/apt/lists/*
+RUN apt-get update -y && apt-get install -y openssl ca-certificates dumb-init sed && rm -rf /var/lib/apt/lists/*
 
 ENV NODE_ENV=production
 ENV PORT=8080
@@ -87,13 +84,14 @@ COPY --from=backend-builder /app/backend/node_modules ./node_modules
 COPY --from=backend-builder /app/backend/dist ./dist
 COPY --from=backend-builder /app/backend/prisma ./prisma
 COPY --from=backend-builder /app/backend/src/generated ./dist/generated
+COPY --from=backend-builder /app/backend/src/generated ./src/generated
 
 # Copy frontend built assets into container
 COPY --from=frontend-builder /app/frontend/build ./frontend-build
 
-# Copy entrypoint script
+# Copy entrypoint script and sanitize line endings (CRLF -> LF)
 COPY backend/docker-entrypoint.sh ./
-RUN chmod +x docker-entrypoint.sh
+RUN sed -i 's/\r$//' docker-entrypoint.sh && chmod +x docker-entrypoint.sh
 
 # Assign ownership to non-root user
 RUN chown -R nodejs:nodejs /app
