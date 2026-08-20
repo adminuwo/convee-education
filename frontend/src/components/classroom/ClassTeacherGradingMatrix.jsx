@@ -84,7 +84,7 @@ export default function ClassTeacherGradingMatrix({ orgId, user, classTeams = []
       setGradingSheet(data);
 
       // Initialize local state from returned student scores
-      const initial: Record<string, Record<string, any>> = {};
+      const initial = {};
       (data.students || []).forEach(st => {
         initial[st.studentId] = {};
         (data.exam?.subjects || []).forEach(sub => {
