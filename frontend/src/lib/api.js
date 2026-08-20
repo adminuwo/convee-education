@@ -253,6 +253,10 @@ export const aiExtendedApi = {
   dailyBriefing: (orgId) => api.post('/ai/daily-briefing', { orgId }).then((r) => r.data),
 };
 
+export const llmBridgeApi = {
+  health: () => api.get('/llm_bridge/health').then((r) => r.data),
+};
+
 export const financeApi = {
   getOverview: () => api.get('/finance/overview').then((r) => r.data),
   getFees: (params) => api.get('/finance/fees', { params }).then((r) => r.data),

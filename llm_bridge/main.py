@@ -54,6 +54,7 @@ class ChatResponse(BaseModel):
     model: str
 
 
+@app.get('/llm_bridge/health')
 @app.get('/health')
 async def health():
     return {
@@ -137,6 +138,7 @@ async def call_openai_direct(api_key: str, model: str, system_msg: str, user_msg
     return res_data['choices'][0]['message']['content']
 
 
+@app.post('/llm_bridge/chat', response_model=ChatResponse)
 @app.post('/chat', response_model=ChatResponse)
 async def chat(req: ChatRequest):
     provider = (req.provider or 'vertexai').lower()

@@ -258,7 +258,11 @@ router.post('/:id/summarize', async (req, res, next) => {
     const content = `Meeting Title: ${meeting.title}\n\nAgenda:\n${meeting.agenda || 'None'}\n\nMeeting Notes:\n${meeting.notes || 'None'}`;
     const sys = 'You are an AI executive assistant. Summarize the meeting based ONLY on the provided meeting notes and agenda. If the notes are sparse, keep the summary brief. Do NOT fabricate or make up details not present in the notes. Format in clean markdown with sections: 1) Summary, 2) Key Decisions, 3) Action Items.';
 
-    const resp = await axios.post(`${env.LLM_BRIDGE_URL}/chat`, {
+    const url = env.LLM_BRIDGE_URL.endsWith('/llm_bridge')
+      ? `${env.LLM_BRIDGE_URL}/chat`
+      : `${env.LLM_BRIDGE_URL}/llm_bridge/chat`;
+
+    const resp = await axios.post(url, {
       session_key: `meeting-${meeting.id}-${Date.now()}`,
       system_message: sys,
       user_message: content,

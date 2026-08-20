@@ -10,7 +10,10 @@ router.use(authenticate);
 
 async function callLLM(sessionKey: string, systemPrompt: string, userMessage: string, provider?: string, model?: string) {
   try {
-    const resp = await axios.post(`${env.LLM_BRIDGE_URL}/chat`, {
+    const url = env.LLM_BRIDGE_URL.endsWith('/llm_bridge')
+      ? `${env.LLM_BRIDGE_URL}/chat`
+      : `${env.LLM_BRIDGE_URL}/llm_bridge/chat`;
+    const resp = await axios.post(url, {
       session_key: sessionKey,
       system_message: systemPrompt,
       user_message: userMessage,

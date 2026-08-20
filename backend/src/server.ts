@@ -10,6 +10,7 @@ import swaggerUi from 'swagger-ui-express';
 import swaggerJsdoc from 'swagger-jsdoc';
 import path from 'path';
 import fs from 'fs';
+import axios from 'axios';
 import { env } from './config/env';
 import { logger } from './utils/logger';
 import { errorHandler, notFound } from './middleware/validate';
@@ -59,6 +60,17 @@ app.use('/api', limiter);
 // Health
 app.get('/api/health', (_req, res) => res.json({ status: 'ok', ts: new Date().toISOString() }));
 app.get('/api/v1/health', (_req, res) => res.json({ status: 'ok', ts: new Date().toISOString() }));
+app.get('/api/v1/llm_bridge/health', async (_req, res) => {
+  try {
+    const url = env.LLM_BRIDGE_URL.endsWith('/llm_bridge')
+      ? `${env.LLM_BRIDGE_URL}/health`
+      : `${env.LLM_BRIDGE_URL}/llm_bridge/health`;
+    const bridgeResp = await axios.get(url, { timeout: 5000 });
+    res.json({ status: 'ok', bridge: bridgeResp.data });
+  } catch (err: any) {
+    res.status(503).json({ status: 'unavailable', error: err?.message });
+  }
+});
 
 // Swagger
 const swaggerSpec = swaggerJsdoc({
