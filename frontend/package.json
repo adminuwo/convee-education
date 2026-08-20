@@ -74,7 +74,7 @@
     "start": "craco start",
     "dev": "craco start",
     "build": "craco build",
-    "test": "craco test"
+    "test": "craco test --watchAll=false --passWithNoTests"
   },
   "browserslist": {
     "production": [

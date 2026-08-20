@@ -14,7 +14,6 @@ ARG ENABLE_HEALTH_CHECK=false
 ENV REACT_APP_BACKEND_URL=${REACT_APP_BACKEND_URL} \
     REACT_APP_JITSI_DOMAIN=${REACT_APP_JITSI_DOMAIN} \
     ENABLE_HEALTH_CHECK=${ENABLE_HEALTH_CHECK} \
-    NODE_ENV=production \
     GENERATE_SOURCEMAP=false \
     CI=false \
     NODE_OPTIONS="--max-old-space-size=4096"
@@ -27,8 +26,8 @@ COPY frontend/postcss.config.js ./
 COPY frontend/jsconfig.json ./
 COPY frontend/components.json ./
 
-# Install frontend dependencies
-RUN npm install --legacy-peer-deps
+# Install frontend dependencies (including devDependencies required for craco and tailwind build)
+RUN npm install --legacy-peer-deps --include=dev
 
 # Copy frontend source code and assets
 COPY frontend/public ./public
