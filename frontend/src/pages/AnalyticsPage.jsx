@@ -56,7 +56,7 @@ export default function AnalyticsPage() {
           </CardContent>
         </Card>
         <Card className="lg:col-span-2">
-          <CardHeader><CardTitle className="text-base">Workload distribution</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-base">Faculty & Staff Workload distribution</CardTitle></CardHeader>
           <CardContent className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={data?.workload?.map(w => ({ name: w.user?.fullName || 'Unknown', tasks: w.count })) || []}>

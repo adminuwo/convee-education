@@ -226,7 +226,10 @@ router.get('/analytics', async (req, res, next) => {
       }),
       prisma.taskAssignee.groupBy({
         by: ['userId'],
-        where: { task: { orgId, status: { in: ['TODO', 'IN_PROGRESS', 'REVIEW'] }, deletedAt: null } },
+        where: {
+          task: { orgId, status: { in: ['TODO', 'IN_PROGRESS', 'REVIEW'] }, deletedAt: null },
+          user: { memberships: { some: { orgId, role: { in: ['TEACHER', 'HOD', 'DEAN', 'PRINCIPAL', 'DIRECTOR', 'ADMIN', 'ACCOUNTANT'] }, isActive: true } } },
+        },
         _count: { _all: true },
         orderBy: { _count: { userId: 'desc' } },
         take: 8,
