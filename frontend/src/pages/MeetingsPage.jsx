@@ -18,6 +18,7 @@ import { Calendar, Clock, Plus, Sparkles, Video, ExternalLink, X, ShieldAlert, C
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { motion } from 'framer-motion';
+import FormattedMarkdown from '@/components/FormattedMarkdown';
 
 function initials(n) { return (n || '?').split(' ').map((x) => x[0]).slice(0, 2).join('').toUpperCase(); }
 
@@ -1088,7 +1089,9 @@ export default function MeetingsPage() {
                 <div className="flex items-center gap-2 text-xs uppercase text-accent font-semibold">
                   <Sparkles className="h-4 w-4" /> AI Summary & Decision Notes
                 </div>
-                <div className="text-sm whitespace-pre-wrap leading-relaxed">{detail.aiSummary}</div>
+                <div className="text-sm leading-relaxed">
+                  <FormattedMarkdown content={detail.aiSummary} />
+                </div>
               </div>
             )}
           </div>

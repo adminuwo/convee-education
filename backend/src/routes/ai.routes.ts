@@ -30,6 +30,39 @@ export function resolveLLMProviderAndModel(userRole?: string | null, userEmail?:
   };
 }
 
+function cleanLLMText(text: string): string {
+  if (!text || typeof text !== 'string') return '';
+  return text
+    .replace(/\\"/g, '"')
+    .replace(/\\'/g, "'")
+    .replace(/\r\n/g, '\n')
+    .trim();
+}
+
+export function cleanBriefingPlainText(text: string): string {
+  if (!text || typeof text !== 'string') return '';
+  return text
+    .replace(/\\"/g, '"')
+    .replace(/\\'/g, "'")
+    .replace(/\*\*\*([^*]+)\*\*\*/g, '$1')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/\*([^*]+)\*/g, '$1')
+    .replace(/___([^_]+)___/g, '$1')
+    .replace(/__([^_]+)__/g, '$1')
+    .replace(/_([^_]+)_/g, '$1')
+    .replace(/~~([^~]+)~~/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/```[\s\S]*?```/g, '')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/^\s*[-*•]\s+/gm, '')
+    .replace(/^\s*\d+\.\s+/gm, '')
+    .replace(/^\s*>\s+/gm, '')
+    .replace(/\n+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 async function callLLM(sessionKey: string, systemPrompt: string, userMessage: string, provider?: string, model?: string) {
   try {
     const url = env.LLM_BRIDGE_URL.endsWith('/llm_bridge')
@@ -42,8 +75,9 @@ async function callLLM(sessionKey: string, systemPrompt: string, userMessage: st
       provider: provider || env.DEFAULT_LLM_PROVIDER,
       model: model || env.DEFAULT_LLM_MODEL,
     }, { timeout: 60000 });
+    const rawText = resp.data?.text || (typeof resp.data === 'string' ? resp.data : '');
     return {
-      text: resp.data?.text || (typeof resp.data === 'string' ? resp.data : ''),
+      text: cleanLLMText(rawText),
       provider: resp.data?.provider || provider || env.DEFAULT_LLM_PROVIDER,
       model: resp.data?.model || model || env.DEFAULT_LLM_MODEL,
     };
@@ -1164,7 +1198,8 @@ router.post('/daily-briefing', async (req, res, next) => {
     const annSummary = announcements.map(a => `- ${a.sender?.fullName || 'Admin'}: "${a.content}"`).join('\n');
 
     const sys = `You are an Executive AI Assistant for the Director and Principal of an educational institution.
-Generate a concise, professional 1-PARAGRAPH Executive Briefing summarizing today's campus status, active tasks, and recent announcements. Focus on key highlights.`;
+Generate a concise, professional 1-PARAGRAPH Executive Briefing summarizing today's campus status, active tasks, and recent announcements. Focus on key highlights.
+Write in plain, natural, flowing paragraph sentences. Do NOT use markdown syntax, asterisks (**), headers (#), or bullet points.`;
 
     const prompt = `Institution: ${orgName}
 Active Tasks:
@@ -1184,7 +1219,7 @@ ${annSummary || 'No recent announcements.'}`;
         llmConfig.provider,
         llmConfig.model
       );
-      briefingText = text;
+      briefingText = cleanBriefingPlainText(text);
     } catch (llmErr: any) {
       logger.warn(`AI synthesis unavailable for daily-briefing, using structured fallback: ${llmErr?.message}`);
       briefingText = fallbackBriefing;

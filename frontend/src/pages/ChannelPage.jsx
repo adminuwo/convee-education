@@ -18,6 +18,7 @@ import { Hash, Lock, Volume2, Users, Search, Sparkles, Send, Paperclip, Smile, M
 import { toast } from 'sonner';
 import { Virtuoso } from 'react-virtuoso';
 import { formatDistanceToNow, format } from 'date-fns';
+import FormattedMarkdown from '@/components/FormattedMarkdown';
 import ConfirmModal from '@/components/ConfirmModal';
 
 function bytes(b) { if (!b) return '0 B'; const k = 1024; const sizes = ['B','KB','MB','GB']; const i = Math.floor(Math.log(b) / Math.log(k)); return `${(b / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`; }
@@ -1126,7 +1127,9 @@ export default function ChannelPage() {
       <Sheet open={!!aiSummary} onOpenChange={(o) => !o && setAiSummary(null)}>
         <SheetContent className="w-full sm:max-w-lg">
           <SheetHeader><SheetTitle className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-accent" /> AI Summary</SheetTitle></SheetHeader>
-          <div className="mt-4 whitespace-pre-wrap text-sm leading-relaxed">{aiSummary}</div>
+          <div className="mt-4 text-sm leading-relaxed">
+            <FormattedMarkdown content={aiSummary} />
+          </div>
         </SheetContent>
       </Sheet>
 
@@ -1195,8 +1198,8 @@ export default function ChannelPage() {
               <Sparkles className="h-5 w-5 text-accent" /> AI Channel Summary
             </DialogTitle>
           </DialogHeader>
-          <div className="prose prose-sm dark:prose-invert max-h-96 overflow-auto whitespace-pre-wrap leading-relaxed">
-            {aiSummary}
+          <div className="max-h-96 overflow-auto text-sm leading-relaxed">
+            <FormattedMarkdown content={aiSummary} />
           </div>
           <DialogFooter>
             <Button onClick={() => setAiSummary(null)}>Close</Button>

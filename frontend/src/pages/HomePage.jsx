@@ -11,6 +11,7 @@ import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContai
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import CustomTooltip from '@/components/CustomTooltip';
+import FormattedMarkdown from '@/components/FormattedMarkdown';
 
 function initials(n) { return (n || '?').split(' ').map((x) => x[0]).slice(0, 2).join('').toUpperCase(); }
 
@@ -142,11 +143,13 @@ export default function HomePage() {
 
           <div className="mt-3 text-xs leading-relaxed text-foreground/90 p-3 rounded-lg bg-card/80 border border-border/60">
             {briefingLoading ? (
-              <div className="flex items-center gap-2 text-muted-foreground animate-pulse">
-                <Sparkles className="h-3.5 w-3.5" /> Synthesizing today's campus briefing...
+              <div className="flex items-center gap-2 text-muted-foreground animate-pulse py-1">
+                <Sparkles className="h-3.5 w-3.5 text-purple-500" /> Synthesizing today's campus briefing...
               </div>
             ) : (
-              dailyBriefing || `${currentOrg?.name} campus is operating normally today. Attendance records, active homework tasks, and faculty announcements are up-to-date.`
+              <FormattedMarkdown
+                content={dailyBriefing || `${currentOrg?.name} campus is operating normally today. Attendance records, active homework tasks, and faculty announcements are up-to-date.`}
+              />
             )}
           </div>
         </CardContent>
