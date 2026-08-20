@@ -8,6 +8,8 @@ import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import swaggerUi from 'swagger-ui-express';
 import swaggerJsdoc from 'swagger-jsdoc';
+import path from 'path';
+import fs from 'fs';
 import { env } from './config/env';
 import { logger } from './utils/logger';
 import { errorHandler, notFound } from './middleware/validate';
@@ -37,7 +39,10 @@ const app: Application = express();
 const server = http.createServer(app);
 
 app.set('trust proxy', 1);
-app.use(helmet({ crossOriginResourcePolicy: false }));
+app.use(helmet({
+  crossOriginResourcePolicy: false,
+  contentSecurityPolicy: false,
+}));
 app.use(cors({
   origin: env.CORS_ORIGINS === '*' ? true : env.CORS_ORIGINS.split(','),
   credentials: true,
@@ -87,8 +92,43 @@ app.use('/api/v1/timetable', timetableRoutes);
 app.use('/api/v1/orgs/:orgId/promotion', promotionRoutes);
 app.use('/api/v1/exams', examRoutes);
 
+// Handle unmatched /api routes
 app.use('/api', notFound);
+
+// Error Handler
 app.use(errorHandler);
+
+// Serve Frontend Static Build (Full-stack single container / Cloud Run production)
+const candidateStaticDirs = [
+  path.resolve(__dirname, '../frontend-build'),
+  path.resolve(__dirname, '../../frontend/build'),
+  path.resolve(process.cwd(), 'frontend-build'),
+  path.resolve(process.cwd(), 'frontend/build'),
+];
+const staticDir = candidateStaticDirs.find((dir) => fs.existsSync(dir));
+
+if (staticDir) {
+  logger.info(`📦 Serving frontend static assets from: ${staticDir}`);
+  app.use(express.static(staticDir));
+
+  // SPA fallback: any non-API GET request serves index.html for client-side routing (/login, /dashboard, etc.)
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api') || req.path.startsWith('/socket.io')) {
+      return next();
+    }
+    res.sendFile(path.join(staticDir, 'index.html'));
+  });
+} else {
+  // If static files are not present (pure backend mode), provide clean root status
+  app.get('/', (_req, res) => {
+    res.json({
+      service: 'Convee Education Platform API',
+      status: 'online',
+      docs: '/api/docs',
+      health: '/api/health',
+    });
+  });
+}
 
 // Setup Socket.IO
 const io = setupSocketIO(server);
