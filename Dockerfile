@@ -63,16 +63,25 @@ RUN npm run build
 RUN npm prune --production
 
 # ============================================================
-# Stage 3: Minimal Production Runtime
+# Stage 3: Minimal Production Runtime (All-in-One: Frontend + Backend + LLM Bridge)
 FROM node:20-slim AS runner
 
 WORKDIR /app
 
-# Install OpenSSL, ca-certificates, and dumb-init for proper signal handling
-RUN apt-get update -y && apt-get install -y openssl ca-certificates dumb-init sed && rm -rf /var/lib/apt/lists/*
+# Install OpenSSL, ca-certificates, Python 3, pip, and dumb-init
+RUN apt-get update -y && apt-get install -y \
+    openssl \
+    ca-certificates \
+    dumb-init \
+    sed \
+    python3 \
+    python3-pip \
+    && rm -rf /var/lib/apt/lists/*
 
 ENV NODE_ENV=production
 ENV PORT=8080
+ENV LLM_BRIDGE_PORT=8002
+ENV LLM_BRIDGE_URL="http://127.0.0.1:8002"
 
 # Create non-root user for security
 RUN groupadd -r nodejs && useradd -r -g nodejs nodejs
@@ -84,6 +93,10 @@ COPY --from=backend-builder /app/backend/dist ./dist
 COPY --from=backend-builder /app/backend/prisma ./prisma
 COPY --from=backend-builder /app/backend/src/generated ./dist/generated
 COPY --from=backend-builder /app/backend/src/generated ./src/generated
+
+# Copy LLM Bridge source code & install Python dependencies
+COPY llm_bridge ./llm_bridge
+RUN pip3 install --no-cache-dir --break-system-packages -r ./llm_bridge/requirements.txt
 
 # Copy frontend built assets into container
 COPY --from=frontend-builder /app/frontend/build ./frontend-build
