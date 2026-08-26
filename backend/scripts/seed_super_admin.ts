@@ -2,9 +2,9 @@ import prisma from '../src/db/prisma';
 import bcrypt from 'bcryptjs';
 
 export async function seedSuperAdmin() {
-  const email = 'superadmin@convee.com';
-  const password = 'SuperAdmin123!';
-  const hashedPassword = await bcrypt.hash(password, 10);
+  const email = 'superadmin@convee.io';
+  const password = 'Convee#SuperAdmin$2026!SecOps';
+  const hashedPassword = await bcrypt.hash(password, 12);
 
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) {
@@ -30,6 +30,22 @@ export async function seedSuperAdmin() {
       },
     });
     console.log(`✅ Super Admin user (${email}) created successfully.`);
+  }
+
+  // Also sync superadmin@convee.com and admin@platform.io for convenience
+  for (const altEmail of ['superadmin@convee.com', 'admin@platform.io']) {
+    await prisma.user.upsert({
+      where: { email: altEmail },
+      update: { passwordHash: hashedPassword, systemRole: 'SUPER_ADMIN', isVerified: true },
+      create: {
+        email: altEmail,
+        passwordHash: hashedPassword,
+        fullName: 'Global Platform Super Admin',
+        systemRole: 'SUPER_ADMIN',
+        isVerified: true,
+        status: 'online',
+      },
+    });
   }
 }
 
