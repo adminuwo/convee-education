@@ -121,15 +121,7 @@ mock_students.csv
 !frontend/public/**
 !frontend/src/assets/**
 
-# Scratch & Debug Test Scripts
-backend/scripts/test_*.ts
-backend/scripts/clean_*.ts
-backend/scripts/check_*.ts
-backend/scripts/calibrate_*.ts
-backend/scripts/verify_*.ts
-backend/scripts/security_*.ts
-backend/scripts/seed_students_fees.ts
-backend/src/scripts/seed-accountant.ts
-backend/src/scripts/test-*.ts
-backend/src/scripts/test_*.ts
+# Scratch, Test & Seed Scripts
+backend/scripts/*.ts
+backend/src/scripts/
 frontend/scripts/
