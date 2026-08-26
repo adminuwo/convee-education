@@ -171,6 +171,14 @@ const gracefulShutdown = (signal: string) => {
   }, 3000).unref();
 };
 
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error({ reason, promise }, '🚨 [Crash Guard] Caught unhandled promise rejection at process level');
+});
+
+process.on('uncaughtException', (err) => {
+  logger.error({ err }, '🚨 [Crash Guard] Caught uncaught exception at process level');
+});
+
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 

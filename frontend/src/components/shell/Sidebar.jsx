@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useNavigate, useLocation, useParams } from 'react-router-dom';
-import { Home, Hash, ListTodo, Sparkles, Calendar, FolderOpen, BarChart3, Shield, ShieldCheck, Settings, Plus, ChevronDown, ChevronRight, Lock, Volume2, Users, MoreHorizontal, Building2, Check, GraduationCap, FolderGit2, BookOpen, Key, UserCheck, IndianRupee, Wallet, Pencil } from 'lucide-react';
+import { Home, Hash, ListTodo, Sparkles, Calendar, FolderOpen, BarChart3, Shield, ShieldCheck, ShieldAlert, Settings, Plus, ChevronDown, ChevronRight, Lock, Volume2, Users, MoreHorizontal, Building2, Check, GraduationCap, FolderGit2, BookOpen, Key, UserCheck, IndianRupee, Wallet, Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -223,6 +223,11 @@ export function Sidebar({ onNavigate }) {
     if (it.key === 'fee-status' && !isLeadershipOrDept) return false;
     if (isStudent && (it.key === 'analytics' || it.key === 'tasks' || it.key === 'my-payslips' || it.key === 'fee-status')) return false;
     return true;
+  }).map((it) => {
+    if (isStudent && it.key === 'ai') {
+      return { ...it, label: 'Study Buddy' };
+    }
+    return it;
   });
 
   const isFullAccessRole = ['DIRECTOR', 'PRINCIPAL', 'DEAN', 'ADMIN'].includes(currentOrg?.role);
@@ -522,17 +527,18 @@ export function Sidebar({ onNavigate }) {
                 <ShieldCheck className="h-4 w-4 text-amber-500" /> Role Permissions
               </button>
             )}
-            {!isAccountant && user?.systemRole === 'SUPER_ADMIN' && (
+            {user?.systemRole === 'SUPER_ADMIN' && (
               <button
                 onClick={() => go('/app/super-admin')}
                 className={`w-full flex items-center gap-2.5 rounded-md px-2 py-1.5 text-sm transition-colors ${
                   active('/app/super-admin')
-                    ? 'bg-[hsl(var(--sidebar-active-bg))] text-[hsl(var(--sidebar-active))] font-medium'
+                    ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 font-semibold'
                     : 'text-[hsl(var(--sidebar-foreground))] hover:bg-black/5 dark:hover:bg-white/5'
                 }`}
                 data-testid="nav-super-admin"
               >
-                <ShieldCheck className="h-4 w-4" /> Super Admin
+                <ShieldAlert className="h-4 w-4 text-amber-500" />
+                <span>Command Hub</span>
               </button>
             )}
           </div>          {/* Classes / School Wings group */}

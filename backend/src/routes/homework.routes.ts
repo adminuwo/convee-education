@@ -13,11 +13,14 @@ router.get('/oversight/departments-overview', async (req, res, next) => {
     const orgId = req.query.orgId as string;
     if (!orgId) return res.status(400).json({ error: 'orgId required' });
 
-    const m = await prisma.membership.findFirst({
-      where: { userId: req.user!.id, orgId, isActive: true },
-    });
-    if (!m || !['ADMIN', 'DIRECTOR', 'PRINCIPAL', 'DEAN', 'HOD', 'OWNER'].includes(m.role)) {
-      return res.status(403).json({ error: 'Insufficient permissions for departments overview' });
+    const isSuperAdmin = req.user?.systemRole === 'SUPER_ADMIN';
+    if (!isSuperAdmin) {
+      const m = await prisma.membership.findFirst({
+        where: { userId: req.user!.id, orgId, isActive: true },
+      });
+      if (!m || !['ADMIN', 'DIRECTOR', 'PRINCIPAL', 'DEAN', 'HOD', 'OWNER'].includes(m.role)) {
+        return res.status(403).json({ error: 'Insufficient permissions for departments overview' });
+      }
     }
 
     const [departments, memberships, orgTasks] = await Promise.all([
@@ -94,16 +97,20 @@ router.get('/oversight/department-teachers', async (req, res, next) => {
     const departmentId = req.query.departmentId as string | undefined;
     if (!orgId) return res.status(400).json({ error: 'orgId required' });
 
-    const myMem = await prisma.membership.findFirst({
-      where: { userId: req.user!.id, orgId, isActive: true },
-    });
-    if (!myMem || !['ADMIN', 'DIRECTOR', 'PRINCIPAL', 'DEAN', 'HOD', 'TEACHER', 'OWNER'].includes(myMem.role)) {
-      return res.status(403).json({ error: 'Insufficient permissions' });
+    const isSuperAdmin = req.user?.systemRole === 'SUPER_ADMIN';
+    let myMem: any = null;
+    if (!isSuperAdmin) {
+      myMem = await prisma.membership.findFirst({
+        where: { userId: req.user!.id, orgId, isActive: true },
+      });
+      if (!myMem || !['ADMIN', 'DIRECTOR', 'PRINCIPAL', 'DEAN', 'HOD', 'TEACHER', 'OWNER'].includes(myMem.role)) {
+        return res.status(403).json({ error: 'Insufficient permissions' });
+      }
     }
 
     let targetDeptId = departmentId;
 
-    if (!targetDeptId) {
+    if (!targetDeptId && myMem) {
       targetDeptId = myMem.departmentId || undefined;
     }
 
@@ -178,11 +185,14 @@ router.get('/oversight/teacher-assignments', async (req, res, next) => {
     const teacherId = req.query.teacherId as string;
     if (!orgId || !teacherId) return res.status(400).json({ error: 'orgId and teacherId required' });
 
-    const m = await prisma.membership.findFirst({
-      where: { userId: req.user!.id, orgId, isActive: true },
-    });
-    if (!m || !['ADMIN', 'DIRECTOR', 'PRINCIPAL', 'DEAN', 'HOD', 'TEACHER', 'OWNER'].includes(m.role)) {
-      return res.status(403).json({ error: 'Insufficient permissions' });
+    const isSuperAdmin = req.user?.systemRole === 'SUPER_ADMIN';
+    if (!isSuperAdmin) {
+      const m = await prisma.membership.findFirst({
+        where: { userId: req.user!.id, orgId, isActive: true },
+      });
+      if (!m || !['ADMIN', 'DIRECTOR', 'PRINCIPAL', 'DEAN', 'HOD', 'TEACHER', 'OWNER'].includes(m.role)) {
+        return res.status(403).json({ error: 'Insufficient permissions' });
+      }
     }
 
     const tasks = await prisma.task.findMany({

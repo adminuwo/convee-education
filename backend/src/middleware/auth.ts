@@ -59,6 +59,16 @@ export async function attachOrg(req: Request, res: Response, next: NextFunction)
     where: { userId: req.user.id, orgId, isActive: true },
   });
   if (!membership) {
+    if (req.user.systemRole === 'SUPER_ADMIN') {
+      req.currentOrgId = orgId;
+      req.currentMembership = {
+        role: 'SUPER_ADMIN',
+        userId: req.user.id,
+        orgId,
+        isActive: true,
+      };
+      return next();
+    }
     return res.status(403).json({ error: 'Not a member of this organization' });
   }
   req.currentOrgId = orgId;

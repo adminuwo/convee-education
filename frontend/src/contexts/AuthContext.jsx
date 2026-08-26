@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import { authApi, setTokens, getAccessToken, getRefreshToken, setCurrentOrgId, getCurrentOrgId } from '@/lib/api';
+import { authApi, orgApi, setTokens, getAccessToken, getRefreshToken, setCurrentOrgId, getCurrentOrgId } from '@/lib/api';
 import { connectSocket, disconnectSocket } from '@/lib/socket';
 
 const AuthContext = createContext(null);
@@ -35,6 +35,22 @@ export function AuthProvider({ children }) {
           userUniqueId: cur.userUniqueId || cur.directorId || (cur.title?.match(/\[(.*?)\]/)?.[1]) || null,
         });
         setCurrentOrgId(cur.orgId);
+      } else if (me.systemRole === 'SUPER_ADMIN' && savedOrgId) {
+        try {
+          const orgDetails = await orgApi.get(savedOrgId);
+          setCurrentOrg({
+            id: orgDetails.id,
+            name: orgDetails.name,
+            slug: orgDetails.slug,
+            role: 'SUPER_ADMIN',
+            logoUrl: orgDetails.logoUrl,
+            ownerId: orgDetails.ownerId,
+            isShadowMode: true,
+          });
+          setCurrentOrgId(orgDetails.id);
+        } catch {
+          // fallback if savedOrgId invalid
+        }
       }
       connectSocket();
     } catch (e) {
@@ -83,13 +99,33 @@ export function AuthProvider({ children }) {
     window.location.href = '/login';
   }, []);
 
-  const switchOrg = useCallback((orgId) => {
+  const switchOrg = useCallback((orgId, orgMeta = null) => {
+    if (user?.systemRole === 'SUPER_ADMIN' && orgMeta) {
+      setCurrentOrg({
+        id: orgId,
+        name: orgMeta.name,
+        slug: orgMeta.slug,
+        role: 'SUPER_ADMIN',
+        logoUrl: orgMeta.logoUrl,
+        ownerId: orgMeta.ownerId,
+        isShadowMode: true,
+      });
+      setCurrentOrgId(orgId);
+      window.location.href = '/app/home';
+      return;
+    }
     const m = memberships.find((mm) => mm.orgId === orgId);
-    if (!m) return;
-    setCurrentOrg({ id: m.orgId, name: m.organization.name, slug: m.organization.slug, role: m.role, logoUrl: m.organization.logoUrl, ownerId: m.organization.ownerId });
-    setCurrentOrgId(m.orgId);
-    window.location.reload();
-  }, [memberships]);
+    if (m) {
+      setCurrentOrg({ id: m.orgId, name: m.organization.name, slug: m.organization.slug, role: m.role, logoUrl: m.organization.logoUrl, ownerId: m.organization.ownerId });
+      setCurrentOrgId(m.orgId);
+      window.location.reload();
+      return;
+    }
+    if (user?.systemRole === 'SUPER_ADMIN' && orgId) {
+      setCurrentOrgId(orgId);
+      window.location.href = '/app/home';
+    }
+  }, [memberships, user]);
 
   return (
     <AuthContext.Provider value={{ user, memberships, currentOrg, loading, login, register, loginWithGoogleCode, logout, switchOrg, refresh }}>

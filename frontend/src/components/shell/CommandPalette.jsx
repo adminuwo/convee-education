@@ -61,7 +61,7 @@ export function CommandPalette({ open, setOpen }) {
         { label: 'Home', path: '/app/home', icon: Home },
         { label: 'Homework & Submissions', path: '/app/homework', icon: BookOpen },
         { label: 'Timetable', path: '/app/timetable', icon: Clock },
-        { label: 'AI Assistant', path: '/app/ai', icon: Sparkles },
+        { label: 'Study Buddy (AI & Daily Quiz)', path: '/app/ai', icon: Sparkles },
         { label: 'Meetings', path: '/app/meetings', icon: Calendar },
         { label: 'Files', path: '/app/files', icon: FolderOpen },
         { label: 'My Profile', path: '/app/profile', icon: UserIcon },

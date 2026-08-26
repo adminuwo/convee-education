@@ -41,26 +41,48 @@ async function getOrgId(req: Request): Promise<string | null> {
   const rawOrgId = (req.headers['x-org-id'] as string) || (req.headers['org-id'] as string) || (req.query.orgId as string);
   const targetOrgId = (rawOrgId && rawOrgId !== 'undefined' && rawOrgId !== 'null') ? rawOrgId : undefined;
 
+  if (targetOrgId) {
+    const membership = await prisma.membership.findFirst({
+      where: {
+        userId: req.user.id,
+        orgId: targetOrgId,
+        isActive: true,
+      },
+    });
+    if (membership) return membership.orgId;
+    if (req.user.systemRole === 'SUPER_ADMIN') return targetOrgId;
+  }
+
+  const defaultMembership = await prisma.membership.findFirst({
+    where: {
+      userId: req.user.id,
+      isActive: true,
+    },
+    orderBy: { joinedAt: 'asc' },
+  });
+
+  if (defaultMembership) return defaultMembership.orgId;
+  if (req.user.systemRole === 'SUPER_ADMIN') {
+    const anyOrg = await prisma.organization.findFirst();
+    return anyOrg ? anyOrg.id : null;
+  }
+  return null;
+}
+
+async function verifyFinanceStaff(req: Request, orgId: string): Promise<boolean> {
+  if (!req.user) return false;
+  if (req.user.systemRole === 'SUPER_ADMIN') return true;
+
   const membership = await prisma.membership.findFirst({
     where: {
       userId: req.user.id,
-      ...(targetOrgId ? { orgId: targetOrgId } : {}),
+      orgId,
       isActive: true,
+      role: { in: ['ACCOUNTANT', 'DIRECTOR', 'PRINCIPAL', 'DEAN', 'HOD', 'ADMIN', 'OWNER'] },
     },
   });
 
-  if (!membership) {
-    if (req.user.systemRole === 'SUPER_ADMIN' && targetOrgId) return targetOrgId;
-    return null;
-  }
-
-  const roleUpper = (membership.role || '').toUpperCase();
-  const allowedRoles = ['OWNER', 'DIRECTOR', 'PRINCIPAL', 'ADMIN', 'ACCOUNTANT'];
-  if (!allowedRoles.includes(roleUpper) && req.user.systemRole !== 'SUPER_ADMIN') {
-    return null;
-  }
-
-  return membership.orgId;
+  return Boolean(membership);
 }
 
 const syncLockMap = new Map<string, Promise<void>>();
@@ -809,6 +831,11 @@ router.get('/fees', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Organization ID required' });
     }
 
+    const isAuthorized = await verifyFinanceStaff(req, orgId);
+    if (!isAuthorized) {
+      return res.status(403).json({ error: 'Access denied: Financial ledgers are restricted to institutional accountants and administrators.' });
+    }
+
     await ensureSampleFinanceData(orgId);
 
     const { status, search } = req.query;
@@ -847,6 +874,11 @@ router.post('/fees', async (req: Request, res: Response) => {
     const orgId = await getOrgId(req);
     if (!orgId) {
       return res.status(400).json({ error: 'Organization ID required' });
+    }
+
+    const isAuthorized = await verifyFinanceStaff(req, orgId);
+    if (!isAuthorized) {
+      return res.status(403).json({ error: 'Access denied: Financial ledgers are restricted to institutional accountants and administrators.' });
     }
 
     const {
@@ -1158,6 +1190,11 @@ router.get('/payroll', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Organization ID required' });
     }
 
+    const isAuthorized = await verifyFinanceStaff(req, orgId);
+    if (!isAuthorized) {
+      return res.status(403).json({ error: 'Access denied: Payroll management is restricted to accountants and administrators.' });
+    }
+
     await ensureSampleFinanceData(orgId);
 
     const payrolls = await prisma.payrollRecord.findMany({
@@ -1181,6 +1218,11 @@ router.post('/payroll', async (req: Request, res: Response) => {
     const orgId = await getOrgId(req);
     if (!orgId) {
       return res.status(400).json({ error: 'Organization ID required' });
+    }
+
+    const isAuthorized = await verifyFinanceStaff(req, orgId);
+    if (!isAuthorized) {
+      return res.status(403).json({ error: 'Access denied: Payroll management is restricted to accountants and administrators.' });
     }
 
     const {

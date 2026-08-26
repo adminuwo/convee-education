@@ -12,6 +12,7 @@ import {
   User,
   LogOut,
   ShieldCheck,
+  ShieldAlert,
   Sparkles,
   Building2,
   ChevronDown,
@@ -244,16 +245,30 @@ export function TopBar({ onMenuClick, onSearchClick }) {
 
       {/* Right: Actions, AI Shortcut, Theme Toggle, Notifications, Profile */}
       <div className="flex items-center gap-1.5 sm:gap-2">
+        {/* Super Admin Command Hub Shortcut */}
+        {user?.systemRole === 'SUPER_ADMIN' && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => navigate('/app/super-admin')}
+            className="hidden sm:flex items-center gap-1.5 text-xs font-semibold bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30 hover:bg-amber-500/20 h-8 rounded-lg px-2.5 transition-colors shadow-2xs"
+            title="Super Admin Command Hub"
+          >
+            <ShieldAlert className="h-3.5 w-3.5" />
+            <span>Command Hub</span>
+          </Button>
+        )}
+
         {/* Quick AI Companion Button */}
         <Button
           variant="ghost"
           size="sm"
           onClick={() => navigate('/app/ai')}
           className="hidden md:flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-primary hover:bg-primary/10 h-8 rounded-lg px-2.5 transition-colors"
-          title="AI Assistant"
+          title={currentOrg?.role === 'STUDENT' || user?.email?.toLowerCase().includes('student') ? 'Study Buddy' : 'AI Assistant'}
         >
           <Sparkles className="h-3.5 w-3.5 text-purple-500" />
-          <span>AI Assistant</span>
+          <span>{currentOrg?.role === 'STUDENT' || user?.email?.toLowerCase().includes('student') ? 'Study Buddy' : 'AI Assistant'}</span>
         </Button>
 
         {/* Dark/Light Theme Toggle */}

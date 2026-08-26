@@ -348,19 +348,19 @@ export default function AdminPage() {
           <Card>
             <CardHeader className="flex flex-col lg:flex-row lg:items-center justify-between gap-3.5 space-y-0 pb-4 border-b border-border">
               {/* Directory Sub-Tabs */}
-              <div className="inline-flex items-center gap-1 bg-slate-900/90 p-1.5 rounded-xl border border-slate-800 shadow-inner overflow-x-auto no-scrollbar">
+              <div className="inline-flex items-center gap-1 bg-muted/60 p-1.5 rounded-xl border border-border shadow-inner overflow-x-auto no-scrollbar">
                 <button
                   type="button"
                   onClick={() => setMemberSubTab('faculty')}
                   className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${
                     memberSubTab === 'faculty'
-                      ? 'bg-blue-600/20 text-blue-400 border border-blue-500/40 shadow-sm'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                      ? 'bg-blue-600/20 text-blue-600 dark:text-blue-400 border border-blue-500/40 shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-muted'
                   }`}
                 >
-                  <UserCheck className="h-3.5 w-3.5 text-blue-400 shrink-0" />
+                  <UserCheck className="h-3.5 w-3.5 text-blue-500 shrink-0" />
                   <span>Faculty & Staff</span>
-                  <span className={`text-[11px] px-1.5 py-0.5 rounded-full font-bold ${memberSubTab === 'faculty' ? 'bg-blue-500/30 text-blue-200' : 'bg-slate-800 text-slate-400'}`}>
+                  <span className={`text-[11px] px-1.5 py-0.5 rounded-full font-bold ${memberSubTab === 'faculty' ? 'bg-blue-500/20 text-blue-700 dark:text-blue-200' : 'bg-muted text-muted-foreground'}`}>
                     {facultyMembers.length}
                   </span>
                 </button>
@@ -369,13 +369,13 @@ export default function AdminPage() {
                   onClick={() => setMemberSubTab('students')}
                   className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${
                     memberSubTab === 'students'
-                      ? 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/40 shadow-sm'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                      ? 'bg-emerald-600/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/40 shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-muted'
                   }`}
                 >
-                  <BookOpen className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                  <BookOpen className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
                   <span>Enrolled Students</span>
-                  <span className={`text-[11px] px-1.5 py-0.5 rounded-full font-bold ${memberSubTab === 'students' ? 'bg-emerald-500/30 text-emerald-200' : 'bg-slate-800 text-slate-400'}`}>
+                  <span className={`text-[11px] px-1.5 py-0.5 rounded-full font-bold ${memberSubTab === 'students' ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-200' : 'bg-muted text-muted-foreground'}`}>
                     {members.filter((m) => m.role === 'STUDENT' && m.role !== 'ALUMNI' && !m.title?.includes('Alumni')).length}
                   </span>
                 </button>
@@ -384,13 +384,13 @@ export default function AdminPage() {
                   onClick={() => setMemberSubTab('unassigned')}
                   className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${
                     memberSubTab === 'unassigned'
-                      ? 'bg-rose-600/20 text-rose-400 border border-rose-500/40 shadow-sm'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                      ? 'bg-rose-600/20 text-rose-600 dark:text-rose-400 border border-rose-500/40 shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-muted'
                   }`}
                 >
-                  <UserX className="h-3.5 w-3.5 text-rose-400 shrink-0" />
+                  <UserX className="h-3.5 w-3.5 text-rose-500 shrink-0" />
                   <span>Unassigned</span>
-                  <span className={`text-[11px] px-1.5 py-0.5 rounded-full font-bold ${memberSubTab === 'unassigned' ? 'bg-rose-500/30 text-rose-200' : 'bg-slate-800 text-slate-400'}`}>
+                  <span className={`text-[11px] px-1.5 py-0.5 rounded-full font-bold ${memberSubTab === 'unassigned' ? 'bg-rose-500/20 text-rose-700 dark:text-rose-200' : 'bg-muted text-muted-foreground'}`}>
                     {unassignedMembers.length}
                   </span>
                 </button>
@@ -399,13 +399,13 @@ export default function AdminPage() {
                   onClick={() => setMemberSubTab('alumni')}
                   className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${
                     memberSubTab === 'alumni'
-                      ? 'bg-amber-600/20 text-amber-400 border border-amber-500/40 shadow-sm'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                      ? 'bg-amber-600/20 text-amber-600 dark:text-amber-400 border border-amber-500/40 shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-muted'
                   }`}
                 >
-                  <GraduationCap className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+                  <GraduationCap className="h-3.5 w-3.5 text-amber-500 shrink-0" />
                   <span>Alumni</span>
-                  <span className={`text-[11px] px-1.5 py-0.5 rounded-full font-bold ${memberSubTab === 'alumni' ? 'bg-amber-500/30 text-amber-200' : 'bg-slate-800 text-slate-400'}`}>
+                  <span className={`text-[11px] px-1.5 py-0.5 rounded-full font-bold ${memberSubTab === 'alumni' ? 'bg-amber-500/20 text-amber-700 dark:text-amber-200' : 'bg-muted text-muted-foreground'}`}>
                     {alumniMembers.length}
                   </span>
                 </button>
@@ -414,13 +414,13 @@ export default function AdminPage() {
                   onClick={() => setMemberSubTab('parents')}
                   className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${
                     memberSubTab === 'parents'
-                      ? 'bg-purple-600/20 text-purple-400 border border-purple-500/40 shadow-sm'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                      ? 'bg-purple-600/20 text-purple-600 dark:text-purple-400 border border-purple-500/40 shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-muted'
                   }`}
                 >
-                  <HeartHandshake className="h-3.5 w-3.5 text-purple-400 shrink-0" />
-                  <span>Parents</span>
-                  <span className={`text-[11px] px-1.5 py-0.5 rounded-full font-bold ${memberSubTab === 'parents' ? 'bg-purple-500/30 text-purple-200' : 'bg-slate-800 text-slate-400'}`}>
+                  <Users className="h-3.5 w-3.5 text-purple-500 shrink-0" />
+                  <span>Parents / Guardians</span>
+                  <span className={`text-[11px] px-1.5 py-0.5 rounded-full font-bold ${memberSubTab === 'parents' ? 'bg-purple-500/20 text-purple-700 dark:text-purple-200' : 'bg-muted text-muted-foreground'}`}>
                     {parentMembers.length}
                   </span>
                 </button>
@@ -619,7 +619,7 @@ export default function AdminPage() {
                                     toast.error('Failed to assign class section');
                                   }
                                 }}
-                                className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-white focus:outline-none focus:border-indigo-500 cursor-pointer font-medium"
+                                className="bg-background border border-input rounded-lg px-2.5 py-1 text-xs text-foreground focus:outline-none focus:border-primary cursor-pointer font-medium"
                               >
                                 <option value="" disabled>Assign to Section...</option>
                                 {allTeams.map((t) => (

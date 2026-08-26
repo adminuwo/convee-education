@@ -1102,14 +1102,14 @@ export default function MeetingsPage() {
       {activeCall && createPortal(
         <div className="fixed inset-0 z-[100] bg-black/95 flex flex-col animate-in fade-in duration-200">
           {/* Top Bar */}
-          <div className="h-14 px-6 bg-slate-900 border-b border-slate-800 flex items-center justify-between z-10">
+          <div className="h-14 px-6 bg-card border-b border-border flex items-center justify-between z-10 text-card-foreground">
             <div className="flex items-center gap-3">
-              <div className="h-8 w-8 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400">
+              <div className="h-8 w-8 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-500">
                 <Video className="h-4 w-4" />
               </div>
               <div>
-                <h3 className="font-semibold text-white text-sm">{activeCall.title}</h3>
-                <p className="text-[11px] text-slate-400">Convee In-App HD Video Call · End-to-end encrypted</p>
+                <h3 className="font-semibold text-foreground text-sm">{activeCall.title}</h3>
+                <p className="text-[11px] text-muted-foreground">Convee In-App HD Video Call · End-to-end encrypted</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -1138,31 +1138,31 @@ export default function MeetingsPage() {
 
             {/* Live Notes Side Panel */}
             {showCallNotes && (
-              <div className="w-80 sm:w-96 bg-slate-900 border-l border-slate-800 p-4 flex flex-col justify-between text-white z-20 shadow-2xl animate-in slide-in-from-right duration-200">
+              <div className="w-80 sm:w-96 bg-card border-l border-border p-4 flex flex-col justify-between text-card-foreground z-20 shadow-2xl animate-in slide-in-from-right duration-200">
                 <div className="space-y-3 flex-1 flex flex-col">
-                  <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-                    <div className="flex items-center gap-2 font-semibold text-sm text-purple-300">
-                      <FileText className="h-4 w-4 text-purple-400" /> Live Meeting Notes
+                  <div className="flex items-center justify-between pb-3 border-b border-border">
+                    <div className="flex items-center gap-2 font-semibold text-sm text-purple-600 dark:text-purple-300">
+                      <FileText className="h-4 w-4 text-purple-500" /> Live Meeting Notes
                     </div>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-400 hover:text-white" onClick={() => setShowCallNotes(false)}>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={() => setShowCallNotes(false)}>
                       <X className="h-4 w-4" />
                     </Button>
                   </div>
-                  <p className="text-[11px] text-slate-400">Notes typed here are saved for all meeting attendees in real-time.</p>
+                  <p className="text-[11px] text-muted-foreground">Notes typed here are saved for all meeting attendees in real-time.</p>
                   <Textarea
                     rows={14}
                     value={callNotesText}
                     onChange={(e) => setCallNotesText(e.target.value)}
                     placeholder="Type live meeting notes during the call..."
-                    className="flex-1 bg-slate-950 border-slate-800 text-slate-200 text-sm focus-visible:ring-purple-500 resize-none"
+                    className="flex-1 bg-background border-input text-foreground text-sm focus-visible:ring-primary resize-none"
                   />
                 </div>
-                <div className="pt-3 border-t border-slate-800 flex gap-2 mt-2">
-                  <Button size="sm" className="flex-1 bg-purple-600 hover:bg-purple-700 font-semibold" onClick={saveCallNotesInActiveCall}>
+                <div className="pt-3 border-t border-border flex gap-2 mt-2">
+                  <Button size="sm" className="flex-1 bg-purple-600 hover:bg-purple-700 text-white font-semibold" onClick={saveCallNotesInActiveCall}>
                     Save Notes
                   </Button>
-                  <Button size="sm" variant="outline" className="border-slate-700 text-slate-300 hover:bg-slate-800" onClick={summarizeCallNotesInActiveCall} disabled={summarizing}>
-                    <Sparkles className="h-3.5 w-3.5 mr-1 text-purple-400" /> {summarizing ? 'Summarizing...' : 'AI'}
+                  <Button size="sm" variant="outline" className="border-border text-foreground hover:bg-muted" onClick={summarizeCallNotesInActiveCall} disabled={summarizing}>
+                    <Sparkles className="h-3.5 w-3.5 mr-1 text-purple-500" /> {summarizing ? 'Summarizing...' : 'AI'}
                   </Button>
                 </div>
               </div>

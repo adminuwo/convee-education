@@ -177,7 +177,7 @@ router.get('/director', async (req, res, next) => {
 router.get('/super-admin', async (req, res, next) => {
   try {
     if (req.user!.systemRole !== 'SUPER_ADMIN') return res.status(403).json({ error: 'Super admin only' });
-    const [orgs, users, activeUsers, channels, messages, tasks, files, aiMessages] = await Promise.all([
+    const [orgs, users, activeUsers, channels, messages, tasks, files, aiMessages, orgList] = await Promise.all([
       prisma.organization.count({ where: { deletedAt: null } }),
       prisma.user.count({ where: { deletedAt: null } }),
       prisma.user.count({ where: { lastSeenAt: { gte: new Date(Date.now() - 24 * 3600 * 1000) } } }),
@@ -186,6 +186,23 @@ router.get('/super-admin', async (req, res, next) => {
       prisma.task.count(),
       prisma.fileAsset.count(),
       prisma.aIMessage.count(),
+      prisma.organization.findMany({
+        where: { deletedAt: null },
+        include: {
+          owner: { select: { id: true, fullName: true, email: true, status: true, lastSeenAt: true } },
+          _count: {
+            select: {
+              memberships: true,
+              channels: true,
+              tasks: true,
+              departments: true,
+              meetings: true,
+              files: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
     ]);
     const now = new Date();
     const monthIndices = [5, 4, 3, 2, 1, 0];
@@ -195,9 +212,29 @@ router.get('/super-admin', async (req, res, next) => {
       const count = await prisma.user.count({ where: { createdAt: { gte: start, lt: end } } });
       return { month: start.toLocaleString('en-US', { month: 'short' }), count };
     }));
+
+    const formattedOrgs = orgList.map((o) => ({
+      id: o.id,
+      name: o.name,
+      slug: o.slug,
+      logoUrl: o.logoUrl,
+      description: o.description,
+      createdAt: o.createdAt,
+      owner: o.owner,
+      metrics: {
+        members: o._count.memberships,
+        departments: o._count.departments,
+        channels: o._count.channels,
+        tasks: o._count.tasks,
+        meetings: o._count.meetings,
+        files: o._count.files,
+      },
+    }));
+
     res.json({
       metrics: { orgs, users, activeUsers, channels, messages, tasks, files, aiMessages },
       growth,
+      organizations: formattedOrgs,
     });
   } catch (e) { next(e); }
 });

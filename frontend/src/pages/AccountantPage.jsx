@@ -1055,7 +1055,7 @@ export default function AccountantPage() {
               toast.info('Refreshed live financial metrics');
             }}
             disabled={loading}
-            className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-muted text-foreground text-xs font-semibold rounded-xl border border-border shadow-md transition-all disabled:opacity-50"
+            className="flex items-center gap-1.5 px-3 py-2 bg-secondary hover:bg-secondary/80 text-secondary-foreground text-xs font-semibold rounded-xl border border-border shadow-xs transition-all disabled:opacity-50"
             title="Reload financial records and metrics"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
@@ -1109,7 +1109,7 @@ export default function AccountantPage() {
           </button>
           <button
             onClick={handleOpenAddFeeModal}
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-muted text-foreground border border-border text-xs font-semibold rounded-xl transition-all"
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-secondary hover:bg-secondary/80 text-secondary-foreground border border-border text-xs font-semibold rounded-xl transition-all"
           >
             <Plus className="w-3.5 h-3.5" /> Add Fee
           </button>
@@ -1120,14 +1120,14 @@ export default function AccountantPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
         {/* Net Worth */}
         <div className="bg-gradient-to-br from-indigo-50/70 via-card to-indigo-100/40 dark:from-slate-900 dark:to-indigo-950/60 border border-indigo-500/30 p-5 rounded-2xl shadow-lg relative overflow-hidden">
-          <div className="flex items-center justify-between text-indigo-300 text-xs font-semibold">
+          <div className="flex items-center justify-between text-indigo-600 dark:text-indigo-300 text-xs font-semibold">
             <span>INSTITUTIONAL NET WORTH</span>
-            <Building2 className="w-4 h-4 text-indigo-400" />
+            <Building2 className="w-4 h-4 text-indigo-500" />
           </div>
-          <div className="text-2xl font-black text-white mt-2">
+          <div className="text-2xl font-black text-foreground mt-2">
             {formatCurrency(overview?.institutionalNetWorth || ((overview?.totalBankBalances || 0) + (overview?.totalCashInHand || 0) + (overview?.totalFixedAssetsBookValue || 0)))}
           </div>
-          <div className="text-[11px] text-indigo-300/80 mt-1">Liquid Capital + Fixed Assets</div>
+          <div className="text-[11px] text-muted-foreground mt-1">Liquid Capital + Fixed Assets</div>
         </div>
 
         {/* Fixed Assets */}
@@ -1407,7 +1407,7 @@ export default function AccountantPage() {
                 </button>
                 <button
                   onClick={() => setActiveTab('connector')}
-                  className="px-3 py-2 bg-slate-800 hover:bg-muted text-foreground border border-border text-xs font-semibold rounded-xl transition-all"
+                  className="px-3 py-2 bg-secondary hover:bg-secondary/80 text-secondary-foreground border border-border text-xs font-semibold rounded-xl transition-all"
                 >
                   Settings
                 </button>
@@ -1505,25 +1505,25 @@ export default function AccountantPage() {
                   </tr>
                 ) : (
                   filteredFees.map((f) => (
-                    <tr key={f.id} className="hover:bg-slate-850 transition-all">
+                    <tr key={f.id} className="hover:bg-muted/40 transition-colors">
                       <td className="p-3.5 font-medium text-foreground">
                         <div>{f.studentName}</div>
                         <div className="text-xs text-muted-foreground font-mono">{f.studentRollNo}</div>
                       </td>
                       <td className="p-3.5 text-foreground/90">{f.feeHeader}</td>
                       <td className="p-3.5 font-semibold text-foreground">{formatCurrency(f.totalAmount)}</td>
-                      <td className="p-3.5 text-emerald-400 font-medium">{formatCurrency(f.paidAmount)}</td>
-                      <td className="p-3.5 text-amber-400 font-medium">{formatCurrency(f.pendingBalance)}</td>
+                      <td className="p-3.5 text-emerald-600 dark:text-emerald-400 font-medium">{formatCurrency(f.paidAmount)}</td>
+                      <td className="p-3.5 text-amber-600 dark:text-amber-400 font-medium">{formatCurrency(f.pendingBalance)}</td>
                       <td className="p-3.5">
                         <span
                           className={`px-2.5 py-1 text-xs font-semibold rounded-full border ${
                             f.status === 'PAID'
-                              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                              ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
                               : f.status === 'PARTIAL'
-                              ? 'bg-blue-500/10 text-blue-400 border-blue-500/30'
+                              ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30'
                               : f.status === 'OVERDUE'
-                              ? 'bg-rose-500/10 text-rose-400 border-rose-500/30'
-                              : 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                              ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30'
+                              : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30'
                           }`}
                         >
                           {f.status}
@@ -1531,11 +1531,11 @@ export default function AccountantPage() {
                       </td>
                       <td className="p-3.5">
                         {f.tallySyncStatus === 'STAGED_FOR_TALLY' ? (
-                          <span className="px-2.5 py-1 text-[11px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/30 rounded-full inline-flex items-center gap-1 whitespace-nowrap">
+                          <span className="px-2.5 py-1 text-[11px] font-semibold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/30 rounded-full inline-flex items-center gap-1 whitespace-nowrap">
                             🟡 Staged for Tally
                           </span>
                         ) : (
-                          <span className="px-2.5 py-1 text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-full inline-flex items-center gap-1 whitespace-nowrap">
+                          <span className="px-2.5 py-1 text-[11px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 rounded-full inline-flex items-center gap-1 whitespace-nowrap">
                             🟢 Tally Master Synced
                           </span>
                         )}
@@ -1545,20 +1545,20 @@ export default function AccountantPage() {
                         <div className="flex items-center justify-end gap-2">
                           <button
                             onClick={() => setPrintableVoucher({ type: 'FEE', data: f })}
-                            className="px-2.5 py-1.5 bg-slate-800 hover:bg-muted text-emerald-400 border border-border text-xs font-medium rounded-lg transition-all flex items-center gap-1.5"
+                            className="px-2.5 py-1.5 bg-secondary hover:bg-secondary/80 text-emerald-600 dark:text-emerald-400 border border-border text-xs font-medium rounded-lg transition-all flex items-center gap-1.5"
                             title="Download / Print Official Fee Receipt"
                           >
                             <Printer className="w-3.5 h-3.5" /> Receipt
                           </button>
                           <button
                             onClick={() => handleOpenUpdateFeeModal(f)}
-                            className="px-2.5 py-1.5 bg-slate-800 hover:bg-muted text-blue-400 border border-border text-xs font-medium rounded-lg transition-all"
+                            className="px-2.5 py-1.5 bg-secondary hover:bg-secondary/80 text-primary border border-border text-xs font-medium rounded-lg transition-all"
                           >
                             Update
                           </button>
                           <button
                             onClick={() => handleDeleteFee(f.id)}
-                            className="p-1.5 bg-slate-800 hover:bg-rose-500/10 text-muted-foreground hover:text-rose-400 border border-border text-xs rounded-lg transition-all"
+                            className="p-1.5 bg-secondary hover:bg-rose-500/10 text-muted-foreground hover:text-rose-500 border border-border text-xs rounded-lg transition-all"
                             title="Delete Fee Record & Purge from Tally"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -1605,7 +1605,7 @@ export default function AccountantPage() {
               </thead>
               <tbody className="divide-y divide-border">
                 {payrolls.map((p) => (
-                  <tr key={p.id} className="hover:bg-slate-850 transition-all">
+                  <tr key={p.id} className="hover:bg-muted/40 transition-colors">
                     <td className="p-3.5 font-medium text-foreground">
                       <div>{p.employeeName}</div>
                       <div className="text-xs text-muted-foreground font-mono">{p.employeeId}</div>
@@ -1615,21 +1615,21 @@ export default function AccountantPage() {
                       {p.month} {p.year}
                     </td>
                     <td className="p-3.5">{formatCurrency(p.basicPay)}</td>
-                    <td className="p-3.5 text-emerald-400">+{formatCurrency(p.allowances)}</td>
-                    <td className="p-3.5 text-rose-400">-{formatCurrency(p.deductions)}</td>
+                    <td className="p-3.5 text-emerald-600 dark:text-emerald-400">+{formatCurrency(p.allowances)}</td>
+                    <td className="p-3.5 text-rose-600 dark:text-rose-400">-{formatCurrency(p.deductions)}</td>
                     <td className="p-3.5 font-bold text-foreground">{formatCurrency(p.netSalary)}</td>
                     <td className="p-3.5">
-                      <span className="px-2.5 py-1 text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-full">
+                      <span className="px-2.5 py-1 text-xs font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 rounded-full">
                         {p.status}
                       </span>
                     </td>
                     <td className="p-3.5">
                       {p.tallyVoucherId || p.syncedAt || p.status === 'DISBURSED' ? (
-                        <span className="px-2.5 py-1 text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-full inline-flex items-center gap-1 whitespace-nowrap">
+                        <span className="px-2.5 py-1 text-[11px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 rounded-full inline-flex items-center gap-1 whitespace-nowrap">
                           🟢 Tally Master Synced
                         </span>
                       ) : (
-                        <span className="px-2.5 py-1 text-[11px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/30 rounded-full inline-flex items-center gap-1 whitespace-nowrap">
+                        <span className="px-2.5 py-1 text-[11px] font-semibold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/30 rounded-full inline-flex items-center gap-1 whitespace-nowrap">
                           🟡 Staged for Tally
                         </span>
                       )}
@@ -1638,14 +1638,14 @@ export default function AccountantPage() {
                       <div className="flex items-center justify-end gap-2">
                         <button
                           onClick={() => setPrintableVoucher({ type: 'PAYROLL', data: p })}
-                          className="px-2.5 py-1.5 bg-slate-800 hover:bg-muted text-teal-400 border border-border text-xs font-medium rounded-lg transition-all flex items-center gap-1.5"
+                          className="px-2.5 py-1.5 bg-secondary hover:bg-secondary/80 text-teal-600 dark:text-teal-400 border border-border text-xs font-medium rounded-lg transition-all flex items-center gap-1.5"
                           title="Download / Print Faculty Payslip Voucher"
                         >
                           <Printer className="w-3.5 h-3.5" /> Payslip
                         </button>
                         <button
                           onClick={() => handleDeletePayroll(p.id)}
-                          className="p-1.5 bg-slate-800 hover:bg-rose-500/10 text-muted-foreground hover:text-rose-400 border border-border text-xs rounded-lg transition-all"
+                          className="p-1.5 bg-secondary hover:bg-rose-500/10 text-muted-foreground hover:text-rose-500 border border-border text-xs rounded-lg transition-all"
                           title="Delete Payroll Record & Purge from Tally"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -1672,7 +1672,7 @@ export default function AccountantPage() {
                   className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all whitespace-nowrap ${
                     expenseCategoryFilter === cat
                       ? 'bg-purple-600 text-white shadow-md'
-                      : 'bg-background text-muted-foreground hover:text-white hover:bg-muted/80 border border-border'
+                      : 'bg-background text-muted-foreground hover:text-foreground hover:bg-muted border border-border'
                   }`}
                 >
                   {cat === 'ALL' ? 'All Categories' : cat.replace('_', ' ')}
@@ -1733,7 +1733,7 @@ export default function AccountantPage() {
                       return matchesCategory && matchesSearch;
                     })
                     .map((e) => (
-                      <tr key={e.id} className="hover:bg-slate-850 transition-all">
+                      <tr key={e.id} className="hover:bg-muted/40 transition-colors">
                         <td className="p-3.5 font-medium text-foreground">
                           <div>{e.title}</div>
                           <div className="text-xs text-muted-foreground">{new Date(e.expenseDate).toLocaleDateString('en-IN')}</div>
@@ -1742,26 +1742,26 @@ export default function AccountantPage() {
                           <span
                             className={`px-2.5 py-1 text-xs font-semibold rounded-full border ${
                               e.category === 'DONATION'
-                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
                                 : e.category === 'MAINTENANCE'
-                                ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                                ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30'
                                 : e.category === 'UTILITIES'
-                                ? 'bg-blue-500/10 text-blue-400 border-blue-500/30'
-                                : 'bg-purple-500/10 text-purple-400 border-purple-500/30'
+                                ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30'
+                                : 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/30'
                             }`}
                           >
                             {e.category}
                           </span>
                         </td>
                         <td className="p-3.5 text-foreground/90">{e.vendorName || '-'}</td>
-                        <td className={`p-3.5 font-bold ${e.category === 'DONATION' ? 'text-emerald-400' : 'text-purple-300'}`}>
+                        <td className={`p-3.5 font-bold ${e.category === 'DONATION' ? 'text-emerald-600 dark:text-emerald-400' : 'text-purple-600 dark:text-purple-300'}`}>
                           {e.category === 'DONATION' ? '+' : '-'}{formatCurrency(e.amount)}
                         </td>
-                        <td className="p-3.5 text-xs text-teal-400 font-mono">{e.bankAccountName || 'HDFC Bank Main Account'}</td>
+                        <td className="p-3.5 text-xs text-teal-600 dark:text-teal-400 font-mono">{e.bankAccountName || 'HDFC Bank Main Account'}</td>
                         <td className="p-3.5 text-xs text-muted-foreground">{e.paymentMethod || 'BANK_TRANSFER'}</td>
                         <td className="p-3.5 font-mono text-xs text-muted-foreground">{e.receiptNo}</td>
                         <td className="p-3.5">
-                          <span className="px-2.5 py-1 text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-full whitespace-nowrap inline-flex items-center gap-1">
+                          <span className="px-2.5 py-1 text-[11px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 rounded-full whitespace-nowrap inline-flex items-center gap-1">
                             🟢 Tally Master Synced
                           </span>
                         </td>
@@ -1769,14 +1769,14 @@ export default function AccountantPage() {
                           <div className="flex items-center justify-end gap-2">
                             <button
                               onClick={() => setPrintableVoucher({ type: 'EXPENSE', data: e })}
-                              className="px-2.5 py-1.5 bg-slate-800 hover:bg-muted text-purple-400 border border-border text-xs font-medium rounded-lg transition-all flex items-center gap-1.5"
+                              className="px-2.5 py-1.5 bg-secondary hover:bg-secondary/80 text-purple-600 dark:text-purple-400 border border-border text-xs font-medium rounded-lg transition-all flex items-center gap-1.5"
                               title="Download / Print Expense Voucher"
                             >
                               <Printer className="w-3.5 h-3.5" /> Voucher
                             </button>
                             <button
                               onClick={() => handleDeleteExpense(e.id)}
-                              className="p-1.5 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded-lg transition-all"
+                              className="p-1.5 text-rose-500 hover:text-rose-600 hover:bg-rose-500/10 rounded-lg transition-all"
                               title="Delete Expense Record"
                             >
                               <Trash2 className="w-4 h-4" />
@@ -1844,12 +1844,12 @@ export default function AccountantPage() {
                   </div>
                 </div>
 
-                <div className="pt-2 border-t border-slate-900 flex items-center justify-between text-xs">
+                <div className="pt-2 border-t border-border flex items-center justify-between text-xs">
                   <div>
                     <span className="text-muted-foreground block">Current Balance:</span>
                     <span className="font-bold text-emerald-400 text-base">{formatCurrency(b.currentBalance || b.openingBalance)}</span>
                   </div>
-                  <span className="px-2 py-0.5 bg-slate-800 text-foreground/90 rounded font-mono text-[10px]">
+                  <span className="px-2 py-0.5 bg-secondary text-secondary-foreground rounded font-mono text-[10px]">
                     {b.accountType}
                   </span>
                 </div>
@@ -2061,7 +2061,7 @@ export default function AccountantPage() {
                   )}
                 </div>
 
-                <div className="pt-3 mt-3 border-t border-slate-900 flex items-center justify-between">
+                <div className="pt-3 mt-3 border-t border-border flex items-center justify-between">
                   <div>
                     <span className="text-[10px] text-muted-foreground block uppercase font-semibold">Live Drawer Balance</span>
                     <span className="text-xl font-bold text-emerald-400 font-mono">
@@ -2075,14 +2075,14 @@ export default function AccountantPage() {
               </div>
             ))}
 
-            <div className="bg-gradient-to-br from-slate-950 to-amber-950/30 border border-amber-500/30 p-5 rounded-2xl flex flex-col justify-between">
+            <div className="bg-gradient-to-br from-muted/50 via-card to-amber-500/10 border border-amber-500/30 p-5 rounded-2xl flex flex-col justify-between">
               <div>
-                <span className="text-xs font-semibold text-amber-300 uppercase">Total Cash in Hand Across Campus</span>
+                <span className="text-xs font-semibold text-amber-500 dark:text-amber-300 uppercase">Total Cash in Hand Across Campus</span>
                 <div className="text-2xl font-bold text-foreground font-mono mt-1">
                   {formatCurrency(cashRegisters.reduce((sum, r) => sum + (r.currentBalance || 0), 0))}
                 </div>
               </div>
-              <div className="text-[11px] text-amber-300/80 pt-2 border-t border-slate-900 flex items-center justify-between">
+              <div className="text-[11px] text-muted-foreground pt-2 border-t border-border flex items-center justify-between">
                 <span>Tally Group: Cash-in-Hand</span>
                 <span>Port 9000 Ready</span>
               </div>
@@ -2133,7 +2133,7 @@ export default function AccountantPage() {
                         const isOutflow = ['CASH_OUT', 'BANK_DEPOSIT', 'EXPENSE_PAYMENT'].includes(tx.transactionType);
                         const regName = cashRegisters.find((r) => r.id === tx.registerId)?.registerName || 'Cash Box';
                         return (
-                          <tr key={tx.id} className="hover:bg-muted/80/40 transition-colors">
+                          <tr key={tx.id} className="hover:bg-muted/40 transition-colors">
                             <td className="p-3.5 whitespace-nowrap">
                               <div className="font-mono text-xs font-bold text-foreground">{tx.voucherNumber || `CSH-${tx.id.slice(0, 6)}`}</div>
                               <div className="text-[11px] text-muted-foreground">{new Date(tx.transactionDate || tx.createdAt).toLocaleDateString('en-IN')}</div>
@@ -2144,8 +2144,8 @@ export default function AccountantPage() {
                             <td className="p-3.5 whitespace-nowrap">
                               <span className={`px-2.5 py-1 text-[10px] font-extrabold rounded-md inline-block ${
                                 isOutflow
-                                  ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
-                                  : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                  ? 'bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/30'
+                                  : 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30'
                               }`}>
                                 {tx.transactionType.replace('_', ' ')}
                               </span>
@@ -2155,15 +2155,15 @@ export default function AccountantPage() {
                               {tx.notes && <div className="text-[11px] text-muted-foreground italic">{tx.notes}</div>}
                             </td>
                             <td className="p-3.5 whitespace-nowrap">
-                              <span className="px-2.5 py-1 bg-slate-800 text-foreground/90 rounded text-xs font-mono inline-block">
+                              <span className="px-2.5 py-1 bg-secondary text-secondary-foreground rounded text-xs font-mono inline-block">
                                 {tx.category || 'PETTY_EXPENSE'}
                               </span>
                             </td>
-                            <td className={`p-3.5 text-right font-mono font-bold text-sm whitespace-nowrap ${isOutflow ? 'text-rose-400' : 'text-emerald-400'}`}>
+                            <td className={`p-3.5 text-right font-mono font-bold text-sm whitespace-nowrap ${isOutflow ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
                               {isOutflow ? '-' : '+'}{formatCurrency(tx.amount)}
                             </td>
                             <td className="p-3.5 text-center whitespace-nowrap">
-                              <span className="px-2.5 py-1 text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-full inline-flex items-center gap-1 whitespace-nowrap">
+                              <span className="px-2.5 py-1 text-[11px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 rounded-full inline-flex items-center gap-1 whitespace-nowrap">
                                 🟢 Tally Master Synced
                               </span>
                             </td>
@@ -2171,14 +2171,14 @@ export default function AccountantPage() {
                               <div className="flex items-center justify-center gap-1.5">
                                 <button
                                   onClick={() => setPrintableVoucher({ type: 'CASH_TRANSACTION', data: { ...tx, registerName: regName } })}
-                                  className="p-1.5 text-muted-foreground hover:text-amber-400 hover:bg-amber-500/10 rounded-lg transition-all"
+                                  className="p-1.5 text-muted-foreground hover:text-amber-500 hover:bg-amber-500/10 rounded-lg transition-all"
                                   title="Print Cash Voucher"
                                 >
                                   <Printer className="w-4 h-4" />
                                 </button>
                                 <button
                                   onClick={() => handleDeleteCashTransaction(tx.id)}
-                                  className="p-1.5 text-muted-foreground hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-all"
+                                  className="p-1.5 text-muted-foreground hover:text-rose-500 hover:bg-rose-500/10 rounded-lg transition-all"
                                   title="Delete Cash Transaction & Purge from Tally"
                                 >
                                   <Trash2 className="w-4 h-4" />
@@ -2237,12 +2237,12 @@ export default function AccountantPage() {
               <div className="text-[11px] text-muted-foreground mt-0.5">Total written-down value reduction</div>
             </div>
 
-            <div className="bg-gradient-to-br from-slate-950 to-cyan-950/40 p-4 rounded-xl border border-cyan-500/30">
-              <div className="text-xs text-cyan-300 font-semibold">NET CURRENT BOOK VALUE</div>
-              <div className="text-2xl font-black text-cyan-400 mt-1">
+            <div className="bg-gradient-to-br from-muted/50 via-card to-cyan-500/10 p-4 rounded-xl border border-cyan-500/30">
+              <div className="text-xs text-cyan-600 dark:text-cyan-300 font-semibold">NET CURRENT BOOK VALUE</div>
+              <div className="text-2xl font-black text-cyan-600 dark:text-cyan-400 mt-1">
                 {formatCurrency(fixedAssets.reduce((sum, a) => sum + (a.currentBookValue || 0), 0))}
               </div>
-              <div className="text-[11px] text-cyan-300/70 mt-0.5">Balance Sheet asset balance</div>
+              <div className="text-[11px] text-muted-foreground mt-0.5">Balance Sheet asset balance</div>
             </div>
 
             <div className="bg-muted/40 p-4 rounded-xl border border-border flex flex-col justify-between">
@@ -2263,7 +2263,7 @@ export default function AccountantPage() {
                 className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all whitespace-nowrap ${
                   assetCategoryFilter === cat
                     ? 'bg-cyan-600 text-white shadow-md'
-                    : 'bg-background text-muted-foreground hover:text-white border border-border'
+                    : 'bg-background text-muted-foreground hover:text-foreground hover:bg-muted border border-border'
                 }`}
               >
                 {cat.replace('_', ' ')}
@@ -2298,13 +2298,13 @@ export default function AccountantPage() {
                   fixedAssets
                     .filter((a) => assetCategoryFilter === 'ALL' || a.category === assetCategoryFilter)
                     .map((asset) => (
-                      <tr key={asset.id} className="hover:bg-muted/80/40 transition-colors">
+                      <tr key={asset.id} className="hover:bg-muted/40 transition-colors">
                         <td className="p-3.5 min-w-[200px]">
                           <div className="font-semibold text-foreground">{asset.assetName}</div>
-                          <div className="font-mono text-xs text-cyan-400 font-bold mt-0.5">{asset.assetCode || 'AST-001'}</div>
+                          <div className="font-mono text-xs text-cyan-600 dark:text-cyan-400 font-bold mt-0.5">{asset.assetCode || 'AST-001'}</div>
                         </td>
                         <td className="p-3.5 whitespace-nowrap">
-                          <span className="px-2 py-0.5 text-[10px] font-bold bg-slate-800 text-foreground/90 border border-border rounded-md inline-block">
+                          <span className="px-2 py-0.5 text-[10px] font-bold bg-secondary text-secondary-foreground border border-border rounded-md inline-block">
                             {asset.category}
                           </span>
                           <div className="text-xs text-muted-foreground mt-1">{asset.location || 'Main Campus'}</div>
@@ -2317,18 +2317,18 @@ export default function AccountantPage() {
                           {formatCurrency(asset.purchasePrice)}
                         </td>
                         <td className="p-3.5 text-center whitespace-nowrap">
-                          <span className="px-2.5 py-1 bg-amber-500/10 text-amber-300 border border-amber-500/30 rounded font-mono text-xs font-bold inline-block">
+                          <span className="px-2.5 py-1 bg-amber-500/10 text-amber-600 dark:text-amber-300 border border-amber-500/30 rounded font-mono text-xs font-bold inline-block">
                             {asset.depreciationRate}% p.a.
                           </span>
                         </td>
-                        <td className="p-3.5 text-right font-mono text-rose-400 font-medium whitespace-nowrap">
+                        <td className="p-3.5 text-right font-mono text-rose-600 dark:text-rose-400 font-medium whitespace-nowrap">
                           -{formatCurrency(asset.accumulatedDepreciation)}
                         </td>
-                        <td className="p-3.5 text-right font-mono font-bold text-cyan-300 text-base whitespace-nowrap">
+                        <td className="p-3.5 text-right font-mono font-bold text-cyan-600 dark:text-cyan-300 text-base whitespace-nowrap">
                           {formatCurrency(asset.currentBookValue)}
                         </td>
                         <td className="p-3.5 text-center whitespace-nowrap">
-                          <span className="px-2.5 py-1 text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-full inline-flex items-center gap-1 whitespace-nowrap">
+                          <span className="px-2.5 py-1 text-[11px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 rounded-full inline-flex items-center gap-1 whitespace-nowrap">
                             🟢 Tally Master Synced
                           </span>
                         </td>
@@ -2336,7 +2336,7 @@ export default function AccountantPage() {
                           <div className="flex items-center justify-center gap-1.5">
                             <button
                               onClick={() => handleDepreciateAsset(asset.id)}
-                              className="px-2 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 rounded-lg text-xs font-bold flex items-center gap-1 transition-all"
+                              className="px-2 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-600 dark:text-amber-300 border border-amber-500/30 rounded-lg text-xs font-bold flex items-center gap-1 transition-all"
                               title="Apply Annual Depreciation & Post Journal Entry"
                             >
                               <Calculator className="w-3.5 h-3.5" /> Depreciate
@@ -2368,7 +2368,6 @@ export default function AccountantPage() {
 
       {/* TAB 9: TALLY & BUSY CONNECTOR */}
       {activeTab === 'connector' && (
-
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="bg-card border border-border p-6 rounded-2xl space-y-4">
             <div className="flex items-center justify-between">
@@ -2393,7 +2392,7 @@ export default function AccountantPage() {
             <div className="space-y-4 pt-2">
               {/* Offline Warning Banner */}
               {!tallyConnectedStatus && (
-                <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-xs text-rose-300 font-medium flex items-center justify-between">
+                <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-xs text-rose-500 dark:text-rose-300 font-medium flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
                     <span>Tally Server is not live on port 9000. Start Tally Prime to sync live.</span>
@@ -2401,7 +2400,7 @@ export default function AccountantPage() {
                   <button
                     onClick={fetchTallyCompanies}
                     disabled={loadingTallyCompanies}
-                    className="text-[11px] underline text-rose-300 hover:text-white font-bold ml-2 shrink-0"
+                    className="text-[11px] underline text-rose-500 dark:text-rose-300 hover:text-foreground font-bold ml-2 shrink-0"
                   >
                     Retry
                   </button>
@@ -2411,13 +2410,13 @@ export default function AccountantPage() {
               {/* Target Tally Company Selector Card */}
               <div className="bg-muted/40 p-4 rounded-xl border border-blue-500/30 space-y-3">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-semibold text-blue-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <label className="text-xs font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wider flex items-center gap-1.5">
                     <Building2 className="w-4 h-4" /> Target Tally Company
                   </label>
                   <button
                     onClick={fetchTallyCompanies}
                     disabled={loadingTallyCompanies}
-                    className="text-[11px] text-muted-foreground hover:text-blue-400 font-medium flex items-center gap-1 transition-all"
+                    className="text-[11px] text-muted-foreground hover:text-blue-500 font-medium flex items-center gap-1 transition-all"
                   >
                     <RefreshCw className={`w-3 h-3 ${loadingTallyCompanies ? 'animate-spin' : ''}`} />
                     Fetch Open Companies
@@ -2435,7 +2434,7 @@ export default function AccountantPage() {
                         handleSelectTallyCompany(e.target.value);
                       }
                     }}
-                    className="w-full bg-card border border-border rounded-xl p-2.5 text-sm text-white font-medium focus:border-blue-500 focus:outline-none"
+                    className="w-full bg-card border border-border rounded-xl p-2.5 text-sm text-foreground font-medium focus:border-blue-500 focus:outline-none"
                   >
                     {tallyCompanyOptions.length > 0 ? (
                       <optgroup label="Connected Tally Companies">
@@ -2461,14 +2460,14 @@ export default function AccountantPage() {
                       placeholder="Type exact Tally company name..."
                       value={selectedTallyCompany}
                       onChange={(e) => handleSelectTallyCompany(e.target.value)}
-                      className="w-full bg-card border border-blue-500/50 rounded-xl p-2.5 text-sm text-white focus:outline-none"
+                      className="w-full bg-card border border-blue-500/50 rounded-xl p-2.5 text-sm text-foreground focus:outline-none"
                     />
                   </div>
                 )}
 
-                <div className="text-[11px] text-muted-foreground flex items-center justify-between pt-1 border-t border-slate-900">
+                <div className="text-[11px] text-muted-foreground flex items-center justify-between pt-1 border-t border-border">
                   <span>Sync Destination:</span>
-                  <span className="font-bold text-teal-400 bg-teal-950/60 px-2 py-0.5 rounded border border-teal-500/30">
+                  <span className="font-bold text-teal-600 dark:text-teal-400 bg-teal-500/10 px-2 py-0.5 rounded border border-teal-500/30">
                     {selectedTallyCompany || 'Convee Education'}
                   </span>
                 </div>
@@ -2477,29 +2476,29 @@ export default function AccountantPage() {
               {/* Tally Group & Year Isolation Preview Card */}
               <div className="bg-muted/40 p-4 rounded-xl border border-teal-500/30 space-y-3">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-semibold text-teal-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <label className="text-xs font-semibold text-teal-600 dark:text-teal-400 uppercase tracking-wider flex items-center gap-1.5">
                     <Sliders className="w-4 h-4" /> Tally Group & Financial Year Rules
                   </label>
-                  <span className="text-[10px] bg-teal-500/10 text-teal-300 border border-teal-500/30 px-2 py-0.5 rounded font-mono">
+                  <span className="text-[10px] bg-teal-500/10 text-teal-600 dark:text-teal-300 border border-teal-500/30 px-2 py-0.5 rounded font-mono">
                     Year Auto-Suffix Active
                   </span>
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-xs text-foreground/90">
                   <div className="bg-card p-2.5 rounded-lg border border-border">
                     <div className="text-[10px] text-muted-foreground uppercase font-semibold">Student Fees Group</div>
-                    <div className="font-mono text-emerald-400 font-medium text-[11px] mt-0.5">Student Fee Income [YYYY-YY]</div>
+                    <div className="font-mono text-emerald-600 dark:text-emerald-400 font-medium text-[11px] mt-0.5">Student Fee Income [YYYY-YY]</div>
                   </div>
                   <div className="bg-card p-2.5 rounded-lg border border-border">
                     <div className="text-[10px] text-muted-foreground uppercase font-semibold">Donations & Grants</div>
-                    <div className="font-mono text-teal-400 font-medium text-[11px] mt-0.5">Donations & Grants [YYYY-YY]</div>
+                    <div className="font-mono text-teal-600 dark:text-teal-400 font-medium text-[11px] mt-0.5">Donations & Grants [YYYY-YY]</div>
                   </div>
                   <div className="bg-card p-2.5 rounded-lg border border-border">
                     <div className="text-[10px] text-muted-foreground uppercase font-semibold">Faculty Payroll Group</div>
-                    <div className="font-mono text-amber-400 font-medium text-[11px] mt-0.5">Faculty Salary Exp [YYYY-YY]</div>
+                    <div className="font-mono text-amber-600 dark:text-amber-400 font-medium text-[11px] mt-0.5">Faculty Salary Exp [YYYY-YY]</div>
                   </div>
                   <div className="bg-card p-2.5 rounded-lg border border-border">
                     <div className="text-[10px] text-muted-foreground uppercase font-semibold">Maintenance & Ops</div>
-                    <div className="font-mono text-blue-400 font-medium text-[11px] mt-0.5">Campus Maintenance [YYYY-YY]</div>
+                    <div className="font-mono text-blue-600 dark:text-blue-400 font-medium text-[11px] mt-0.5">Campus Maintenance [YYYY-YY]</div>
                   </div>
                 </div>
               </div>
@@ -2535,7 +2534,7 @@ export default function AccountantPage() {
                 <button
                   onClick={handleForceTallySync}
                   disabled={syncing}
-                  className="px-4 py-2.5 bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/30 font-medium rounded-xl text-sm transition-all flex items-center gap-1"
+                  className="px-4 py-2.5 bg-amber-600/20 hover:bg-amber-600/30 text-amber-600 dark:text-amber-300 border border-amber-500/30 font-medium rounded-xl text-sm transition-all flex items-center gap-1"
                 >
                   ⚡ Force Full Sync
                 </button>
@@ -2567,7 +2566,7 @@ export default function AccountantPage() {
       {activeTab === 'reconcile' && (
         <div className="space-y-6">
           {/* Header & Status Card */}
-          <div className="bg-gradient-to-r from-slate-900 via-card to-amber-950/40 border border-amber-500/30 rounded-2xl p-6 shadow-xl relative overflow-hidden">
+          <div className="bg-gradient-to-r from-muted/50 via-card to-amber-500/10 border border-amber-500/30 rounded-2xl p-6 shadow-xl relative overflow-hidden">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
@@ -2588,7 +2587,7 @@ export default function AccountantPage() {
                 <button
                   onClick={fetchReconcileDiff}
                   disabled={loadingDiff}
-                  className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-foreground text-xs font-semibold rounded-xl border border-border shadow-md transition-all disabled:opacity-50"
+                  className="flex items-center gap-1.5 px-3.5 py-2 bg-secondary hover:bg-secondary/80 text-secondary-foreground text-xs font-semibold rounded-xl border border-border shadow-xs transition-all disabled:opacity-50"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${loadingDiff ? 'animate-spin' : ''}`} />
                   {loadingDiff ? 'Scanning...' : 'Refresh Diff'}
@@ -3197,7 +3196,7 @@ export default function AccountantPage() {
                 <button
                   type="button"
                   onClick={() => setShowAddFeeModal(false)}
-                  className="px-4 py-2 bg-slate-800 hover:bg-muted text-foreground/90 text-sm font-medium rounded-xl transition-all"
+                  className="px-4 py-2 bg-secondary hover:bg-secondary/80 text-secondary-foreground text-sm font-medium rounded-xl transition-all"
                 >
                   Cancel
                 </button>
@@ -3263,7 +3262,7 @@ export default function AccountantPage() {
                       readOnly
                       disabled
                       value={updatingFeeRecord.studentName || ''}
-                      className="w-full bg-muted/50 border border-border rounded-lg p-2 text-xs text-white font-medium cursor-not-allowed opacity-90 mt-1"
+                      className="w-full bg-muted/50 border border-border rounded-lg p-2 text-xs text-foreground font-medium cursor-not-allowed opacity-90 mt-1"
                     />
                   </div>
                   <div>
@@ -3275,11 +3274,11 @@ export default function AccountantPage() {
                       readOnly
                       disabled
                       value={formatCurrency(totalBilled)}
-                      className="w-full bg-muted/50 border border-border rounded-lg p-2 text-xs text-emerald-400 font-bold cursor-not-allowed opacity-90 mt-1"
+                      className="w-full bg-muted/50 border border-border rounded-lg p-2 text-xs text-emerald-500 dark:text-emerald-400 font-bold cursor-not-allowed opacity-90 mt-1"
                     />
                   </div>
                   <div>
-                    <label className="text-[10px] uppercase tracking-wider text-amber-400 block font-semibold">
+                    <label className="text-[10px] uppercase tracking-wider text-amber-500 dark:text-amber-400 block font-semibold">
                       Remaining Dues
                     </label>
                     <input
@@ -3287,14 +3286,14 @@ export default function AccountantPage() {
                       readOnly
                       disabled
                       value={formatCurrency(remainingDues)}
-                      className="w-full bg-amber-500/10 border border-amber-500/30 rounded-lg p-2 text-xs text-amber-400 font-bold cursor-not-allowed mt-1"
+                      className="w-full bg-amber-500/10 border border-amber-500/30 rounded-lg p-2 text-xs text-amber-500 dark:text-amber-400 font-bold cursor-not-allowed mt-1"
                     />
                   </div>
                 </div>
 
                 {/* EDITABLE PAYMENT INPUT */}
                 <div>
-                  <label className="text-xs font-semibold text-emerald-400 block mb-1">
+                  <label className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 block mb-1">
                     New Payment Received Now (₹) *
                   </label>
                   <input
@@ -3307,12 +3306,12 @@ export default function AccountantPage() {
                     onChange={(e) => setNewPaymentReceived(e.target.value)}
                     className={`w-full bg-background border ${
                       isExceeding ? 'border-rose-500 focus:border-rose-500' : 'border-emerald-500/40 focus:border-emerald-400'
-                    } rounded-xl p-3 text-base text-white font-bold focus:outline-none focus:ring-1 focus:ring-emerald-400`}
+                    } rounded-xl p-3 text-base text-foreground font-bold focus:outline-none focus:ring-1 focus:ring-emerald-400`}
                   />
 
                   {/* LIVE VALIDATION & CALCULATION PREVIEW */}
                   {isExceeding ? (
-                    <p className="text-xs text-rose-400 font-medium mt-1.5 flex items-center gap-1">
+                    <p className="text-xs text-rose-500 dark:text-rose-400 font-medium mt-1.5 flex items-center gap-1">
                       ⚠️ Payment ({formatCurrency(addedPayment)}) cannot exceed remaining dues ({formatCurrency(remainingDues)}).
                     </p>
                   ) : addedPayment > 0 ? (
@@ -3321,11 +3320,11 @@ export default function AccountantPage() {
                         <span>Previously Paid:</span>
                         <span className="font-mono text-muted-foreground">{formatCurrency(previousPaid)}</span>
                       </div>
-                      <div className="flex justify-between font-semibold text-emerald-400">
+                      <div className="flex justify-between font-semibold text-emerald-600 dark:text-emerald-400">
                         <span>New Total Paid:</span>
                         <span className="font-mono">{formatCurrency(newTotalPaid)}</span>
                       </div>
-                      <div className="flex justify-between border-t border-border pt-1 text-amber-400 font-semibold">
+                      <div className="flex justify-between border-t border-border pt-1 text-amber-600 dark:text-amber-400 font-semibold">
                         <span>Remaining Dues After Payment:</span>
                         <span className="font-mono">{formatCurrency(newRemaining)}</span>
                       </div>
@@ -3340,7 +3339,7 @@ export default function AccountantPage() {
                 {/* Receiving Account: Bank vs Cash Drawer */}
                 <div className="bg-muted/40 p-3 rounded-xl border border-emerald-500/30 space-y-2.5">
                   <div className="flex items-center justify-between">
-                    <label className="text-xs font-semibold text-emerald-400 block">
+                    <label className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 block">
                       Receiving Account / Drawer *
                     </label>
                     <div className="flex items-center gap-2">
@@ -3375,7 +3374,7 @@ export default function AccountantPage() {
                         required
                         value={updateBankAccountId || bankAccounts[0]?.id || ''}
                         onChange={(e) => setUpdateBankAccountId(e.target.value)}
-                        className="w-full bg-card border border-border rounded-xl p-2.5 text-xs text-white focus:border-blue-500 focus:outline-none font-medium"
+                        className="w-full bg-card border border-border rounded-xl p-2.5 text-xs text-foreground focus:border-blue-500 focus:outline-none font-medium"
                       >
                         {bankAccounts.map((b) => (
                           <option key={b.id} value={b.id}>
@@ -3391,7 +3390,7 @@ export default function AccountantPage() {
                         required
                         value={updateRegisterId || cashRegisters[0]?.id || ''}
                         onChange={(e) => setUpdateRegisterId(e.target.value)}
-                        className="w-full bg-card border border-border rounded-xl p-2.5 text-xs text-white focus:border-emerald-500 focus:outline-none font-medium"
+                        className="w-full bg-card border border-border rounded-xl p-2.5 text-xs text-foreground focus:border-emerald-500 focus:outline-none font-medium"
                       >
                         {cashRegisters.map((c) => (
                           <option key={c.id} value={c.id}>
@@ -3435,7 +3434,7 @@ export default function AccountantPage() {
                   <button
                     type="button"
                     onClick={() => setShowUpdateFeeModal(false)}
-                    className="px-4 py-2 bg-slate-800 hover:bg-muted text-foreground/90 text-sm font-medium rounded-xl transition-all"
+                    className="px-4 py-2 bg-secondary hover:bg-secondary/80 text-secondary-foreground text-sm font-medium rounded-xl transition-all"
                   >
                     Cancel
                   </button>
@@ -3707,7 +3706,7 @@ export default function AccountantPage() {
                             const b = bankAccounts.find((acc) => acc.id === e.target.value);
                             setNewPayroll({ ...newPayroll, bankAccountId: e.target.value, bankAccountName: b?.accountName || '' });
                           }}
-                          className="w-full bg-card border border-border rounded-xl p-2.5 text-xs text-white focus:border-blue-500 focus:outline-none font-medium"
+                          className="w-full bg-card border border-border rounded-xl p-2.5 text-xs text-foreground focus:border-blue-500 focus:outline-none font-medium"
                         >
                           {bankAccounts.map((b) => (
                             <option key={b.id} value={b.id}>
@@ -3723,7 +3722,7 @@ export default function AccountantPage() {
                           required
                           value={newPayroll.registerId || cashRegisters[0]?.id || ''}
                           onChange={(e) => setNewPayroll({ ...newPayroll, registerId: e.target.value })}
-                          className="w-full bg-card border border-border rounded-xl p-2.5 text-xs text-white focus:border-emerald-500 focus:outline-none font-medium"
+                          className="w-full bg-card border border-border rounded-xl p-2.5 text-xs text-foreground focus:border-emerald-500 focus:outline-none font-medium"
                         >
                           {cashRegisters.map((c) => (
                             <option key={c.id} value={c.id}>
@@ -3736,7 +3735,7 @@ export default function AccountantPage() {
                     )}
 
                     {isInsufficient && (
-                      <p className="text-[11px] text-rose-400 font-medium flex items-center gap-1">
+                      <p className="text-[11px] text-rose-500 dark:text-rose-400 font-medium flex items-center gap-1">
                         ⚠️ Insufficient balance in selected account ({formatCurrency(availBal)}). Disbursement requires {formatCurrency(netSal)}.
                       </p>
                     )}
@@ -3748,7 +3747,7 @@ export default function AccountantPage() {
                 <button
                   type="button"
                   onClick={() => setShowAddPayrollModal(false)}
-                  className="px-4 py-2 bg-slate-800 hover:bg-muted text-foreground/90 text-sm font-medium rounded-xl"
+                  className="px-4 py-2 bg-secondary hover:bg-secondary/80 text-secondary-foreground text-sm font-medium rounded-xl"
                 >
                   Cancel
                 </button>
@@ -3772,7 +3771,7 @@ export default function AccountantPage() {
               <h3 className="text-lg font-semibold text-foreground">Record Other Expense or Donation</h3>
               <button
                 onClick={() => setShowAddExpenseModal(false)}
-                className="text-muted-foreground hover:text-white text-sm"
+                className="text-muted-foreground hover:text-foreground text-sm"
               >
                 ✕
               </button>
@@ -3882,7 +3881,7 @@ export default function AccountantPage() {
                         const b = bankAccounts.find((acc) => acc.id === e.target.value);
                         setNewExpense({ ...newExpense, bankAccountId: e.target.value, bankAccountName: b?.accountName || '' });
                       }}
-                      className="w-full bg-card border border-border rounded-xl p-2.5 text-xs text-white focus:border-purple-500 focus:outline-none font-medium"
+                      className="w-full bg-card border border-border rounded-xl p-2.5 text-xs text-foreground focus:border-purple-500 focus:outline-none font-medium"
                     >
                       {bankAccounts.map((b) => (
                         <option key={b.id} value={b.id}>
@@ -3898,7 +3897,7 @@ export default function AccountantPage() {
                       required
                       value={newExpense.registerId || cashRegisters[0]?.id || ''}
                       onChange={(e) => setNewExpense({ ...newExpense, registerId: e.target.value })}
-                      className="w-full bg-card border border-border rounded-xl p-2.5 text-xs text-white focus:border-emerald-500 focus:outline-none font-medium"
+                      className="w-full bg-card border border-border rounded-xl p-2.5 text-xs text-foreground focus:border-emerald-500 focus:outline-none font-medium"
                     >
                       {cashRegisters.map((c) => (
                         <option key={c.id} value={c.id}>
@@ -3941,7 +3940,7 @@ export default function AccountantPage() {
                 <button
                   type="button"
                   onClick={() => setShowAddExpenseModal(false)}
-                  className="px-4 py-2 bg-slate-800 hover:bg-muted text-foreground/90 text-sm font-medium rounded-xl"
+                  className="px-4 py-2 bg-secondary hover:bg-secondary/80 text-secondary-foreground text-sm font-medium rounded-xl"
                 >
                   Cancel
                 </button>
@@ -4073,7 +4072,7 @@ export default function AccountantPage() {
                 <button
                   type="button"
                   onClick={() => setShowAddBankModal(false)}
-                  className="px-4 py-2 bg-slate-800 hover:bg-muted text-foreground/90 text-sm font-medium rounded-xl"
+                  className="px-4 py-2 bg-secondary hover:bg-secondary/80 text-secondary-foreground text-sm font-medium rounded-xl"
                 >
                   Cancel
                 </button>
@@ -4100,7 +4099,7 @@ export default function AccountantPage() {
               </div>
               <button
                 onClick={() => setShowAddSocietyFundModal(false)}
-                className="text-muted-foreground hover:text-white text-sm"
+                className="text-muted-foreground hover:text-foreground text-sm"
               >
                 ✕
               </button>
@@ -4215,7 +4214,7 @@ export default function AccountantPage() {
                 <button
                   type="button"
                   onClick={() => setShowAddSocietyFundModal(false)}
-                  className="px-4 py-2 bg-slate-800 hover:bg-muted text-foreground/90 text-sm font-medium rounded-xl"
+                  className="px-4 py-2 bg-secondary hover:bg-secondary/80 text-secondary-foreground text-sm font-medium rounded-xl"
                 >
                   Cancel
                 </button>
@@ -4242,7 +4241,7 @@ export default function AccountantPage() {
               </div>
               <button
                 onClick={() => setShowAddCashTransactionModal(false)}
-                className="text-muted-foreground hover:text-white text-sm"
+                className="text-muted-foreground hover:text-foreground text-sm"
               >
                 ✕
               </button>
@@ -4269,7 +4268,7 @@ export default function AccountantPage() {
                   <select
                     value={newCashTransaction.transactionType}
                     onChange={(e) => setNewCashTransaction({ ...newCashTransaction, transactionType: e.target.value })}
-                    className="w-full bg-background border border-border rounded-xl p-2.5 text-xs text-foreground focus:border-amber-500 focus:outline-none font-semibold text-amber-400"
+                    className="w-full bg-background border border-border rounded-xl p-2.5 text-xs text-foreground focus:border-amber-500 focus:outline-none font-semibold text-amber-500 dark:text-amber-400"
                   >
                     <option value="CASH_IN">📥 Cash Inflow / Counter Collection</option>
                     <option value="CASH_OUT">📤 Cash Outflow / Petty Expense</option>
@@ -4304,7 +4303,7 @@ export default function AccountantPage() {
 
               {['BANK_WITHDRAWAL', 'BANK_DEPOSIT'].includes(newCashTransaction.transactionType) && (
                 <div className="bg-muted/40 p-3 rounded-xl border border-amber-500/30 space-y-1">
-                  <label className="text-xs text-amber-300 font-semibold block flex items-center gap-1">
+                  <label className="text-xs text-amber-600 dark:text-amber-300 font-semibold block flex items-center gap-1">
                     <Landmark className="w-3.5 h-3.5" /> Linked Bank Account for Contra Transfer
                   </label>
                   <select
@@ -4363,7 +4362,7 @@ export default function AccountantPage() {
                 <button
                   type="button"
                   onClick={() => setShowAddCashTransactionModal(false)}
-                  className="px-4 py-2 bg-slate-800 hover:bg-muted text-foreground/90 text-sm font-medium rounded-xl"
+                  className="px-4 py-2 bg-secondary hover:bg-secondary/80 text-secondary-foreground text-sm font-medium rounded-xl"
                 >
                   Cancel
                 </button>
@@ -4390,7 +4389,7 @@ export default function AccountantPage() {
               </div>
               <button
                 onClick={() => setShowAddFixedAssetModal(false)}
-                className="text-muted-foreground hover:text-white text-sm"
+                className="text-muted-foreground hover:text-foreground text-sm"
               >
                 ✕
               </button>
@@ -4415,7 +4414,7 @@ export default function AccountantPage() {
                   <select
                     value={newFixedAsset.category}
                     onChange={(e) => setNewFixedAsset({ ...newFixedAsset, category: e.target.value })}
-                    className="w-full bg-background border border-border rounded-xl p-2.5 text-xs text-foreground focus:border-cyan-500 focus:outline-none font-semibold text-cyan-300"
+                    className="w-full bg-background border border-border rounded-xl p-2.5 text-xs text-foreground focus:border-cyan-500 focus:outline-none font-semibold text-cyan-600 dark:text-cyan-300"
                   >
                     <option value="IT_HARDWARE">💻 IT Hardware & Computers</option>
                     <option value="LAND_BUILDING">🏛️ Land & Academic Buildings</option>
@@ -4512,7 +4511,7 @@ export default function AccountantPage() {
                 <button
                   type="button"
                   onClick={() => setShowAddFixedAssetModal(false)}
-                  className="px-4 py-2 bg-slate-800 hover:bg-muted text-foreground/90 text-sm font-medium rounded-xl"
+                  className="px-4 py-2 bg-secondary hover:bg-secondary/80 text-secondary-foreground text-sm font-medium rounded-xl"
                 >
                   Cancel
                 </button>
@@ -4547,7 +4546,7 @@ export default function AccountantPage() {
                 </button>
                 <button
                   onClick={() => setPrintableVoucher(null)}
-                  className="p-1.5 text-muted-foreground hover:text-white text-sm"
+                  className="p-1.5 text-muted-foreground hover:text-foreground text-sm"
                 >
                   ✕
                 </button>

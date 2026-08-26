@@ -1,12 +1,12 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { dashboardApi, aiExtendedApi } from '@/lib/api';
+import { dashboardApi, aiExtendedApi, studentQuizApi } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
-import { CheckCircle2, Clock, ListTodo, MessageSquare, Sparkles, TrendingUp, Users, Building2, Layers, BarChart3, Bell, Timer, Newspaper, RefreshCw } from 'lucide-react';
+import { CheckCircle2, Clock, ListTodo, MessageSquare, Sparkles, TrendingUp, Users, Building2, Layers, BarChart3, Bell, Timer, Newspaper, RefreshCw, Flame, Play, BookOpen, Zap, Award, GraduationCap } from 'lucide-react';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, CartesianGrid } from 'recharts';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -43,9 +43,11 @@ export default function HomePage() {
   const [orgData, setOrgData] = useState(null);
   const [dailyBriefing, setDailyBriefing] = useState('');
   const [briefingLoading, setBriefingLoading] = useState(false);
+  const [studentQuiz, setStudentQuiz] = useState(null);
   const [loading, setLoading] = useState(true);
 
   const role = currentOrg?.role;
+  const isStudent = role === 'STUDENT' || user?.email?.toLowerCase().includes('student');
 
   useEffect(() => {
     if (role === 'PARENT') {
@@ -59,7 +61,7 @@ export default function HomePage() {
   const isAdmin = ['OWNER', 'ADMIN', 'PRINCIPAL', 'DIRECTOR'].includes(role);
 
   const fetchBriefing = useCallback(async () => {
-    if (!currentOrg?.id) return;
+    if (!currentOrg?.id || isStudent) return;
     setBriefingLoading(true);
     try {
       const res = await aiExtendedApi.dailyBriefing(currentOrg.id);
@@ -69,30 +71,33 @@ export default function HomePage() {
     } finally {
       setBriefingLoading(false);
     }
-  }, [currentOrg?.id]);
+  }, [currentOrg?.id, isStudent]);
 
   const isLoadedRef = React.useRef(false);
 
   useEffect(() => {
     if (!currentOrg?.id) return;
-    fetchBriefing();
+    if (!isStudent) {
+      fetchBriefing();
+    }
     (async () => {
       if (!isLoadedRef.current) {
         setLoading(true);
       }
       try {
-        const [e, m, o] = await Promise.all([
+        const [e, m, o, sq] = await Promise.all([
           dashboardApi.employee(currentOrg.id).catch(() => null),
           isManagerPlus ? dashboardApi.manager(currentOrg.id).catch(() => null) : Promise.resolve(null),
           isAdmin ? dashboardApi.orgAdmin(currentOrg.id).catch(() => null) : Promise.resolve(null),
+          isStudent ? studentQuizApi.getDailyStatus(currentOrg.id).catch(() => null) : Promise.resolve(null),
         ]);
-        setEmpData(e); setMgrData(m); setOrgData(o);
+        setEmpData(e); setMgrData(m); setOrgData(o); setStudentQuiz(sq);
         isLoadedRef.current = true;
       } finally {
         setLoading(false);
       }
     })();
-  }, [currentOrg?.id, isAdmin, isManagerPlus, fetchBriefing]);
+  }, [currentOrg?.id, isAdmin, isManagerPlus, isStudent, fetchBriefing]);
 
   if (loading) {
     return (
@@ -111,52 +116,104 @@ export default function HomePage() {
         <p className="text-muted-foreground mt-1">Here's what's happening in <span className="text-foreground font-medium">{currentOrg?.name}</span> today.</p>
       </div>
 
-      {/* AI Executive Daily Briefing Widget */}
-      <Card className="border-border bg-gradient-to-r from-purple-500/10 via-blue-500/5 to-transparent border-purple-500/20 shadow-sm overflow-hidden">
-        <CardContent className="p-4 sm:p-5">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex items-center gap-2.5">
-              <div className="h-8 w-8 rounded-lg bg-purple-500/20 text-purple-500 flex items-center justify-center font-bold">
-                <Sparkles className="h-4 w-4" />
-              </div>
-              <div>
-                <h3 className="font-bold text-sm text-foreground flex items-center gap-2">
-                  AI Executive Daily Briefing
-                  <Badge variant="outline" className="text-[10px] bg-purple-500/10 text-purple-500 border-purple-500/30">
-                    Live Campus Insights
+      {/* Student Daily Adaptive Quiz Card */}
+      {isStudent ? (
+        <Card className="border border-emerald-500/30 bg-gradient-to-r from-emerald-500/15 via-teal-500/10 to-background rounded-2xl shadow-sm overflow-hidden">
+          <CardContent className="p-4 sm:p-5">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <Badge className="bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 font-semibold px-2 py-0.5 border border-emerald-500/30 text-[11px]">
+                    <Zap className="h-3 w-3 mr-1" />
+                    {studentQuiz?.skillTitle || 'Developing (Level 2)'}
                   </Badge>
+                  <Badge variant="outline" className="bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/30 text-[11px]">
+                    <Flame className="h-3 w-3 mr-1 text-orange-500" />
+                    {studentQuiz?.streakDays || 0} Day Streak 🔥
+                  </Badge>
+                </div>
+
+                <h3 className="text-base sm:text-lg font-bold text-foreground flex items-center gap-2">
+                  Daily Adaptive Home Practice Quiz
                 </h3>
-                <p className="text-[11px] text-muted-foreground">Auto-generated summary for Directors, Principals & Academic Leaders</p>
+                <p className="text-xs text-muted-foreground">
+                  5 curriculum-aligned questions customized to your grade in <span className="font-semibold text-foreground">{studentQuiz?.classInfo?.className || 'Class'}</span>. Complete daily to level up your mastery.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2.5 w-full sm:w-auto justify-between sm:justify-end">
+                <div className="text-right hidden md:block">
+                  <div className="text-[10px] uppercase font-semibold text-muted-foreground">Mastery Score</div>
+                  <div className="text-sm font-bold text-emerald-500 tabular-nums">{studentQuiz?.skillScore || 50}/100</div>
+                </div>
+
+                <Button
+                  size="sm"
+                  onClick={() => navigate('/app/ai?tab=quiz')}
+                  className="font-bold text-xs bg-emerald-600 hover:bg-emerald-700 text-white shadow-md px-4 h-9 gap-1.5 rounded-xl w-full sm:w-auto shrink-0"
+                >
+                  <Play className="h-3.5 w-3.5 fill-white" />
+                  {studentQuiz?.todayQuiz?.isCompleted ? 'Review Today’s Quiz' : 'Start Daily Quiz (5 mins)'}
+                </Button>
               </div>
             </div>
-
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={fetchBriefing}
-              disabled={briefingLoading}
-              className="h-7 text-xs text-purple-500 hover:bg-purple-500/10"
-            >
-              <RefreshCw className={`h-3.5 w-3.5 mr-1 ${briefingLoading ? 'animate-spin' : ''}`} /> Refresh Briefing
-            </Button>
-          </div>
-
-          <div className="mt-3 text-xs leading-relaxed text-foreground/90 p-3 rounded-lg bg-card/80 border border-border/60">
-            {briefingLoading ? (
-              <div className="flex items-center gap-2 text-muted-foreground animate-pulse py-1">
-                <Sparkles className="h-3.5 w-3.5 text-purple-500" /> Synthesizing today's campus briefing...
+          </CardContent>
+        </Card>
+      ) : (
+        /* AI Executive Daily Briefing Widget */
+        <Card className="border-border bg-gradient-to-r from-purple-500/10 via-blue-500/5 to-transparent border-purple-500/20 shadow-sm overflow-hidden">
+          <CardContent className="p-4 sm:p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="h-8 w-8 rounded-lg bg-purple-500/20 text-purple-500 flex items-center justify-center font-bold">
+                  <Sparkles className="h-4 w-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-foreground flex items-center gap-2">
+                    AI Executive Daily Briefing
+                    <Badge variant="outline" className="text-[10px] bg-purple-500/10 text-purple-500 border-purple-500/30">
+                      Live Campus Insights
+                    </Badge>
+                  </h3>
+                  <p className="text-[11px] text-muted-foreground">Auto-generated summary for Directors, Principals & Academic Leaders</p>
+                </div>
               </div>
-            ) : (
-              <FormattedMarkdown
-                content={dailyBriefing || `${currentOrg?.name} campus is operating normally today. Attendance records, active homework tasks, and faculty announcements are up-to-date.`}
-              />
-            )}
-          </div>
-        </CardContent>
-      </Card>
+
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={fetchBriefing}
+                disabled={briefingLoading}
+                className="h-7 text-xs text-purple-500 hover:bg-purple-500/10"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 mr-1 ${briefingLoading ? 'animate-spin' : ''}`} /> Refresh Briefing
+              </Button>
+            </div>
+
+            <div className="mt-3 text-xs leading-relaxed text-foreground/90 p-3 rounded-lg bg-card/80 border border-border/60">
+              {briefingLoading ? (
+                <div className="flex items-center gap-2 text-muted-foreground animate-pulse py-1">
+                  <Sparkles className="h-3.5 w-3.5 text-purple-500" /> Synthesizing today's campus briefing...
+                </div>
+              ) : (
+                <FormattedMarkdown
+                  content={dailyBriefing || `${currentOrg?.name} campus is operating normally today. Attendance records, active homework tasks, and faculty announcements are up-to-date.`}
+                />
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* KPI Row - varies by role */}
-      {isAdmin && orgData ? (
+      {isStudent ? (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3" data-testid="kpi-row">
+          <KpiCard icon={BookOpen} label="My Homework" value={empData?.myTasks?.length ?? 0} tone="primary" testid="kpi-homework" />
+          <KpiCard icon={Flame} label="Daily Quiz Streak" value={`${studentQuiz?.streakDays || 0} Days`} tone="warning" testid="kpi-streak" />
+          <KpiCard icon={Zap} label="Mastery Score" value={`${studentQuiz?.skillScore || 50}/100`} tone="accent" testid="kpi-mastery" />
+          <KpiCard icon={MessageSquare} label="Study Channels" value={empData?.myChannels ?? 0} tone="info" testid="kpi-channels" />
+        </div>
+      ) : isAdmin && orgData ? (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3" data-testid="kpi-row">
           <KpiCard icon={Users} label="Members" value={orgData.metrics.members} tone="primary" testid="kpi-members" />
           <KpiCard icon={Building2} label="Departments" value={orgData.metrics.departments} tone="accent" testid="kpi-departments" />

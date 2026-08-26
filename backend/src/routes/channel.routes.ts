@@ -159,29 +159,27 @@ async function ensureTeamAndProjectChannels(orgId: string) {
 // List channels the user has access to (org-scoped)
 router.get('/', async (req, res, next) => {
   try {
-    const orgId = req.query.orgId as string;
+    const orgId = (req.query.orgId as string) || (req.headers['x-org-id'] as string) || req.currentOrgId;
     if (!orgId) return res.status(400).json({ error: 'orgId required' });
-    const membership = await prisma.membership.findFirst({ where: { userId: req.user!.id, orgId, isActive: true } });
-    if (!membership) return res.status(403).json({ error: 'Not a member' });
+
+    const isSuperAdmin = req.user?.systemRole === 'SUPER_ADMIN';
+    let membership: any = null;
+    if (!isSuperAdmin) {
+      membership = await prisma.membership.findFirst({ where: { userId: req.user!.id, orgId, isActive: true } });
+      if (!membership) return res.status(403).json({ error: 'Not a member' });
+    }
 
     // Sync team and project channels asynchronously in background
     ensureTeamAndProjectChannels(orgId).catch(() => {});
 
-    const isOrgAdmin = ['OWNER', 'ADMIN', 'PRINCIPAL', 'DEAN', 'DIRECTOR'].includes(membership.role);
+    const isOrgAdmin = isSuperAdmin || ['OWNER', 'ADMIN', 'PRINCIPAL', 'DEAN', 'DIRECTOR'].includes(membership?.role || '');
 
     let channels = await prisma.channel.findMany({
       where: {
         orgId,
         deletedAt: null,
         OR: isOrgAdmin
-          ? [
-              { type: 'PUBLIC' },
-              { type: 'ANNOUNCEMENT' },
-              { type: 'DEPARTMENT' },
-              { type: 'TEAM' },
-              { type: 'PROJECT' },
-              { members: { some: { userId: req.user!.id } } },
-            ]
+          ? undefined // Full shadow visibility across all channel types
           : [
               { type: 'PUBLIC' },
               { type: 'ANNOUNCEMENT' },

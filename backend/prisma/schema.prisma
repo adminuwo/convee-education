@@ -137,6 +137,7 @@ model User {
   aiConversations   AIConversation[]
   auditLogs         AuditLog[]
   uploadedFiles     FileAsset[]
+  dailyQuizzes      StudentDailyQuiz[] @relation("StudentDailyQuizzes")
 
   @@index([email])
   @@index([googleId])
@@ -1133,6 +1134,34 @@ model ReportCard {
   @@index([orgId])
   @@index([studentId])
   @@index([teamId])
+}
+
+// ============ STUDENT DAILY ADAPTIVE QUIZZES (STUDY BUDDY) ============
+
+model StudentDailyQuiz {
+  id             String    @id @default(uuid())
+  orgId          String
+  studentId      String
+  teamId         String?   // Class Section ID
+  subject        String    @default("General Studies")
+  topic          String?
+  skillLevel     String    @default("INTERMEDIATE") // BEGINNER, INTERMEDIATE, ADVANCED, MASTERY
+  skillScore     Float     @default(50)             // 0 - 100
+  questionsJson  Json                               // Array of { id, question, options: string[], correctIndex: number, explanation: string, difficulty: string, hint?: string }
+  answersJson    Json?                              // Array of student selected option indices
+  score          Float?                             // e.g. 4 (correct out of 5)
+  totalQuestions Int       @default(5)
+  feedback       String?
+  streakDays     Int       @default(1)
+  isCompleted    Boolean   @default(false)
+  completedAt    DateTime?
+  createdAt      DateTime  @default(now())
+
+  student        User      @relation("StudentDailyQuizzes", fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([studentId, createdAt])
+  @@index([orgId, studentId])
+  @@index([orgId, teamId])
 }
 
 

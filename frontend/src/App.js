@@ -96,6 +96,11 @@ function RequireRole({ allowedRoles = [], fallback, children }) {
   if (loading) return <PageLoader />;
   if (!user) return <Navigate to="/login" state={{ from: location }} replace />;
 
+  // 0. Super Admin Global Pass
+  if (user?.systemRole === 'SUPER_ADMIN') {
+    return children;
+  }
+
   const role = (currentOrg?.role || user?.systemRole || 'STUDENT').toUpperCase();
   const isAccountant =
     role === 'ACCOUNTANT' ||
@@ -156,7 +161,7 @@ export default function App() {
               <Route path="/login" element={<LoginPage />} />
               <Route path="/student-login" element={<LoginPage initialPortal="student" />} />
               <Route path="/parent-login" element={<LoginPage initialPortal="parent" />} />
-              <Route path="/register" element={<RegisterPage />} />
+              <Route path="/register" element={<Navigate to="/login" replace />} />
               <Route path="/auth/google" element={<GoogleCallbackPage />} />
               <Route path="/verify-email" element={<VerifyEmailPage />} />
               <Route path="/reset-password" element={<ResetPasswordPage />} />

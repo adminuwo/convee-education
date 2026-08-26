@@ -377,7 +377,7 @@ export default function LoginPage({ initialPortal = 'faculty' }) {
                   Continue with Google
                 </Button>
                 <div className="mt-4 text-center text-xs text-muted-foreground">
-                  New institution? <Link to="/register" className="font-semibold text-primary hover:underline">Register your school/college</Link>
+                  Accounts are provisioned by your institution. Need access? Contact your administrator.
                 </div>
               </>
             ) : portalMode === 'student' ? (

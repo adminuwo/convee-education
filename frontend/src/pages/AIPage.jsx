@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { aiApi, taskApi, channelApi, parentApi, financeApi } from '@/lib/api';
 import { Button } from '@/components/ui/button';
@@ -8,10 +8,11 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Sparkles, Send, Zap, ListTodo, FileText, MessageSquareText, Plus, Trash2, PanelLeft, Clock, GraduationCap, BookOpen, Check, UserCheck, Mail, RefreshCw, Landmark, DollarSign, Calculator, Building2, Megaphone, ShieldCheck } from 'lucide-react';
+import { Sparkles, Send, Zap, ListTodo, FileText, MessageSquareText, Plus, Trash2, PanelLeft, Clock, GraduationCap, BookOpen, Check, UserCheck, Mail, RefreshCw, Landmark, DollarSign, Calculator, Building2, Megaphone, ShieldCheck, Play } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
 import FormattedMarkdown from '@/components/FormattedMarkdown';
+import DailyHomeQuiz from '@/components/classroom/DailyHomeQuiz';
 
 const QUICK_PROMPTS = [
   { icon: MessageSquareText, label: 'Summarize channel', prompt: 'Summarize the last 24 hours of activity in my current workspace.' },
@@ -79,6 +80,16 @@ export default function AIPage() {
   const [loading, setLoading] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const scrollRef = useRef();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialTab = searchParams.get('tab') === 'quiz' ? 'quiz' : 'chat';
+  const [studentTab, setStudentTab] = useState(initialTab);
+
+  useEffect(() => {
+    const tabParam = searchParams.get('tab');
+    if (tabParam === 'quiz' || tabParam === 'chat') {
+      setStudentTab(tabParam);
+    }
+  }, [searchParams]);
 
   const isStudent = currentOrg?.role === 'STUDENT' || user?.email?.includes('student');
   const isParent = currentOrg?.role === 'PARENT' || user?.email?.includes('parent');
@@ -512,15 +523,17 @@ export default function AIPage() {
       {/* Top Header */}
       <div className="border-b border-border px-4 py-2.5 flex items-center justify-between bg-card/50">
         <div className="flex items-center gap-3">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setSidebarOpen((v) => !v)}
-            className="h-8 w-8 text-muted-foreground hover:text-foreground"
-            title={sidebarOpen ? 'Hide History' : 'Show History'}
-          >
-            <PanelLeft className="h-4 w-4" />
-          </Button>
+          {(!isStudent || studentTab === 'chat') && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setSidebarOpen((v) => !v)}
+              className="h-8 w-8 text-muted-foreground hover:text-foreground"
+              title={sidebarOpen ? 'Hide History' : 'Show History'}
+            >
+              <PanelLeft className="h-4 w-4" />
+            </Button>
+          )}
 
           <div className="flex items-center gap-2">
             <div className={`h-8 w-8 rounded-md flex items-center justify-center ${
@@ -553,7 +566,7 @@ export default function AIPage() {
             <div>
               <div className="font-display font-semibold text-sm leading-tight">
                 {isStudent
-                  ? 'Academic AI Study Buddy'
+                  ? 'Study Buddy 🎒'
                   : isParent
                   ? 'Parent AI Academic Assistant'
                   : isAlumni
@@ -566,7 +579,7 @@ export default function AIPage() {
               </div>
               <div className="text-[11px] text-muted-foreground">
                 {isStudent
-                  ? 'Your 24/7 personal tutor for homework, class tasks, and projects'
+                  ? 'Your 24/7 personal tutor for homework, daily quizzes, and study guidance'
                   : isParent
                   ? "Monitor your child's progress & homework, and connect with Teachers & HOD"
                   : isAlumni
@@ -581,13 +594,62 @@ export default function AIPage() {
           </div>
         </div>
 
-        <Button onClick={handleNewChat} size="sm" className="gap-1.5 font-medium shadow-xs">
-          <Plus className="h-4 w-4" /> New Chat
-        </Button>
+        {/* Action / Student Tab Switcher */}
+        <div className="flex items-center gap-2">
+          {isStudent && (
+            <div className="flex items-center bg-muted/60 p-1 rounded-xl border border-border">
+              <button
+                type="button"
+                onClick={() => {
+                  setStudentTab('chat');
+                  setSearchParams({});
+                }}
+                className={`px-3 py-1 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 ${
+                  studentTab === 'chat'
+                    ? 'bg-background text-foreground shadow-xs'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <MessageSquareText className="h-3.5 w-3.5" /> Ask Study Buddy
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setStudentTab('quiz');
+                  setSearchParams({ tab: 'quiz' });
+                }}
+                className={`px-3 py-1 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 ${
+                  studentTab === 'quiz'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <Play className="h-3.5 w-3.5" /> Daily Home Quiz 🎯
+              </button>
+            </div>
+          )}
+
+          {(!isStudent || studentTab === 'chat') && (
+            <Button onClick={handleNewChat} size="sm" className="gap-1.5 font-medium shadow-xs">
+              <Plus className="h-4 w-4" /> New Chat
+            </Button>
+          )}
+        </div>
       </div>
 
-      {/* Main Two-Column View */}
-      <div className="flex-1 flex overflow-hidden">
+      {/* Main View Area */}
+      {isStudent && studentTab === 'quiz' ? (
+        <div className="flex-1 overflow-auto p-4 sm:p-6">
+          <DailyHomeQuiz
+            onNavigateToChat={() => {
+              setStudentTab('chat');
+              setSearchParams({});
+            }}
+          />
+        </div>
+      ) : (
+        /* Main Two-Column View */
+        <div className="flex-1 flex overflow-hidden">
         {/* Left History Sidebar */}
         {sidebarOpen && (
           <div className="w-64 border-r border-border bg-card flex flex-col shrink-0">
@@ -640,6 +702,33 @@ export default function AIPage() {
         {/* Right Active Chat Workspace */}
         <div className="flex-1 flex flex-col min-w-0">
           <div ref={scrollRef} className="flex-1 overflow-auto p-4 sm:p-6 space-y-4">
+            {isStudent && (
+              <div className="max-w-3xl mx-auto p-3.5 bg-gradient-to-r from-emerald-500/15 via-teal-500/10 to-background border border-emerald-500/30 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs shadow-xs">
+                <div className="flex items-center gap-3">
+                  <div className="h-9 w-9 rounded-xl bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 flex items-center justify-center font-bold text-base shrink-0">
+                    🎯
+                  </div>
+                  <div>
+                    <div className="font-bold text-foreground flex items-center gap-2">
+                      <span>Daily Home Practice Quiz Ready</span>
+                      <Badge className="bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-[10px] py-0 px-1.5 border border-emerald-500/30">Adaptive</Badge>
+                    </div>
+                    <div className="text-[11px] text-muted-foreground">5 quick curriculum questions customized to your grade and current skill mastery.</div>
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setStudentTab('quiz');
+                    setSearchParams({ tab: 'quiz' });
+                  }}
+                  className="text-xs h-8 font-semibold bg-emerald-600 hover:bg-emerald-700 text-white shrink-0 shadow-xs"
+                >
+                  <Play className="h-3 w-3 mr-1 fill-white" /> Take Today's Quiz
+                </Button>
+              </div>
+            )}
+
             {messages.length === 0 && (
               <div className="max-w-3xl mx-auto space-y-6">
                 <div className="text-center">
@@ -746,7 +835,8 @@ export default function AIPage() {
           </div>
         </div>
       </div>
-    </div>
-  </motion.div>
-);
+      </div>
+      )}
+    </motion.div>
+  );
 }

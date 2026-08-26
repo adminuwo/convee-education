@@ -255,6 +255,13 @@ export const aiExtendedApi = {
   dailyBriefing: (orgId) => api.post('/ai/daily-briefing', { orgId }).then((r) => r.data),
 };
 
+export const studentQuizApi = {
+  getDailyStatus: (orgId) => api.get('/ai/student/daily-quiz', { params: { orgId } }).then((r) => r.data),
+  generateDailyQuiz: (data) => api.post('/ai/student/daily-quiz/generate', data).then((r) => r.data),
+  submitDailyQuiz: (id, data) => api.post(`/ai/student/daily-quiz/${id}/submit`, data).then((r) => r.data),
+  getHistory: (orgId) => api.get('/ai/student/daily-quiz/history', { params: { orgId } }).then((r) => r.data),
+};
+
 export const llmBridgeApi = {
   health: () => api.get('/llm_bridge/health').then((r) => r.data),
 };
@@ -331,3 +338,10 @@ export const examApi = {
   getStudentReportCards: (studentId, orgId) => api.get(`/exams/student/${studentId}/report-cards`, { params: { orgId } }).then((r) => r.data),
   updateReportCardSignatures: (id, data) => api.patch(`/exams/report-card/${id}/signatures`, data).then((r) => r.data),
 };
+
+export const superAdminApi = {
+  dashboard: () => api.get('/dashboard/super-admin').then((r) => r.data),
+  provisionOrg: (data) => api.post('/orgs/super-admin/provision', data).then((r) => r.data),
+  listOrgs: () => api.get('/orgs').then((r) => r.data),
+};
+

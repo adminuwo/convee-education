@@ -42,8 +42,44 @@ const CreateOrgSchema = z.object({
   description: z.string().optional(),
 });
 
+const SuperAdminProvisionSchema = z.object({
+  name: z.string().min(1, 'School / Institution name is required'),
+  slug: z.string().min(2).optional(),
+  description: z.string().optional(),
+  campusType: z.string().optional(),
+  directorName: z.string().min(1, 'Director name is required'),
+  directorEmail: z.string().email('Valid Director email is required'),
+  directorPassword: z.string().min(6, 'Password must be at least 6 characters').optional(),
+  directorPhone: z.string().optional(),
+});
+
 router.get('/', async (req, res, next) => {
   try {
+    if (req.user!.systemRole === 'SUPER_ADMIN') {
+      const allOrgs = await prisma.organization.findMany({
+        where: { deletedAt: null },
+        include: {
+          owner: { select: { id: true, fullName: true, email: true } },
+          _count: { select: { memberships: true, channels: true, tasks: true, departments: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+      return res.json(allOrgs.map((o) => ({
+        id: o.id,
+        name: o.name,
+        slug: o.slug,
+        logoUrl: o.logoUrl,
+        description: o.description,
+        role: 'SUPER_ADMIN',
+        owner: o.owner,
+        memberCount: o._count.memberships,
+        channelCount: o._count.channels,
+        taskCount: o._count.tasks,
+        departmentCount: o._count.departments,
+        createdAt: o.createdAt,
+      })));
+    }
+
     const memberships = await prisma.membership.findMany({
       where: { userId: req.user!.id, isActive: true },
       include: { organization: true },
@@ -58,8 +94,205 @@ router.get('/', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// Super Admin: Provision New Institution & Director
+router.post('/super-admin/provision', validate(SuperAdminProvisionSchema), async (req, res, next) => {
+  try {
+    if (req.user!.systemRole !== 'SUPER_ADMIN') {
+      return res.status(403).json({ error: 'Only platform Super Admins can provision workspaces' });
+    }
+
+    const {
+      name,
+      description,
+      campusType = 'K12',
+      directorName,
+      directorEmail,
+      directorPassword,
+      directorPhone,
+    } = req.body;
+
+    let { slug } = req.body;
+    if (!slug) {
+      slug = name.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-') + '-' + Math.random().toString(36).substring(2, 6);
+    }
+
+    // Check slug collision
+    const existingOrg = await prisma.organization.findUnique({ where: { slug } });
+    if (existingOrg) {
+      slug = `${slug}-${Math.random().toString(36).substring(2, 6)}`;
+    }
+
+    // Generate or use provided password
+    const plainPassword = directorPassword || `Director${Math.floor(1000 + Math.random() * 9000)}!`;
+    const passwordHash = await hashPassword(plainPassword);
+
+    // Find or create Director user
+    let director = await prisma.user.findUnique({ where: { email: directorEmail.toLowerCase().trim() } });
+    if (!director) {
+      director = await prisma.user.create({
+        data: {
+          email: directorEmail.toLowerCase().trim(),
+          passwordHash,
+          fullName: directorName.trim(),
+          isVerified: true,
+          systemRole: 'USER',
+          status: 'online',
+          bio: `Director & Institutional Leader [${name}]`,
+        },
+      });
+    } else {
+      await prisma.user.update({
+        where: { id: director.id },
+        data: {
+          fullName: directorName.trim(),
+          passwordHash,
+          isVerified: true,
+        },
+      });
+    }
+
+    // Create the School Organization with Director as Owner
+    const org = await prisma.organization.create({
+      data: {
+        name: name.trim(),
+        slug,
+        description: description || `${campusType} Academic Campus & Learning Institute`,
+        ownerId: director.id,
+      },
+    });
+
+    const directorIdCode = `DIR-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+    // Create Director Membership
+    await prisma.membership.create({
+      data: {
+        userId: director.id,
+        orgId: org.id,
+        role: 'DIRECTOR',
+        title: `Director / Academic Head [${directorIdCode}]`,
+        isActive: true,
+      },
+    });
+
+    // Check if campus is a College / University / Higher Education institute
+    const isCollegiate = /college|university|higher|engineering|technology|management|business|medical|degree|polytechnic/i.test(campusType || '');
+
+    // Seed Core Channels
+    const generalChannel = await prisma.channel.create({
+      data: { orgId: org.id, name: 'general', type: 'PUBLIC', createdById: director.id },
+    });
+    const announcementsChannel = await prisma.channel.create({
+      data: { orgId: org.id, name: 'announcements', type: 'ANNOUNCEMENT', createdById: director.id },
+    });
+    const staffLoungeName = isCollegiate ? 'faculty-senate' : 'teachers-lounge';
+    const staffLoungeChannel = await prisma.channel.create({
+      data: { orgId: org.id, name: staffLoungeName, type: 'PUBLIC', createdById: director.id },
+    });
+
+    const channelsToMember = [
+      { channelId: generalChannel.id, userId: director.id, isAdmin: true },
+      { channelId: announcementsChannel.id, userId: director.id, isAdmin: true },
+      { channelId: staffLoungeChannel.id, userId: director.id, isAdmin: true },
+    ];
+
+    if (isCollegiate) {
+      const placementChannel = await prisma.channel.create({
+        data: { orgId: org.id, name: 'placement-cell', type: 'PUBLIC', createdById: director.id },
+      });
+      channelsToMember.push({ channelId: placementChannel.id, userId: director.id, isAdmin: true });
+    }
+
+    await prisma.channelMember.createMany({
+      data: channelsToMember,
+      skipDuplicates: true,
+    });
+
+    // Seed Academic Departments & Class Batches / Semesters
+    const defaultAcademicStructure = isCollegiate
+      ? [
+          {
+            name: 'Computer Science & Engineering',
+            batches: ['B.Tech CSE - 1st Year (Sem 1)', 'B.Tech CSE - 2nd Year (Sem 3)', 'B.Tech CSE - 3rd Year (Sem 5)', 'B.Tech CSE - Final Year (Sem 7)'],
+          },
+          {
+            name: 'Electronics & Communication',
+            batches: ['B.Tech ECE - 1st Year (Sem 1)', 'B.Tech ECE - 2nd Year (Sem 3)', 'B.Tech ECE - 3rd Year (Sem 5)'],
+          },
+          {
+            name: 'Business Administration & Management',
+            batches: ['BBA - Sem 1', 'BBA - Sem 3', 'MBA - Year 1 (Batch 2026)', 'MBA - Year 2 (Batch 2025)'],
+          },
+          {
+            name: 'Commerce & Financial Studies',
+            batches: ['B.Com (Hons) - 1st Year', 'B.Com (Hons) - 2nd Year', 'M.Com - 1st Year'],
+          },
+          {
+            name: 'Basic Sciences & Humanities',
+            batches: ['B.Sc Physics - 1st Year', 'B.Sc Chemistry - 1st Year', 'B.Sc Mathematics - 1st Year'],
+          },
+        ]
+      : [
+          { name: 'Playschool', batches: ['Playschool - Sec A'] },
+          { name: 'Kindergarten', batches: ['Kindergarten - Sec A'] },
+          { name: 'Primary School', batches: ['Primary School - Sec A'] },
+          { name: 'Middle School', batches: ['Middle School - Sec A'] },
+          { name: 'High School', batches: ['High School - Sec A'] },
+          { name: 'Higher Secondary', batches: ['Higher Secondary - Sec A'] },
+        ];
+
+    for (const item of defaultAcademicStructure) {
+      const dept = await prisma.department.create({
+        data: {
+          orgId: org.id,
+          name: item.name,
+        },
+      });
+
+      for (const batch of item.batches) {
+        await prisma.team.create({
+          data: {
+            name: batch,
+            departmentId: dept.id,
+          },
+        });
+      }
+    }
+
+    // Optional email dispatch
+    if (isEmailConfigured()) {
+      try {
+        await sendInviteCredentialsEmail(director.email, director.fullName, plainPassword, org.name, 'Director', director.email);
+      } catch (err: any) {
+        logger.warn(`Email dispatch failed during super admin provisioning: ${err.message}`);
+      }
+    }
+
+    res.status(201).json({
+      success: true,
+      message: `Organization "${org.name}" successfully provisioned with Director "${director.fullName}"`,
+      organization: {
+        id: org.id,
+        name: org.name,
+        slug: org.slug,
+        description: org.description,
+        createdAt: org.createdAt,
+      },
+      director: {
+        id: director.id,
+        email: director.email,
+        fullName: director.fullName,
+        directorId: directorIdCode,
+        plainPassword,
+      },
+    });
+  } catch (e) { next(e); }
+});
+
 router.post('/', validate(CreateOrgSchema), async (req, res, next) => {
   try {
+    if (req.user!.systemRole !== 'SUPER_ADMIN') {
+      return res.status(403).json({ error: 'Self-service creation of institutions is disabled. New institutions must be provisioned by a Platform Super Admin.' });
+    }
     const { name, description } = req.body;
     let { slug } = req.body;
     if (!slug) slug = name.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-') + '-' + Math.random().toString(36).substring(2, 7);
@@ -75,17 +308,26 @@ router.post('/', validate(CreateOrgSchema), async (req, res, next) => {
 
 router.get('/:orgId', async (req, res, next) => {
   try {
-    const membership = await prisma.membership.findFirst({
-      where: { userId: req.user!.id, orgId: req.params.orgId, isActive: true },
-    });
-    if (!membership) return res.status(403).json({ error: 'Not a member' });
+    let myRole = 'MEMBER';
+    if (req.user!.systemRole === 'SUPER_ADMIN') {
+      myRole = 'SUPER_ADMIN';
+    } else {
+      const membership = await prisma.membership.findFirst({
+        where: { userId: req.user!.id, orgId: req.params.orgId, isActive: true },
+      });
+      if (!membership) return res.status(403).json({ error: 'Not a member' });
+      myRole = membership.role;
+    }
+
     const org = await prisma.organization.findUnique({
       where: { id: req.params.orgId },
       include: {
-        _count: { select: { memberships: true, channels: true, tasks: true, meetings: true } },
+        owner: { select: { id: true, fullName: true, email: true } },
+        _count: { select: { memberships: true, channels: true, tasks: true, meetings: true, departments: true } },
       },
     });
-    res.json({ ...org, myRole: membership.role });
+    if (!org) return res.status(404).json({ error: 'Organization not found' });
+    res.json({ ...org, myRole });
   } catch (e) { next(e); }
 });
 
@@ -194,8 +436,11 @@ router.delete('/:orgId/logo', async (req, res, next) => {
 // Departments
 router.get('/:orgId/departments', async (req, res, next) => {
   try {
-    const m = await prisma.membership.findFirst({ where: { userId: req.user!.id, orgId: req.params.orgId, isActive: true } });
-    if (!m) return res.status(403).json({ error: 'Not a member' });
+    const isSuperAdmin = req.user?.systemRole === 'SUPER_ADMIN';
+    if (!isSuperAdmin) {
+      const m = await prisma.membership.findFirst({ where: { userId: req.user!.id, orgId: req.params.orgId, isActive: true } });
+      if (!m) return res.status(403).json({ error: 'Not a member' });
+    }
 
     const [departments, teamChannels, orgMemberships] = await Promise.all([
       prisma.department.findMany({
@@ -304,9 +549,12 @@ router.get('/:orgId/departments', async (req, res, next) => {
 
 router.patch('/:orgId/departments/:deptId', async (req, res, next) => {
   try {
-    const m = await prisma.membership.findFirst({ where: { userId: req.user!.id, orgId: req.params.orgId, isActive: true } });
-    if (!m || !['OWNER', 'ADMIN', 'DIRECTOR', 'PRINCIPAL', 'DEAN'].includes(m.role)) {
-      return res.status(403).json({ error: 'Insufficient permissions' });
+    const isSuperAdmin = req.user?.systemRole === 'SUPER_ADMIN';
+    if (!isSuperAdmin) {
+      const m = await prisma.membership.findFirst({ where: { userId: req.user!.id, orgId: req.params.orgId, isActive: true } });
+      if (!m || !['OWNER', 'ADMIN', 'DIRECTOR', 'PRINCIPAL', 'DEAN'].includes(m.role)) {
+        return res.status(403).json({ error: 'Insufficient permissions' });
+      }
     }
     const { name, headId } = req.body;
     const cleanHeadId = (!headId || headId === 'unassigned') ? null : headId;
@@ -339,8 +587,11 @@ router.patch('/:orgId/departments/:deptId', async (req, res, next) => {
 
 router.post('/:orgId/departments', async (req, res, next) => {
   try {
-    const m = await prisma.membership.findFirst({ where: { userId: req.user!.id, orgId: req.params.orgId, isActive: true } });
-    if (!m || !['OWNER', 'ADMIN', 'DIRECTOR', 'PRINCIPAL'].includes(m.role)) return res.status(403).json({ error: 'Insufficient permissions' });
+    const isSuperAdmin = req.user?.systemRole === 'SUPER_ADMIN';
+    if (!isSuperAdmin) {
+      const m = await prisma.membership.findFirst({ where: { userId: req.user!.id, orgId: req.params.orgId, isActive: true } });
+      if (!m || !['OWNER', 'ADMIN', 'DIRECTOR', 'PRINCIPAL'].includes(m.role)) return res.status(403).json({ error: 'Insufficient permissions' });
+    }
     const { name } = req.body;
     if (!name) return res.status(400).json({ error: 'Name required' });
     const dept = await prisma.department.create({ data: { name, orgId: req.params.orgId } });
@@ -351,8 +602,11 @@ router.post('/:orgId/departments', async (req, res, next) => {
 // Delete School Wing (Department)
 router.delete('/:orgId/departments/:deptId', async (req, res, next) => {
   try {
-    const m = await prisma.membership.findFirst({ where: { userId: req.user!.id, orgId: req.params.orgId, isActive: true } });
-    if (!m || !['OWNER', 'ADMIN', 'DIRECTOR', 'PRINCIPAL'].includes(m.role)) return res.status(403).json({ error: 'Insufficient permissions' });
+    const isSuperAdmin = req.user?.systemRole === 'SUPER_ADMIN';
+    if (!isSuperAdmin) {
+      const m = await prisma.membership.findFirst({ where: { userId: req.user!.id, orgId: req.params.orgId, isActive: true } });
+      if (!m || !['OWNER', 'ADMIN', 'DIRECTOR', 'PRINCIPAL'].includes(m.role)) return res.status(403).json({ error: 'Insufficient permissions' });
+    }
 
     const dept = await prisma.department.findFirst({ where: { id: req.params.deptId, orgId: req.params.orgId } });
     if (!dept) return res.status(404).json({ error: 'School Wing not found' });
@@ -370,8 +624,11 @@ router.delete('/:orgId/departments/:deptId', async (req, res, next) => {
 // Delete Class & Section (Team)
 router.delete('/:orgId/teams/:teamId', async (req, res, next) => {
   try {
-    const m = await prisma.membership.findFirst({ where: { userId: req.user!.id, orgId: req.params.orgId, isActive: true } });
-    if (!m || !['OWNER', 'ADMIN', 'DIRECTOR', 'PRINCIPAL'].includes(m.role)) return res.status(403).json({ error: 'Insufficient permissions' });
+    const isSuperAdmin = req.user?.systemRole === 'SUPER_ADMIN';
+    if (!isSuperAdmin) {
+      const m = await prisma.membership.findFirst({ where: { userId: req.user!.id, orgId: req.params.orgId, isActive: true } });
+      if (!m || !['OWNER', 'ADMIN', 'DIRECTOR', 'PRINCIPAL'].includes(m.role)) return res.status(403).json({ error: 'Insufficient permissions' });
+    }
 
     const team = await prisma.team.findUnique({ where: { id: req.params.teamId } });
     if (!team) return res.status(404).json({ error: 'Class & Section not found' });

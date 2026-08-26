@@ -28,7 +28,12 @@ export function errorHandler(err: any, _req: Request, res: Response, _next: Next
     return res.status(400).json({ error: 'Malformed JSON payload in request body' });
   }
 
-  // Handle Prisma Database Exceptions
+  // Handle Payload Too Large
+  if (err?.type === 'entity.too.large' || err?.status === 413) {
+    return res.status(413).json({ error: 'Request payload exceeds maximum allowed size limit' });
+  }
+
+  // Handle Prisma Database Exceptions & Validation Errors
   if (err?.code === 'P2002') {
     const fields = Array.isArray(err?.meta?.target) ? err.meta.target.join(', ') : 'field';
     return res.status(409).json({ error: `A record with this ${fields} already exists.` });
@@ -36,11 +41,19 @@ export function errorHandler(err: any, _req: Request, res: Response, _next: Next
   if (err?.code === 'P2025') {
     return res.status(404).json({ error: err?.meta?.cause || 'Requested record was not found.' });
   }
+  if (err?.code === 'P2000') {
+    return res.status(400).json({ error: 'Provided value exceeds maximum database column length.' });
+  }
   if (err?.code === 'P2003') {
     return res.status(400).json({ error: 'Invalid reference or foreign key constraint failed.' });
   }
   if (err?.code === 'P2014') {
     return res.status(400).json({ error: 'Required relation constraint violation.' });
+  }
+
+  // Handle Prisma client validation errors (e.g. null bytes in strings, type mismatches)
+  if (err?.name === 'PrismaClientValidationError' || err?.message?.includes('null characters') || err?.message?.includes('Invalid `prisma')) {
+    return res.status(400).json({ error: 'Invalid input format or unsupported character sequences in payload.' });
   }
 
   // Handle custom status codes or fallback to 500

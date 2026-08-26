@@ -79,6 +79,35 @@ export async function ensureProjectTeamTable() {
   } catch (e: any) {
     console.error('Error ensuring TallyTombstone table:', e.message);
   }
+
+  try {
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "StudentDailyQuiz" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "orgId" TEXT NOT NULL,
+        "studentId" TEXT NOT NULL,
+        "teamId" TEXT,
+        "subject" TEXT NOT NULL DEFAULT 'General Studies',
+        "topic" TEXT,
+        "skillLevel" TEXT NOT NULL DEFAULT 'INTERMEDIATE',
+        "skillScore" DOUBLE PRECISION NOT NULL DEFAULT 50,
+        "questionsJson" JSONB NOT NULL,
+        "answersJson" JSONB,
+        "score" DOUBLE PRECISION,
+        "totalQuestions" INTEGER NOT NULL DEFAULT 5,
+        "feedback" TEXT,
+        "streakDays" INTEGER NOT NULL DEFAULT 1,
+        "isCompleted" BOOLEAN NOT NULL DEFAULT false,
+        "completedAt" TIMESTAMP(3),
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "StudentDailyQuiz_studentId_fkey" FOREIGN KEY ("studentId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE
+      );
+    `);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "StudentDailyQuiz_studentId_createdAt_idx" ON "StudentDailyQuiz"("studentId", "createdAt");`);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "StudentDailyQuiz_orgId_studentId_idx" ON "StudentDailyQuiz"("orgId", "studentId");`);
+  } catch (e: any) {
+    console.error('Error ensuring StudentDailyQuiz table:', e.message);
+  }
 }
 
 // Run asynchronously in background on startup
