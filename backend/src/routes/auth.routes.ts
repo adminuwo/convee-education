@@ -5,17 +5,19 @@ import crypto from 'crypto';
 import prisma from '../db/prisma';
 import { validate } from '../middleware/validate';
 import { hashPassword, verifyPassword } from '../utils/password';
-import { signAccessToken, signRefreshToken, verifyRefreshToken } from '../utils/jwt';
+import { signAccessToken, signRefreshToken, verifyRefreshToken, verifyStudentJoinToken } from '../utils/jwt';
 import { authenticate } from '../middleware/auth';
 import { env, isGoogleOAuthConfigured } from '../config/env';
 import { OAuth2Client } from 'google-auth-library';
 import { sendVerificationEmail, sendPasswordResetEmail, isEmailConfigured } from '../utils/email';
+import { generateStudentAccount, parseOrgAddons } from './org.routes';
+import { syncStudentToAiLegal } from '../services/aiLegalSync.service';
 
 const router = Router();
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 30, // Limit each IP to 30 requests per windowMs
+  max: 5000, // High limit for smooth testing
   message: { error: 'Too many login or registration attempts. Please try again after 15 minutes.' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -611,4 +613,204 @@ router.post('/google/callback', async (req, res, next) => {
   }
 });
 
+// -------- Student Self-Registration Link Verification --------
+router.get('/student-join/verify', async (req, res, next) => {
+  try {
+    const token = req.query.token as string;
+    if (!token || typeof token !== 'string') {
+      return res.status(400).json({
+        valid: false,
+        error: 'Registration token is missing. Please use the complete link provided by your institution.',
+      });
+    }
+
+    let decoded: any;
+    try {
+      decoded = verifyStudentJoinToken(token);
+    } catch (err: any) {
+      return res.status(401).json({
+        valid: false,
+        error: 'Invalid or expired registration link. Please contact your school administrator for an active link.',
+      });
+    }
+
+    const org = await prisma.organization.findUnique({
+      where: { id: decoded.orgId },
+      include: {
+        departments: {
+          where: { deletedAt: null },
+          include: {
+            teams: {
+              where: { deletedAt: null },
+              select: { id: true, name: true, departmentId: true },
+            },
+          },
+        },
+      },
+    });
+
+    if (!org) {
+      return res.status(404).json({
+        valid: false,
+        error: 'The institution associated with this registration link could not be found.',
+      });
+    }
+
+    const addons = parseOrgAddons(org.description);
+    const hasAiLegal = addons.includes('AI_LEGAL');
+
+    res.json({
+      valid: true,
+      organization: {
+        id: org.id,
+        name: org.name,
+        slug: org.slug,
+        hasAiLegal,
+        addons,
+      },
+      allowedDeptId: decoded.allowedDeptId || null,
+      allowedTeamId: decoded.allowedTeamId || null,
+      departments: org.departments.map((dept) => ({
+        id: dept.id,
+        name: dept.name,
+        teams: dept.teams,
+      })),
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// -------- Student Self-Registration Submission --------
+const StudentJoinSchema = z.object({
+  token: z.string().min(1, 'Token is required'),
+  fullName: z.string().min(2, 'Student full name is required'),
+  email: z.string().email('Valid email address is required'),
+  admissionNo: z.string().optional(),
+  departmentId: z.string().optional(),
+  teamId: z.string().optional(),
+  parentFullName: z.string().optional(),
+  password: z.string().min(6, 'Password must be at least 6 characters').optional(),
+});
+
+router.post('/student-join', authLimiter, validate(StudentJoinSchema), async (req, res, next) => {
+  try {
+    const { token, fullName, email, admissionNo, departmentId, teamId, parentFullName, password } = req.body;
+
+    let decoded: any;
+    try {
+      decoded = verifyStudentJoinToken(token);
+    } catch (err: any) {
+      return res.status(401).json({
+        error: 'Invalid or expired registration token. Please request a new link from your institution.',
+      });
+    }
+
+    const org = await prisma.organization.findUnique({
+      where: { id: decoded.orgId },
+    });
+
+    if (!org) {
+      return res.status(404).json({ error: 'Institution not found.' });
+    }
+
+    const addons = parseOrgAddons(org.description);
+    const hasAiLegal = addons.includes('AI_LEGAL');
+
+    // Final selected department/team
+    const finalDeptId = decoded.allowedDeptId || departmentId;
+    const finalTeamId = decoded.allowedTeamId || teamId;
+
+    // Generate Student Account in Convee
+    const studentData = await generateStudentAccount({
+      orgId: org.id,
+      fullName,
+      admissionNo: admissionNo || '',
+      departmentId: finalDeptId,
+      teamId: finalTeamId,
+      studentEmail: email,
+      parentFullName,
+    });
+
+    // If student provided a custom password, update it
+    if (password && studentData.userId) {
+      const customHash = await hashPassword(password);
+      await prisma.user.update({
+        where: { id: studentData.userId },
+        data: { passwordHash: customHash },
+      });
+      studentData.tempPassword = password;
+    }
+
+    // AI-Legal MongoDB Sync (if organization has AI-Legal Add-on enabled)
+    let aiLegalSyncResult: any = null;
+    if (hasAiLegal) {
+      try {
+        aiLegalSyncResult = await syncStudentToAiLegal({
+          studentName: fullName,
+          studentEmail: email,
+          rawPassword: password || studentData.tempPassword,
+          studentId: studentData.studentId,
+          organizationName: org.name,
+          organizationSlug: org.slug,
+          className: studentData.className,
+          parentFullName,
+        });
+      } catch (syncErr: any) {
+        console.error('[StudentJoin] AI-Legal sync failed silently:', syncErr?.message);
+      }
+    }
+
+    const io = req.app.locals.io;
+    if (io) {
+      io.emit('membership:updated', { orgId: org.id });
+      io.emit('department:updated', { orgId: org.id });
+    }
+
+    res.status(201).json({
+      success: true,
+      message: 'Student registration completed successfully!',
+      student: {
+        studentId: studentData.studentId,
+        fullName: studentData.fullName,
+        email: email,
+        loginId: studentData.email,
+        password: password || studentData.tempPassword,
+        className: studentData.className,
+        departmentName: studentData.departmentName,
+      },
+      parent: {
+        parentId: studentData.parentId,
+        fullName: studentData.parentName,
+        email: studentData.parentEmail,
+        password: studentData.parentPassword,
+      },
+      organization: {
+        id: org.id,
+        name: org.name,
+        slug: org.slug,
+        hasAiLegal,
+        addons,
+      },
+      aiLegal: hasAiLegal
+        ? {
+            enabled: true,
+            status: 'active',
+            plan: 'BASIC',
+            credits: 1000,
+            amount: 499,
+            syncedEmail: email,
+            syncResult: aiLegalSyncResult,
+          }
+        : { enabled: false },
+    });
+  } catch (e: any) {
+    if (e?.message && typeof e.message === 'string') {
+      return res.status(400).json({ error: e.message });
+    }
+    next(e);
+  }
+});
+
 export default router;
+

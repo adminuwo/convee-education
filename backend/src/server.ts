@@ -35,6 +35,7 @@ import financeRoutes from './routes/finance.routes';
 import timetableRoutes from './routes/timetable.routes';
 import promotionRoutes from './routes/promotion.routes';
 import examRoutes from './routes/exam.routes';
+import { startAiLegalMonthlyQuotaCron } from './services/aiLegalSync.service';
 
 const app: Application = express();
 const server = http.createServer(app);
@@ -149,6 +150,7 @@ app.locals.io = io;
 server.listen(env.PORT, '0.0.0.0', () => {
   logger.info(`🚀 Backend listening on 0.0.0.0:${env.PORT}`);
   logger.info(`📖 API Docs at /api/docs`);
+  startAiLegalMonthlyQuotaCron();
 });
 
 // Graceful shutdown — ensures port is released before nodemon restarts

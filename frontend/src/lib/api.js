@@ -76,8 +76,9 @@ export const authApi = {
   resendVerification: (email) => api.post('/auth/resend-verification', { email }).then((r) => r.data),
   forgotPassword: (email) => api.post('/auth/forgot-password', { email }).then((r) => r.data),
   resetPassword: (token, password) => api.post('/auth/reset-password', { token, password }).then((r) => r.data),
+  verifyStudentJoinLink: (token) => api.get('/auth/student-join/verify', { params: { token } }).then((r) => r.data),
+  submitStudentJoin: (data) => api.post('/auth/student-join', data).then((r) => r.data),
 };
-
 
 export const orgApi = {
   list: () => api.get('/orgs').then((r) => r.data),
@@ -118,6 +119,8 @@ export const orgApi = {
   transferRequest: (orgId, data) => api.post(`/orgs/${orgId}/transfer-request`, data).then((r) => r.data),
   transferRespond: (orgId, data) => api.post(`/orgs/${orgId}/transfer-respond`, data).then((r) => r.data),
   removeMember: (orgId, membershipId) => api.delete(`/orgs/${orgId}/members/${membershipId}`).then((r) => r.data),
+  getAiLegalTelemetry: (orgId) => api.get(`/orgs/${orgId}/ai-legal-telemetry`).then((r) => r.data),
+  renewAiLegal: (orgId) => api.post(`/orgs/${orgId}/ai-legal-renew`).then((r) => r.data),
 };
 
 
@@ -223,6 +226,7 @@ export const rolePermissionsApi = {
 export const studentApi = {
   generateSingle: (orgId, data) => api.post(`/orgs/${orgId}/students/generate-single`, data).then((r) => r.data),
   generateMass: (orgId, data) => api.post(`/orgs/${orgId}/students/generate-mass`, data).then((r) => r.data),
+  generateRegistrationLink: (orgId, data) => api.post(`/orgs/${orgId}/students/registration-link`, data).then((r) => r.data),
 };
 
 export const attendanceApi = {
@@ -343,5 +347,8 @@ export const superAdminApi = {
   dashboard: () => api.get('/dashboard/super-admin').then((r) => r.data),
   provisionOrg: (data) => api.post('/orgs/super-admin/provision', data).then((r) => r.data),
   listOrgs: () => api.get('/orgs').then((r) => r.data),
+  updateOrgAddons: (orgId, data) => api.patch(`/orgs/${orgId}/addons`, data).then((r) => r.data),
+  renewAiLegalOrg: (orgId) => api.post(`/orgs/${orgId}/ai-legal-renew`).then((r) => r.data),
 };
+
 

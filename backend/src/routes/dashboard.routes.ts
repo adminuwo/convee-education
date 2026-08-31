@@ -213,23 +213,30 @@ router.get('/super-admin', async (req, res, next) => {
       return { month: start.toLocaleString('en-US', { month: 'short' }), count };
     }));
 
-    const formattedOrgs = orgList.map((o) => ({
-      id: o.id,
-      name: o.name,
-      slug: o.slug,
-      logoUrl: o.logoUrl,
-      description: o.description,
-      createdAt: o.createdAt,
-      owner: o.owner,
-      metrics: {
-        members: o._count.memberships,
-        departments: o._count.departments,
-        channels: o._count.channels,
-        tasks: o._count.tasks,
-        meetings: o._count.meetings,
-        files: o._count.files,
-      },
-    }));
+    const formattedOrgs = orgList.map((o) => {
+      const match = (o.description || '').match(/\[ADDONS:([^\]]+)\]/);
+      const addons = match ? match[1].split(',').map((s) => s.trim().toUpperCase()).filter(Boolean) : [];
+      return {
+        id: o.id,
+        name: o.name,
+        slug: o.slug,
+        logoUrl: o.logoUrl,
+        description: o.description,
+        hasAiLegal: addons.includes('AI_LEGAL'),
+        addons,
+        createdAt: o.createdAt,
+        owner: o.owner,
+        metrics: {
+          members: o._count.memberships,
+          departments: o._count.departments,
+          channels: o._count.channels,
+          tasks: o._count.tasks,
+          meetings: o._count.meetings,
+          files: o._count.files,
+        },
+      };
+    });
+
 
     res.json({
       metrics: { orgs, users, activeUsers, channels, messages, tasks, files, aiMessages },

@@ -6,6 +6,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
 import { motion } from 'framer-motion';
 import CustomTooltip from '@/components/CustomTooltip';
+import AiLegalTelemetryCard from '@/components/admin/AiLegalTelemetryCard';
 
 const STATUS_COLORS = ['hsl(var(--chart-1))', 'hsl(var(--chart-2))', 'hsl(var(--chart-3))', 'hsl(var(--chart-4))', 'hsl(var(--chart-5))', 'hsl(var(--muted-foreground))'];
 
@@ -22,11 +23,21 @@ export default function AnalyticsPage() {
   if (loading) return <div className="p-6 space-y-3"><Skeleton className="h-8 w-56" /><div className="grid grid-cols-3 gap-3">{Array.from({length:3}).map((_,i)=><Skeleton key={i} className="h-64"/>)}</div></div>;
 
   return (
-    <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="p-4 sm:p-6 lg:p-8 space-y-4" data-testid="analytics-page">
+    <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="p-4 sm:p-6 lg:p-8 space-y-6" data-testid="analytics-page">
       <div>
-        <h1 className="font-display text-2xl font-semibold">Analytics</h1>
-        <p className="text-muted-foreground">Team productivity, workload, and communication</p>
+        <h1 className="font-display text-2xl font-semibold">Campus & Academic Analytics</h1>
+        <p className="text-muted-foreground">Institutional performance, workload, and AI-Legal student research telemetry</p>
       </div>
+
+      {/* AI-Legal Academic Research & Feature Telemetry Dashboard */}
+      {currentOrg?.hasAiLegal && (
+        <AiLegalTelemetryCard
+          orgId={currentOrg.id}
+          orgName={currentOrg.name}
+          hasAiLegal={currentOrg.hasAiLegal}
+        />
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card>
           <CardHeader><CardTitle className="text-base">Communication activity (last 7d)</CardTitle></CardHeader>

@@ -36,7 +36,14 @@ export const env = {
   GCS_SIGNED_URL_EXPIRY_MINUTES: parseInt(process.env.GCS_SIGNED_URL_EXPIRY_MINUTES || '1440', 10), // 24 hours default
   RESEND_API_KEY: process.env.RESEND_API_KEY || '',
   EMAIL_FROM: process.env.EMAIL_FROM || '',
+  // AI-Legal Integration Config
+  AI_LEGAL_MONGODB_URI: process.env.AI_LEGAL_MONGODB_URI || '',
+  AI_LEGAL_DB_NAME: process.env.AI_LEGAL_DB_NAME || 'AISA',
+  AI_LEGAL_JWT_SECRET: process.env.AI_LEGAL_JWT_SECRET || '',
+  AI_LEGAL_APP_URL: process.env.AI_LEGAL_APP_URL || 'http://localhost:5174',
+  AI_LEGAL_BACKEND_URL: process.env.AI_LEGAL_BACKEND_URL || 'http://localhost:8080',
 };
 
 export const isGoogleOAuthConfigured = () =>
   !!(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET && env.GOOGLE_REDIRECT_URI);
+

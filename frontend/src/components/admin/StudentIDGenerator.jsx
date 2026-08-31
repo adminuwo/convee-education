@@ -9,8 +9,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { UserCheck, Sparkles, Download, Copy, Check, FileText, Upload, ShieldAlert, Key, Users, RefreshCw, Sliders, Eye } from 'lucide-react';
+import { UserCheck, Sparkles, Download, Copy, Check, FileText, Upload, ShieldAlert, Key, Users, RefreshCw, Sliders, Eye, Link as LinkIcon, Scale, Globe, Share2, ExternalLink, Lock } from 'lucide-react';
 import { toast } from 'sonner';
+import AiLegalTelemetryCard from '@/components/admin/AiLegalTelemetryCard';
 
 // Target System Fields for Auto-Mapping & Alias Synonyms
 const SYSTEM_FIELDS = [
@@ -24,7 +25,7 @@ const SYSTEM_FIELDS = [
 function StudentIDGenerator({ departments = [], onStudentCreated }) {
   const { currentOrg } = useAuth();
   const { refreshOrgData } = useOrgData() || {};
-  const [mode, setMode] = useState('single'); // 'single' | 'mass'
+  const [mode, setMode] = useState('single'); // 'single' | 'mass' | 'link'
 
   // Single mode state
   const [singleForm, setSingleForm] = useState({
@@ -38,6 +39,16 @@ function StudentIDGenerator({ departments = [], onStudentCreated }) {
   const [singleResult, setSingleResult] = useState(null);
   const [copied, setCopied] = useState(false);
 
+  // Link mode state
+  const [linkForm, setLinkForm] = useState({
+    departmentId: '',
+    teamId: '',
+    expiresInDays: '30',
+  });
+  const [linkLoading, setLinkLoading] = useState(false);
+  const [generatedLinkData, setGeneratedLinkData] = useState(null);
+  const [linkCopied, setLinkCopied] = useState(false);
+
   // Mass mode state
   const [file, setFile] = useState(null);
   const [rawHeaders, setRawHeaders] = useState([]);
@@ -47,6 +58,30 @@ function StudentIDGenerator({ departments = [], onStudentCreated }) {
   const [parsedRows, setParsedRows] = useState([]);
   const [massLoading, setMassLoading] = useState(false);
   const [massResults, setMassResults] = useState(null);
+
+  // Filter teams for Link mode
+  const selectedLinkDeptObj = departments.find((d) => d.id === linkForm.departmentId);
+  const availableLinkTeams = selectedLinkDeptObj ? selectedLinkDeptObj.teams || [] : [];
+
+  const handleGenerateLink = async (e) => {
+    e?.preventDefault();
+    if (!currentOrg?.id) return;
+    setLinkLoading(true);
+    try {
+      const res = await studentApi.generateRegistrationLink(currentOrg.id, {
+        departmentId: linkForm.departmentId || undefined,
+        teamId: linkForm.teamId || undefined,
+        expiresInDays: Number(linkForm.expiresInDays) || 30,
+      });
+      const fullUrl = `${window.location.origin}${res.joinPath}`;
+      setGeneratedLinkData({ ...res, fullUrl });
+      toast.success('Exclusive Student Registration Link generated!');
+    } catch (err) {
+      toast.error(err?.response?.data?.error || 'Failed to generate registration link');
+    } finally {
+      setLinkLoading(false);
+    }
+  };
 
   // Filter teams based on selected department (returns empty if no department selected)
   const selectedDeptObj = departments.find((d) => d.id === singleForm.departmentId);
@@ -343,6 +378,14 @@ Michael Brown,ADM-2026-003,Middle School,Grade 8 - Sec B,Sarah Brown
               >
                 <Users className="h-3.5 w-3.5" /> Mass File Generator
               </Button>
+              <Button
+                size="sm"
+                variant={mode === 'link' ? 'default' : 'ghost'}
+                onClick={() => setMode('link')}
+                className="text-xs h-7 gap-1.5"
+              >
+                <LinkIcon className="h-3.5 w-3.5" /> Self-Signup Link
+              </Button>
             </div>
           </div>
         </CardHeader>
@@ -538,7 +581,7 @@ Michael Brown,ADM-2026-003,Middle School,Grade 8 - Sec B,Sarah Brown
               </div>
             )}
           </div>
-        ) : (
+        ) : mode === 'mass' ? (
           /* Mass File Mode */
           <div className="space-y-6">
             <div className="flex items-center justify-between bg-blue-500/10 p-3.5 rounded-xl border border-blue-500/20 flex-wrap gap-2">
@@ -778,9 +821,182 @@ Michael Brown,ADM-2026-003,Middle School,Grade 8 - Sec B,Sarah Brown
               </div>
             )}
           </div>
+        ) : (
+          /* Shareable Student Self-Registration Link View */
+          <div className="space-y-6">
+            <div className="bg-primary/5 border border-primary/20 rounded-xl p-4 text-xs text-muted-foreground flex items-start gap-3">
+              <LinkIcon className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+              <div>
+                <strong className="text-foreground">Exclusive Student Self-Registration Portal:</strong>
+                <p className="mt-0.5">
+                  Generate a cryptographically signed registration link for this campus. Students can register directly using this link, which automatically creates their <strong>Student ID</strong> and <strong>Parent credentials</strong>. If AI-Legal is active on this campus, it automatically provisions their AI-Legal academic workspace profile.
+                </p>
+              </div>
+            </div>
+
+            {currentOrg?.hasAiLegal && (
+              <div className="bg-purple-500/10 border border-purple-500/30 rounded-xl p-3.5 text-xs text-purple-700 dark:text-purple-300 flex items-center justify-between">
+                <div className="flex items-center gap-2 font-semibold">
+                  <Scale className="h-4 w-4 text-purple-600" />
+                  AI-Legal Suite Add-on Active for this Institution
+                </div>
+                <Badge variant="outline" className="bg-purple-500/20 text-purple-600 border-purple-500/40 text-[10px]">
+                  INSTITUTIONAL SUITE ACTIVE • FULL ACADEMIC ACCESS
+                </Badge>
+              </div>
+            )}
+
+            <form onSubmit={handleGenerateLink} className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">Restrict to Wing (Optional)</Label>
+                <Select
+                  value={linkForm.departmentId || '__ALL__'}
+                  onValueChange={(val) => setLinkForm({ ...linkForm, departmentId: val === '__ALL__' ? '' : val, teamId: '' })}
+                >
+                  <SelectTrigger className="text-xs">
+                    <SelectValue placeholder="Open to All Wings" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__ALL__">🌐 Open to All School Wings</SelectItem>
+                    {departments.map((d) => (
+                      <SelectItem key={d.id || d.name} value={String(d.id)}>{d.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">Restrict to Class / Section (Optional)</Label>
+                <Select
+                  disabled={!linkForm.departmentId}
+                  value={linkForm.teamId || '__ALL__'}
+                  onValueChange={(val) => setLinkForm({ ...linkForm, teamId: val === '__ALL__' ? '' : val })}
+                >
+                  <SelectTrigger className={`text-xs ${!linkForm.departmentId ? 'opacity-60 bg-muted/30 cursor-not-allowed' : ''}`}>
+                    <SelectValue
+                      placeholder={
+                        linkForm.departmentId
+                          ? "Student Chooses on Form"
+                          : "Select Wing first to restrict"
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__ALL__">👥 Student Chooses on Form</SelectItem>
+                    {availableLinkTeams.map((t) => (
+                      <SelectItem key={t.id || t.name} value={String(t.id)}>{t.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">Link Validity Duration</Label>
+                <Select
+                  value={linkForm.expiresInDays}
+                  onValueChange={(val) => setLinkForm({ ...linkForm, expiresInDays: val })}
+                >
+                  <SelectTrigger className="text-xs">
+                    <SelectValue placeholder="Select Duration" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="7">7 Days Validity</SelectItem>
+                    <SelectItem value="30">30 Days Validity (Recommended)</SelectItem>
+                    <SelectItem value="90">90 Days (Full Term)</SelectItem>
+                    <SelectItem value="365">1 Year (Full Academic Year)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="sm:col-span-3 flex justify-end pt-2">
+                <Button
+                  type="submit"
+                  disabled={linkLoading}
+                  className="bg-primary hover:bg-primary/90 text-primary-foreground font-semibold gap-2 shadow-sm text-xs"
+                >
+                  {linkLoading ? (
+                    <>
+                      <RefreshCw className="h-3.5 w-3.5 animate-spin" /> Generating Link...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="h-3.5 w-3.5 text-amber-300" /> Generate Secure Registration Link
+                    </>
+                  )}
+                </Button>
+              </div>
+            </form>
+
+            {/* Generated Link Display Result Card */}
+            {generatedLinkData && (
+              <div className="p-5 rounded-2xl border border-primary/30 bg-primary/5 space-y-4 animate-in fade-in slide-in-from-bottom-2">
+                <div className="flex items-center justify-between flex-wrap gap-2 border-b border-primary/20 pb-3">
+                  <div>
+                    <div className="text-sm font-bold text-foreground flex items-center gap-2">
+                      <Check className="h-4 w-4 text-emerald-500" /> Shareable Student Signup Link Active
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      Expires: {new Date(generatedLinkData.expiresAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                    </div>
+                  </div>
+                  <Badge variant="outline" className="font-mono text-xs text-primary border-primary/30">
+                    <Lock className="h-3 w-3 mr-1" /> Signed & Authenticated
+                  </Badge>
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-xs font-semibold text-muted-foreground">Direct Registration URL</Label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      readOnly
+                      value={generatedLinkData.fullUrl}
+                      className="text-xs font-mono bg-background select-all"
+                    />
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        navigator.clipboard.writeText(generatedLinkData.fullUrl);
+                        setLinkCopied(true);
+                        toast.success('Registration link copied to clipboard!');
+                        setTimeout(() => setLinkCopied(false), 2500);
+                      }}
+                      className="gap-1.5 shrink-0 text-xs"
+                    >
+                      {linkCopied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+                      {linkCopied ? 'Copied!' : 'Copy Link'}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => window.open(generatedLinkData.fullUrl, '_blank')}
+                      className="gap-1.5 shrink-0 text-xs"
+                      title="Open registration page in new tab"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="text-[11px] text-muted-foreground flex items-center gap-1.5">
+                  <ShieldAlert className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                  Only students with this signed link can access the registration portal. Direct unauthorized access is blocked.
+                </div>
+              </div>
+            )}
+          </div>
         )}
       </CardContent>
     </Card>
+
+    {currentOrg?.hasAiLegal && (
+      <div className="mt-6">
+        <AiLegalTelemetryCard
+          orgId={currentOrg.id}
+          orgName={currentOrg.name}
+          hasAiLegal={currentOrg.hasAiLegal}
+        />
+      </div>
+    )}
     </div>
   );
 }

@@ -20,12 +20,21 @@ export function AuthProvider({ children }) {
       });
       setMemberships(me.memberships || []);
       const savedOrgId = getCurrentOrgId();
+      const parseOrgHasAiLegal = (org) => {
+        if (!org) return false;
+        if (typeof org.hasAiLegal === 'boolean') return org.hasAiLegal;
+        const desc = org.description || '';
+        return /\[ADDONS:[^\]]*AI_LEGAL[^\]]*\]/i.test(desc);
+      };
+
       const cur = (me.memberships || []).find((m) => m.orgId === savedOrgId) || me.memberships?.[0];
       if (cur) {
         setCurrentOrg({
           id: cur.orgId,
           name: cur.organization.name,
           slug: cur.organization.slug,
+          description: cur.organization.description,
+          hasAiLegal: parseOrgHasAiLegal(cur.organization),
           role: cur.role,
           logoUrl: cur.organization.logoUrl,
           ownerId: cur.organization.ownerId,
@@ -42,6 +51,8 @@ export function AuthProvider({ children }) {
             id: orgDetails.id,
             name: orgDetails.name,
             slug: orgDetails.slug,
+            description: orgDetails.description,
+            hasAiLegal: parseOrgHasAiLegal(orgDetails),
             role: 'SUPER_ADMIN',
             logoUrl: orgDetails.logoUrl,
             ownerId: orgDetails.ownerId,
@@ -100,11 +111,20 @@ export function AuthProvider({ children }) {
   }, []);
 
   const switchOrg = useCallback((orgId, orgMeta = null) => {
+    const parseOrgHasAiLegal = (org) => {
+      if (!org) return false;
+      if (typeof org.hasAiLegal === 'boolean') return org.hasAiLegal;
+      const desc = org.description || '';
+      return /\[ADDONS:[^\]]*AI_LEGAL[^\]]*\]/i.test(desc);
+    };
+
     if (user?.systemRole === 'SUPER_ADMIN' && orgMeta) {
       setCurrentOrg({
         id: orgId,
         name: orgMeta.name,
         slug: orgMeta.slug,
+        description: orgMeta.description,
+        hasAiLegal: parseOrgHasAiLegal(orgMeta),
         role: 'SUPER_ADMIN',
         logoUrl: orgMeta.logoUrl,
         ownerId: orgMeta.ownerId,
@@ -116,7 +136,16 @@ export function AuthProvider({ children }) {
     }
     const m = memberships.find((mm) => mm.orgId === orgId);
     if (m) {
-      setCurrentOrg({ id: m.orgId, name: m.organization.name, slug: m.organization.slug, role: m.role, logoUrl: m.organization.logoUrl, ownerId: m.organization.ownerId });
+      setCurrentOrg({
+        id: m.orgId,
+        name: m.organization.name,
+        slug: m.organization.slug,
+        description: m.organization.description,
+        hasAiLegal: parseOrgHasAiLegal(m.organization),
+        role: m.role,
+        logoUrl: m.organization.logoUrl,
+        ownerId: m.organization.ownerId,
+      });
       setCurrentOrgId(m.orgId);
       window.location.reload();
       return;

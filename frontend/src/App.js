@@ -31,6 +31,7 @@ const ProfilePage = lazy(() => import('@/pages/ProfilePage'));
 const SuperAdminPage = lazy(() => import('@/pages/SuperAdminPage'));
 const RolePermissionsPage = lazy(() => import('@/pages/RolePermissionsPage'));
 const StudentIDGeneratorPage = lazy(() => import('@/pages/StudentIDGeneratorPage'));
+const StudentRegistrationPage = lazy(() => import('@/pages/StudentRegistrationPage'));
 const ParentPortalPage = lazy(() => import('@/pages/ParentPortalPage'));
 const AccountantPage = lazy(() => import('@/pages/AccountantPage'));
 const TimetablePage = lazy(() => import('@/pages/TimetablePage'));
@@ -162,6 +163,8 @@ export default function App() {
               <Route path="/student-login" element={<LoginPage initialPortal="student" />} />
               <Route path="/parent-login" element={<LoginPage initialPortal="parent" />} />
               <Route path="/register" element={<Navigate to="/login" replace />} />
+              <Route path="/join/student" element={<StudentRegistrationPage />} />
+              <Route path="/register/student" element={<StudentRegistrationPage />} />
               <Route path="/auth/google" element={<GoogleCallbackPage />} />
               <Route path="/verify-email" element={<VerifyEmailPage />} />
               <Route path="/reset-password" element={<ResetPasswordPage />} />

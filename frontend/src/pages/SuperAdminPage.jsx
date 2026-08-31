@@ -37,6 +37,7 @@ import {
   KeyRound,
   Mail,
   GraduationCap,
+  Scale,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Navigate } from 'react-router-dom';
@@ -80,6 +81,7 @@ export default function SuperAdminPage() {
     slug: '',
     campusType: 'K-12 School',
     description: '',
+    enableAiLegal: false,
     directorName: '',
     directorEmail: '',
     directorPassword: '',
@@ -114,6 +116,7 @@ export default function SuperAdminPage() {
       slug: '',
       campusType: 'K-12 School',
       description: '',
+      enableAiLegal: false,
       directorName: '',
       directorEmail: '',
       directorPassword: defaultPass,
@@ -121,6 +124,45 @@ export default function SuperAdminPage() {
     setCreatedResult(null);
     setIsModalOpen(true);
   };
+
+  const handleToggleAiLegal = async (org) => {
+    const nextState = !org.hasAiLegal;
+    try {
+      toast.info(`${nextState ? 'Enabling' : 'Disabling'} AI-Legal Add-on for "${org.name}"...`);
+      await superAdminApi.updateOrgAddons(org.id, { enableAiLegal: nextState });
+      toast.success(`AI-Legal Add-on ${nextState ? 'enabled' : 'disabled'} for "${org.name}"`);
+      fetchData();
+    } catch (err) {
+      toast.error('Failed to update organization add-on');
+    }
+  };
+
+  const handleToggleAutoMonthlyReset = async (org, e) => {
+    e?.stopPropagation();
+    const currentPaused = (org.description || '').toUpperCase().includes('AI_LEGAL_AUTO_RENEW_PAUSED');
+    const nextAutoReset = currentPaused; // If paused, turn it ON (true)
+    try {
+      toast.info(`${nextAutoReset ? 'Resuming' : 'Pausing'} Auto-Monthly Plan Reset for "${org.name}"...`);
+      await superAdminApi.updateOrgAddons(org.id, { aiLegalAutoMonthlyReset: nextAutoReset });
+      toast.success(`Auto-Monthly Reset ${nextAutoReset ? 'active' : 'paused'} for "${org.name}"`);
+      fetchData();
+    } catch (err) {
+      toast.error('Failed to update auto-monthly reset status');
+    }
+  };
+
+  const handleRenewAiLegalNow = async (org, e) => {
+    e?.stopPropagation();
+    try {
+      toast.info(`Renewing student academic plans for "${org.name}"...`);
+      const res = await superAdminApi.renewAiLegalOrg(org.id);
+      toast.success(res.message || `Successfully renewed student plans for "${org.name}"!`);
+      fetchData();
+    } catch (err) {
+      toast.error('Failed to trigger instant plan renewal');
+    }
+  };
+
 
   const handleNameChange = (e) => {
     const name = e.target.value;
@@ -324,6 +366,7 @@ export default function SuperAdminPage() {
                 <tr>
                   <th className="px-5 py-3.5">Institution & Domain</th>
                   <th className="px-5 py-3.5">Director / Owner</th>
+                  <th className="px-5 py-3.5 text-center">Add-ons</th>
                   <th className="px-5 py-3.5 text-center">Members</th>
                   <th className="px-5 py-3.5 text-center">Wings / Depts</th>
                   <th className="px-5 py-3.5 text-center">Channels</th>
@@ -334,7 +377,7 @@ export default function SuperAdminPage() {
               <tbody className="divide-y divide-border/30">
                 {filteredOrgs.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-5 py-10 text-center text-muted-foreground">
+                    <td colSpan={8} className="px-5 py-10 text-center text-muted-foreground">
                       No institutions match your search query. Click "+ Provision New School" to create one.
                     </td>
                   </tr>
@@ -370,6 +413,54 @@ export default function SuperAdminPage() {
                             </div>
                           </div>
                         </div>
+                      </td>
+
+                      <td className="px-5 py-4 text-center">
+                        {org.hasAiLegal ? (
+                          <div className="flex flex-col items-center gap-1.5">
+                            <div className="flex items-center gap-1">
+                              <Badge
+                                variant="outline"
+                                onClick={() => handleToggleAiLegal(org)}
+                                className="cursor-pointer bg-purple-500/10 text-purple-600 border-purple-500/30 hover:bg-purple-500/20 transition-colors gap-1 text-[11px] font-medium"
+                                title="Click to toggle AI-Legal Add-on"
+                              >
+                                <Scale className="h-3 w-3" /> AI-Legal
+                              </Badge>
+                              <button
+                                type="button"
+                                onClick={(e) => handleRenewAiLegalNow(org, e)}
+                                className="p-1 rounded hover:bg-purple-500/10 text-purple-600 hover:text-purple-700 transition-colors"
+                                title="Instantly Renew Student Plans for this Campus"
+                              >
+                                <RefreshCw className="h-3 w-3" />
+                              </button>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={(e) => handleToggleAutoMonthlyReset(org, e)}
+                              className={`text-[10px] font-medium px-1.5 py-0.5 rounded border transition-colors ${
+                                (org.description || '').toUpperCase().includes('AI_LEGAL_AUTO_RENEW_PAUSED')
+                                  ? 'bg-amber-500/10 text-amber-600 border-amber-500/30 hover:bg-amber-500/20'
+                                  : 'bg-emerald-500/10 text-emerald-600 border-emerald-500/30 hover:bg-emerald-500/20'
+                              }`}
+                              title="Click to toggle automated 1st-of-month student plan resets"
+                            >
+                              {(org.description || '').toUpperCase().includes('AI_LEGAL_AUTO_RENEW_PAUSED')
+                                ? 'Auto-Reset: Paused'
+                                : 'Auto-Reset: Active (1st/mo)'}
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleToggleAiLegal(org)}
+                            className="text-[11px] text-muted-foreground hover:text-primary transition-colors hover:underline"
+                            title="Click to enable AI-Legal for this campus"
+                          >
+                            + Add AI-Legal
+                          </button>
+                        )}
                       </td>
 
                       <td className="px-5 py-4 text-center">
@@ -412,6 +503,7 @@ export default function SuperAdminPage() {
                   ))
                 )}
               </tbody>
+
             </table>
           </div>
         </CardContent>
@@ -487,6 +579,19 @@ export default function SuperAdminPage() {
                     </div>
                   </div>
 
+                  {/* Add-on Active Badge (if enabled) */}
+                  {createdResult.organization.hasAiLegal && (
+                    <div className="bg-purple-500/10 border border-purple-500/30 rounded-xl p-3.5 text-xs text-purple-700 dark:text-purple-300 flex items-center justify-between">
+                      <div className="flex items-center gap-2 font-semibold">
+                        <Scale className="h-4 w-4 text-purple-600" />
+                        AI-Legal Suite Add-on Provisioned
+                      </div>
+                      <Badge variant="outline" className="bg-purple-500/20 text-purple-600 border-purple-500/40 text-[10px]">
+                        ACTIVE
+                      </Badge>
+                    </div>
+                  )}
+
                   {/* Credentials Card */}
                   <div className="bg-muted/50 border border-border rounded-xl p-5 space-y-3.5">
                     <div className="text-xs uppercase font-semibold tracking-wider text-muted-foreground flex items-center justify-between">
@@ -542,7 +647,7 @@ export default function SuperAdminPage() {
                       className="flex-1 text-xs gap-2"
                       onClick={() =>
                         copyToClipboard(
-                          `Institutional Portal: ${createdResult.organization.name}\nLogin URL: ${window.location.origin}/login\nEmail: ${createdResult.director.email}\nInitial Password: ${createdResult.director.plainPassword}`,
+                          `Institutional Portal: ${createdResult.organization.name}\nLogin URL: ${window.location.origin}/login\nEmail: ${createdResult.director.email}\nInitial Password: ${createdResult.director.plainPassword}${createdResult.organization.hasAiLegal ? '\nAdd-ons: AI-Legal Enabled' : ''}`,
                           'All Credentials'
                         )
                       }
@@ -673,6 +778,43 @@ export default function SuperAdminPage() {
                     </div>
                   </div>
 
+                  {/* 3. Platform Add-ons */}
+                  <div className="pt-2 border-t border-border/40 space-y-3">
+                    <h4 className="text-xs uppercase font-semibold tracking-wider text-muted-foreground flex items-center gap-1.5">
+                      <Scale className="h-3.5 w-3.5 text-purple-500" /> 3. Add-ons & Platform Extensions
+                    </h4>
+
+                    <div
+                      onClick={() => setFormData((prev) => ({ ...prev, enableAiLegal: !prev.enableAiLegal }))}
+                      className={`cursor-pointer p-3 rounded-lg border transition-all flex items-start gap-3 ${
+                        formData.enableAiLegal
+                          ? 'bg-purple-500/10 border-purple-500/40'
+                          : 'bg-background hover:bg-muted/30 border-border/60'
+                      }`}
+                    >
+                      <div
+                        className={`mt-0.5 h-4 w-4 rounded border flex items-center justify-center transition-colors shrink-0 ${
+                          formData.enableAiLegal
+                            ? 'bg-purple-600 border-purple-600 text-white'
+                            : 'border-muted-foreground/50'
+                        }`}
+                      >
+                        {formData.enableAiLegal && <Check className="h-3 w-3" />}
+                      </div>
+                      <div className="flex-1 select-none">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-xs text-foreground">AI-Legal Suite Add-on</span>
+                          <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-600 dark:text-purple-400 border border-purple-500/30">
+                            Add-on Module
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">
+                          Enables AI legal research, case precedent lookups, and prepares student onboarding accounts to sync with the AI-Legal database.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
                   <DialogFooter className="pt-4 border-t border-border/40">
                     <Button
                       type="button"
@@ -711,4 +853,5 @@ export default function SuperAdminPage() {
     </motion.div>
   );
 }
+
 

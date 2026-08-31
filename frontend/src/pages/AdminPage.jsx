@@ -12,7 +12,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { Building2, Users, Layers, Plus, Mail, Trash2, Crown, ChevronRight, GraduationCap, UserCheck, Filter, Key, HeartHandshake, Pencil, Clock, Copy, CheckCircle2, UserX, BookOpen } from 'lucide-react';
+import { Building2, Users, Layers, Plus, Mail, Trash2, Crown, ChevronRight, GraduationCap, UserCheck, Filter, Key, HeartHandshake, Pencil, Clock, Copy, CheckCircle2, UserX, BookOpen, Scale } from 'lucide-react';
 import { connectSocket, getSocket } from '@/lib/socket';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
@@ -597,6 +597,19 @@ export default function AdminPage() {
                                       {extractMemberId(m.title)}
                                     </Badge>
                                   )}
+                                  {m.aiLegalStatus === 'SYNCED' ? (
+                                    <Badge className="font-sans text-[10px] px-1.5 py-0 h-4 bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/30 gap-1 font-semibold">
+                                      <Scale className="h-2.5 w-2.5" /> AI-Legal Active
+                                    </Badge>
+                                  ) : m.aiLegalStatus === 'PENDING' ? (
+                                    <Badge className="font-sans text-[10px] px-1.5 py-0 h-4 bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 gap-1 font-semibold">
+                                      ⏳ AI-Legal Pending
+                                    </Badge>
+                                  ) : m.aiLegalStatus === 'NOT_INCLUDED' ? (
+                                    <Badge variant="outline" className="font-sans text-[10px] px-1.5 py-0 h-4 text-muted-foreground opacity-60">
+                                      ○ No AI-Legal
+                                    </Badge>
+                                  ) : null}
                                 </div>
                               </div>
                             </td>

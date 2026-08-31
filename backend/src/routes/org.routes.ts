@@ -12,6 +12,14 @@ import { hashPassword } from '../utils/password';
 import { isEmailConfigured, sendVerificationEmail, verifyEmailDomain, sendInviteCredentialsEmail } from '../utils/email';
 import { uploadBufferToGcs } from '../services/gcs.service';
 import { logger } from '../utils/logger';
+import { signStudentJoinToken } from '../utils/jwt';
+import {
+  getAiLegalOrgTelemetry,
+  monthlyResetAiLegalPlan,
+  syncStudentToAiLegal,
+  bulkSyncOrgStudentsToAiLegal,
+  getOrgSyncedStudentEmails,
+} from '../services/aiLegalSync.service';
 
 const router = Router();
 router.use(authenticate);
@@ -36,6 +44,19 @@ const inviteLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+export function parseOrgAddons(description: string | null | undefined): string[] {
+  if (!description) return [];
+  const match = description.match(/\[ADDONS:([^\]]+)\]/);
+  if (!match) return [];
+  return match[1].split(',').map((s) => s.trim().toUpperCase()).filter(Boolean);
+}
+
+export function formatOrgDescriptionWithAddons(baseDesc: string, addons: string[]): string {
+  const clean = (baseDesc || '').replace(/\s*\[ADDONS:[^\]]*\]/g, '').trim();
+  if (!addons || addons.length === 0) return clean;
+  return `${clean} [ADDONS:${addons.join(',')}]`;
+}
+
 const CreateOrgSchema = z.object({
   name: z.string().min(1),
   slug: z.string().min(2).optional(),
@@ -47,6 +68,8 @@ const SuperAdminProvisionSchema = z.object({
   slug: z.string().min(2).optional(),
   description: z.string().optional(),
   campusType: z.string().optional(),
+  enableAiLegal: z.boolean().optional(),
+  addons: z.array(z.string()).optional(),
   directorName: z.string().min(1, 'Director name is required'),
   directorEmail: z.string().email('Valid Director email is required'),
   directorPassword: z.string().min(6, 'Password must be at least 6 characters').optional(),
@@ -64,35 +87,46 @@ router.get('/', async (req, res, next) => {
         },
         orderBy: { createdAt: 'desc' },
       });
-      return res.json(allOrgs.map((o) => ({
-        id: o.id,
-        name: o.name,
-        slug: o.slug,
-        logoUrl: o.logoUrl,
-        description: o.description,
-        role: 'SUPER_ADMIN',
-        owner: o.owner,
-        memberCount: o._count.memberships,
-        channelCount: o._count.channels,
-        taskCount: o._count.tasks,
-        departmentCount: o._count.departments,
-        createdAt: o.createdAt,
-      })));
+      return res.json(allOrgs.map((o) => {
+        const addons = parseOrgAddons(o.description);
+        return {
+          id: o.id,
+          name: o.name,
+          slug: o.slug,
+          logoUrl: o.logoUrl,
+          description: o.description,
+          hasAiLegal: addons.includes('AI_LEGAL'),
+          addons,
+          role: 'SUPER_ADMIN',
+          owner: o.owner,
+          memberCount: o._count.memberships,
+          channelCount: o._count.channels,
+          taskCount: o._count.tasks,
+          departmentCount: o._count.departments,
+          createdAt: o.createdAt,
+        };
+      }));
     }
 
     const memberships = await prisma.membership.findMany({
       where: { userId: req.user!.id, isActive: true },
       include: { organization: true },
     });
-    res.json(memberships.map((m) => ({
-      id: m.organization.id,
-      name: m.organization.name,
-      slug: m.organization.slug,
-      logoUrl: m.organization.logoUrl,
-      role: m.role,
-    })));
+    res.json(memberships.map((m) => {
+      const addons = parseOrgAddons(m.organization.description);
+      return {
+        id: m.organization.id,
+        name: m.organization.name,
+        slug: m.organization.slug,
+        logoUrl: m.organization.logoUrl,
+        hasAiLegal: addons.includes('AI_LEGAL'),
+        addons,
+        role: m.role,
+      };
+    }));
   } catch (e) { next(e); }
 });
+
 
 // Super Admin: Provision New Institution & Director
 router.post('/super-admin/provision', validate(SuperAdminProvisionSchema), async (req, res, next) => {
@@ -105,11 +139,18 @@ router.post('/super-admin/provision', validate(SuperAdminProvisionSchema), async
       name,
       description,
       campusType = 'K12',
+      enableAiLegal,
+      addons = [],
       directorName,
       directorEmail,
       directorPassword,
       directorPhone,
     } = req.body;
+
+    const orgAddons = Array.from(new Set([
+      ...(Array.isArray(addons) ? addons : []),
+      ...(enableAiLegal ? ['AI_LEGAL'] : []),
+    ]));
 
     let { slug } = req.body;
     if (!slug) {
@@ -151,12 +192,15 @@ router.post('/super-admin/provision', validate(SuperAdminProvisionSchema), async
       });
     }
 
+    const baseDescription = description || `${campusType} Academic Campus & Learning Institute`;
+    const finalDescription = formatOrgDescriptionWithAddons(baseDescription, orgAddons);
+
     // Create the School Organization with Director as Owner
     const org = await prisma.organization.create({
       data: {
         name: name.trim(),
         slug,
-        description: description || `${campusType} Academic Campus & Learning Institute`,
+        description: finalDescription,
         ownerId: director.id,
       },
     });
@@ -275,6 +319,8 @@ router.post('/super-admin/provision', validate(SuperAdminProvisionSchema), async
         name: org.name,
         slug: org.slug,
         description: org.description,
+        hasAiLegal: orgAddons.includes('AI_LEGAL'),
+        addons: orgAddons,
         createdAt: org.createdAt,
       },
       director: {
@@ -287,6 +333,100 @@ router.post('/super-admin/provision', validate(SuperAdminProvisionSchema), async
     });
   } catch (e) { next(e); }
 });
+
+// Super Admin: Update Organization Add-ons (e.g. toggle AI-Legal & Auto-Monthly Plan Reset)
+router.patch('/:orgId/addons', async (req, res, next) => {
+  try {
+    if (req.user!.systemRole !== 'SUPER_ADMIN') {
+      return res.status(403).json({ error: 'Only platform Super Admins can manage organization add-ons' });
+    }
+
+    const { addons = [], enableAiLegal, aiLegalAutoMonthlyReset } = req.body;
+    const org = await prisma.organization.findUnique({ where: { id: req.params.orgId } });
+    if (!org) return res.status(404).json({ error: 'Organization not found' });
+
+    let currentAddons = parseOrgAddons(org.description);
+    if (typeof enableAiLegal === 'boolean') {
+      if (enableAiLegal && !currentAddons.includes('AI_LEGAL')) {
+        currentAddons.push('AI_LEGAL');
+      } else if (!enableAiLegal) {
+        currentAddons = currentAddons.filter((a) => a !== 'AI_LEGAL' && a !== 'AI_LEGAL_AUTO_RENEW_PAUSED');
+      }
+    }
+
+    if (typeof aiLegalAutoMonthlyReset === 'boolean') {
+      if (aiLegalAutoMonthlyReset) {
+        currentAddons = currentAddons.filter((a) => a !== 'AI_LEGAL_AUTO_RENEW_PAUSED');
+      } else {
+        if (!currentAddons.includes('AI_LEGAL_AUTO_RENEW_PAUSED')) {
+          currentAddons.push('AI_LEGAL_AUTO_RENEW_PAUSED');
+        }
+      }
+    }
+
+    if (Array.isArray(addons)) {
+      currentAddons = Array.from(new Set([...currentAddons, ...addons]));
+    }
+
+    const updatedDesc = formatOrgDescriptionWithAddons(org.description || '', currentAddons);
+    const updatedOrg = await prisma.organization.update({
+      where: { id: org.id },
+      data: { description: updatedDesc },
+    });
+
+    const hasAiLegal = currentAddons.includes('AI_LEGAL');
+    const autoMonthlyResetActive = hasAiLegal && !currentAddons.includes('AI_LEGAL_AUTO_RENEW_PAUSED');
+
+    // If AI-Legal was just enabled, perform automatic bulk catch-up sync for existing students
+    let bulkSyncResult: any = null;
+    if (enableAiLegal === true) {
+      try {
+        bulkSyncResult = await bulkSyncOrgStudentsToAiLegal(org.id);
+      } catch (err: any) {
+        logger.warn({ err: err?.message }, '[Org Routes] Automatic bulk student sync encountered non-blocking error');
+      }
+    }
+
+    res.json({
+      success: true,
+      id: updatedOrg.id,
+      name: updatedOrg.name,
+      description: updatedOrg.description,
+      hasAiLegal,
+      autoMonthlyResetActive,
+      addons: currentAddons,
+      bulkSync: bulkSyncResult,
+    });
+  } catch (e) { next(e); }
+});
+
+// Super Admin / Admin: Manually trigger instant student academic plan renewal for an institution
+router.post('/:orgId/ai-legal-renew', async (req, res, next) => {
+  try {
+    const org = await prisma.organization.findUnique({ where: { id: req.params.orgId } });
+    if (!org) return res.status(404).json({ error: 'Organization not found' });
+
+    const callerMember = await prisma.membership.findFirst({
+      where: { userId: req.user!.id, orgId: org.id, isActive: true },
+    });
+
+    const isAuthorized =
+      req.user!.systemRole === 'SUPER_ADMIN' ||
+      (callerMember && ['OWNER', 'ADMIN', 'DIRECTOR', 'PRINCIPAL', 'DEAN'].includes(callerMember.role));
+
+    if (!isAuthorized) {
+      return res.status(403).json({ error: 'Only Administrators and Super Admins can trigger student plan renewals.' });
+    }
+
+    const result = await monthlyResetAiLegalPlan(org.id, true);
+    res.json({
+      message: `Successfully renewed academic plans for ${result.resetCount || 0} students of "${org.name}".`,
+      organization: { id: org.id, name: org.name },
+      ...result,
+    });
+  } catch (e) { next(e); }
+});
+
 
 router.post('/', validate(CreateOrgSchema), async (req, res, next) => {
   try {
@@ -327,7 +467,8 @@ router.get('/:orgId', async (req, res, next) => {
       },
     });
     if (!org) return res.status(404).json({ error: 'Organization not found' });
-    res.json({ ...org, myRole });
+    const addons = parseOrgAddons(org.description);
+    res.json({ ...org, myRole, hasAiLegal: addons.includes('AI_LEGAL'), addons });
   } catch (e) { next(e); }
 });
 
@@ -1212,7 +1353,23 @@ router.delete('/:orgId/projects/:projectId/members/:membershipId', async (req, r
 router.get('/:orgId/members', async (req, res, next) => {
   try {
     const m = await prisma.membership.findFirst({ where: { userId: req.user!.id, orgId: req.params.orgId, isActive: true } });
-    if (!m) return res.status(403).json({ error: 'Not a member' });
+    if (!m && req.user!.systemRole !== 'SUPER_ADMIN') return res.status(403).json({ error: 'Not a member' });
+
+    const org = await prisma.organization.findUnique({
+      where: { id: req.params.orgId },
+      select: { slug: true, description: true },
+    });
+
+    const addons = parseOrgAddons(org?.description);
+    const hasAiLegal = addons.includes('AI_LEGAL');
+
+    let syncedStudentEmails = new Set<string>();
+    if (hasAiLegal && org?.slug) {
+      try {
+        syncedStudentEmails = await getOrgSyncedStudentEmails(org.slug);
+      } catch (e) {}
+    }
+
     const members = await prisma.membership.findMany({
       where: { orgId: req.params.orgId, isActive: true },
       include: {
@@ -1222,7 +1379,31 @@ router.get('/:orgId/members', async (req, res, next) => {
       },
       orderBy: { joinedAt: 'asc' },
     });
-    res.json(members);
+
+    const enrichedMembers = members.map((mem) => {
+      const isStudent = mem.role === 'STUDENT';
+      const userEmail = (mem.user.email || '').toLowerCase().trim();
+      const isSynced = isStudent && syncedStudentEmails.has(userEmail);
+
+      let aiLegalStatus: 'SYNCED' | 'PENDING' | 'NOT_INCLUDED' | null = null;
+      if (isStudent) {
+        if (isSynced) {
+          aiLegalStatus = 'SYNCED';
+        } else if (hasAiLegal) {
+          aiLegalStatus = 'PENDING';
+        } else {
+          aiLegalStatus = 'NOT_INCLUDED';
+        }
+      }
+
+      return {
+        ...mem,
+        aiLegalStatus,
+        aiLegalSynced: isSynced,
+      };
+    });
+
+    res.json(enrichedMembers);
   } catch (e) { next(e); }
 });
 
@@ -1888,7 +2069,7 @@ function generateTempPassword(): string {
 }
 
 // Helper: Create single student account, membership, channel & project assignments
-async function generateStudentAccount({
+export async function generateStudentAccount({
   orgId,
   fullName,
   admissionNo,
@@ -2183,6 +2364,31 @@ async function generateStudentAccount({
     }
   }
 
+  // AI-Legal Direct Sync (if organization has AI-Legal add-on active)
+  try {
+    const orgRecord = await prisma.organization.findUnique({
+      where: { id: orgId },
+      select: { name: true, slug: true, description: true },
+    });
+    if (orgRecord) {
+      const addons = parseOrgAddons(orgRecord.description);
+      if (addons.includes('AI_LEGAL')) {
+        await syncStudentToAiLegal({
+          studentName: cleanName,
+          studentEmail: `${studentId.toLowerCase()}@${orgRecord.slug || 'campus'}.edu`,
+          rawPassword: tempPassword,
+          studentId,
+          organizationName: orgRecord.name,
+          organizationSlug: orgRecord.slug,
+          className: teamName || deptName || 'General',
+          parentFullName: pName,
+        });
+      }
+    }
+  } catch (syncErr: any) {
+    // Non-blocking catch
+  }
+
   return {
     userId: user.id,
     membershipId: membership.id,
@@ -2294,5 +2500,99 @@ router.post('/:orgId/students/generate-mass', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// Generate Shareable Student Self-Registration Link (Admin / Director Only)
+router.post('/:orgId/students/registration-link', async (req, res, next) => {
+  try {
+    const callerMember = await prisma.membership.findFirst({
+      where: { userId: req.user!.id, orgId: req.params.orgId, isActive: true },
+    });
+    if (!callerMember || !['OWNER', 'ADMIN', 'DIRECTOR', 'PRINCIPAL', 'DEAN'].includes(callerMember.role)) {
+      return res.status(403).json({ error: 'Only administrators can generate student registration links.' });
+    }
+
+    const org = await prisma.organization.findUnique({ where: { id: req.params.orgId } });
+    if (!org) {
+      return res.status(404).json({ error: 'Organization not found' });
+    }
+
+    const { departmentId, teamId, expiresInDays = 30 } = req.body;
+    const addons = parseOrgAddons(org.description);
+    const hasAiLegal = addons.includes('AI_LEGAL');
+
+    const token = signStudentJoinToken(
+      {
+        orgId: org.id,
+        orgSlug: org.slug,
+        orgName: org.name,
+        allowedDeptId: departmentId || undefined,
+        allowedTeamId: teamId || undefined,
+      },
+      expiresInDays
+    );
+
+    const expiresAt = new Date(Date.now() + expiresInDays * 24 * 60 * 60 * 1000);
+
+    res.json({
+      token,
+      joinPath: `/join/student?token=${token}`,
+      expiresAt: expiresAt.toISOString(),
+      organization: {
+        id: org.id,
+        name: org.name,
+        slug: org.slug,
+        hasAiLegal,
+        addons,
+      },
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+/**
+ * GET /api/v1/orgs/:orgId/ai-legal-telemetry
+ * Returns privacy-preserving usage metrics (features used, inquiry count, chat counts)
+ * for students registered under this institution.
+ */
+router.get('/:orgId/ai-legal-telemetry', async (req, res, next) => {
+  try {
+    const org = await prisma.organization.findUnique({
+      where: { id: req.params.orgId },
+    });
+    if (!org) {
+      return res.status(404).json({ error: 'Organization not found' });
+    }
+    const addons = parseOrgAddons(org.description);
+    const hasAiLegal = addons.includes('AI_LEGAL');
+    const autoMonthlyResetActive = hasAiLegal && !addons.includes('AI_LEGAL_AUTO_RENEW_PAUSED');
+
+    if (!hasAiLegal) {
+      return res.json({
+        enabled: false,
+        message: 'AI-Legal™ suite is not active for this institution.',
+        autoMonthlyResetActive: false,
+        overview: { totalStudents: 0, activeScholars: 0, totalInquiries: 0, totalChatSessions: 0, planName: 'Full Academic Suite' },
+        featureBreakdown: [],
+        students: [],
+      });
+    }
+
+    const telemetry = await getAiLegalOrgTelemetry(org.name, org.slug, org.description || undefined);
+    res.json({
+      organization: {
+        id: org.id,
+        name: org.name,
+        slug: org.slug,
+        hasAiLegal: true,
+        autoMonthlyResetActive,
+      },
+      ...telemetry,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
 export default router;
+
 
