@@ -9,19 +9,37 @@ const db = prisma as any;
 router.use(authenticate);
 
 async function getOrgId(req: Request): Promise<string | null> {
-  let orgId = (req.headers['x-org-id'] as string) || (req.headers['org-id'] as string);
-  if (!orgId || orgId === 'undefined' || orgId === 'null') {
-    const userId = req.user?.id;
-    if (userId) {
-      const membership = await prisma.membership.findFirst({ where: { userId } });
-      if (membership) orgId = membership.orgId;
-    }
+  if (!req.user) return null;
+  const rawOrgId = (req.headers['x-org-id'] as string) || (req.headers['org-id'] as string) || (req.query.orgId as string);
+  const targetOrgId = (rawOrgId && rawOrgId !== 'undefined' && rawOrgId !== 'null') ? rawOrgId : undefined;
+
+  if (targetOrgId) {
+    const membership = await prisma.membership.findFirst({
+      where: {
+        userId: req.user.id,
+        orgId: targetOrgId,
+        isActive: true,
+      },
+    });
+    if (membership) return membership.orgId;
+    if (req.user.systemRole === 'SUPER_ADMIN') return targetOrgId;
+    return null;
   }
-  if (!orgId || orgId === 'undefined' || orgId === 'null') {
-    const firstOrg = await prisma.organization.findFirst();
-    if (firstOrg) orgId = firstOrg.id;
+
+  const defaultMembership = await prisma.membership.findFirst({
+    where: {
+      userId: req.user.id,
+      isActive: true,
+    },
+    orderBy: { joinedAt: 'asc' },
+  });
+
+  if (defaultMembership) return defaultMembership.orgId;
+  if (req.user.systemRole === 'SUPER_ADMIN') {
+    const anyOrg = await prisma.organization.findFirst();
+    return anyOrg ? anyOrg.id : null;
   }
-  return orgId || null;
+  return null;
 }
 
 // Auto-seed sample timetable data if empty or using legacy dummy names
@@ -202,7 +220,7 @@ async function ensureSampleTimetableData(orgId: string) {
 router.get('/slots', async (req: Request, res: Response) => {
   try {
     const orgId = await getOrgId(req);
-    if (!orgId) return res.status(400).json({ error: 'Organization ID required' });
+    if (!orgId) return res.status(403).json({ error: 'Organization ID required or access denied' });
 
     await ensureSampleTimetableData(orgId);
 

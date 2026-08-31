@@ -6,7 +6,20 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  CartesianGrid,
+  Legend,
+  AreaChart,
+  Area,
+  BarChart,
+  Bar,
+} from 'recharts';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Dialog,
@@ -14,7 +27,6 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
-  DialogFooter,
 } from '@/components/ui/dialog';
 import {
   Users,
@@ -34,10 +46,20 @@ import {
   ShieldAlert,
   ArrowUpRight,
   RefreshCw,
-  KeyRound,
-  Mail,
   GraduationCap,
   Scale,
+  Coins,
+  DollarSign,
+  Cpu,
+  ShieldCheck,
+  Download,
+  BrainCircuit,
+  HeartHandshake,
+  AlertTriangle,
+  FileSpreadsheet,
+  TrendingUp,
+  Calendar,
+  Clock,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Navigate } from 'react-router-dom';
@@ -65,10 +87,17 @@ function KpiCard({ icon: Icon, label, value, subtext, color = 'text-primary' }) 
 
 export default function SuperAdminPage() {
   const { user, switchOrg } = useAuth();
+  const [activeTab, setActiveTab] = useState('campuses'); // 'campuses' | 'ai-telemetry'
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  
+
+  // AI Token & Safety Telemetry State
+  const [tokenData, setTokenData] = useState(null);
+  const [tokenLoading, setTokenLoading] = useState(false);
+  const [tokenSearchQuery, setTokenSearchQuery] = useState('');
+  const [telemetryViewMode, setTelemetryViewMode] = useState('daily'); // 'daily' | 'monthly' | 'hourly' | 'leaderboard'
+
   // Provisioning Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [provisioning, setProvisioning] = useState(false);
@@ -90,12 +119,29 @@ export default function SuperAdminPage() {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const res = await superAdminApi.dashboard();
+      const [res, tRes] = await Promise.all([
+        superAdminApi.dashboard(),
+        superAdminApi.tokenAnalytics().catch(() => null),
+      ]);
       setData(res);
+      if (tRes) setTokenData(tRes);
     } catch (err) {
       toast.error('Failed to load Super Admin dashboard metrics');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchTokenDataOnly = async () => {
+    try {
+      setTokenLoading(true);
+      const tRes = await superAdminApi.tokenAnalytics();
+      setTokenData(tRes);
+      toast.success('AI Token & Safety telemetry refreshed!');
+    } catch (err) {
+      toast.error('Failed to refresh token telemetry');
+    } finally {
+      setTokenLoading(false);
     }
   };
 
@@ -140,7 +186,7 @@ export default function SuperAdminPage() {
   const handleToggleAutoMonthlyReset = async (org, e) => {
     e?.stopPropagation();
     const currentPaused = (org.description || '').toUpperCase().includes('AI_LEGAL_AUTO_RENEW_PAUSED');
-    const nextAutoReset = currentPaused; // If paused, turn it ON (true)
+    const nextAutoReset = currentPaused;
     try {
       toast.info(`${nextAutoReset ? 'Resuming' : 'Pausing'} Auto-Monthly Plan Reset for "${org.name}"...`);
       await superAdminApi.updateOrgAddons(org.id, { aiLegalAutoMonthlyReset: nextAutoReset });
@@ -162,7 +208,6 @@ export default function SuperAdminPage() {
       toast.error('Failed to trigger instant plan renewal');
     }
   };
-
 
   const handleNameChange = (e) => {
     const name = e.target.value;
@@ -202,6 +247,179 @@ export default function SuperAdminPage() {
     switchOrg(org.id, org);
   };
 
+  // Export Invoicing CSV for Organizations
+  const exportTokenUsageCsv = () => {
+    if (!tokenData?.orgLeaderboard || tokenData.orgLeaderboard.length === 0) {
+      return toast.error('No organization token usage records to export');
+    }
+
+    const headers = [
+      'Organization Name',
+      'Slug / Domain',
+      'Campus Type',
+      'Total Tokens',
+      'Prompt Tokens',
+      'Completion Tokens',
+      'Student Tokens',
+      'Teacher & Staff Tokens',
+      'Total Cost (USD)',
+      'Total Cost (INR)',
+      'Active Students',
+      'Active Teachers',
+      'Total AI Queries',
+      'Last Active Timestamp',
+    ];
+
+    const rows = tokenData.orgLeaderboard.map((o) => [
+      `"${(o.orgName || '').replace(/"/g, '""')}"`,
+      `"${o.slug}"`,
+      `"${o.campusType}"`,
+      o.totalTokens,
+      o.promptTokens,
+      o.completionTokens,
+      o.studentTokens,
+      o.teacherTokens,
+      o.estimatedCostUsd,
+      o.estimatedCostInr,
+      o.activeStudentsCount,
+      o.activeTeachersCount,
+      o.queryCount,
+      o.lastActive ? new Date(o.lastActive).toISOString() : 'Never',
+    ]);
+
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `convee_ai_campus_invoicing_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success('Downloaded Campus Invoicing CSV Report!');
+  };
+
+  const exportMonthlyBillingCsv = () => {
+    if (!tokenData?.monthlyHistory || tokenData.monthlyHistory.length === 0) {
+      return toast.error('No monthly billing records to export');
+    }
+
+    const headers = [
+      'Billing Month (Key)',
+      'Month Display Name',
+      'Total Tokens',
+      'Prompt Tokens',
+      'Completion Tokens',
+      'Student Study Tokens',
+      'Faculty & Staff Tokens',
+      'Total Cost (USD)',
+      'Total Cost (INR)',
+      'Total AI Queries',
+      'Active Campuses',
+      'Active Learners',
+      'Settlement Status',
+    ];
+
+    const rows = tokenData.monthlyHistory.map((m) => [
+      `"${m.monthKey}"`,
+      `"${m.monthName}"`,
+      m.totalTokens,
+      m.promptTokens,
+      m.completionTokens,
+      m.studentTokens,
+      m.teacherTokens,
+      m.estimatedCostUsd,
+      m.estimatedCostInr,
+      m.queryCount,
+      m.activeOrgsCount,
+      m.activeUsersCount,
+      m.isCurrentMonth ? 'ACTIVE_UNBILLED' : 'FINALIZED_INVOICED',
+    ]);
+
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `convee_ai_monthly_billing_ledger_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success('Downloaded Monthly Billing Ledger CSV!');
+  };
+
+  const exportDailyTelemetryCsv = () => {
+    if (!tokenData?.dailyTrends || tokenData.dailyTrends.length === 0) {
+      return toast.error('No daily telemetry records to export');
+    }
+
+    const headers = [
+      'Date (YYYY-MM-DD)',
+      'Display Date',
+      'Total Metered Tokens',
+      'Student Tokens',
+      'Faculty Tokens',
+      'AI Queries',
+      'Cost (USD)',
+      'Cost (INR)',
+    ];
+
+    const rows = tokenData.dailyTrends.map((d) => [
+      `"${d.date}"`,
+      `"${d.displayDate}"`,
+      d.totalTokens,
+      d.studentTokens,
+      d.teacherTokens,
+      d.queryCount || 0,
+      d.costUsd,
+      d.costInr,
+    ]);
+
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `convee_ai_30day_daily_velocity_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success('Downloaded 30-Day Daily Velocity CSV!');
+  };
+
+  const exportHourlyDistributionCsv = () => {
+    if (!tokenData?.hourlyDistribution || tokenData.hourlyDistribution.length === 0) {
+      return toast.error('No hourly distribution data to export');
+    }
+
+    const headers = [
+      'Hour of Day (0-23)',
+      'Time Window',
+      'Total Tokens Consumed',
+      'Student Study Tokens',
+      'Faculty & Staff Tokens',
+      'Total AI Queries',
+      'Percentage of Platform Traffic',
+    ];
+
+    const rows = tokenData.hourlyDistribution.map((h) => [
+      h.hour,
+      `"${h.fullLabel}"`,
+      h.totalTokens,
+      h.studentTokens,
+      h.teacherTokens,
+      h.queryCount,
+      `${h.percentage}%`,
+    ]);
+
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `convee_ai_24h_peak_traffic_report_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success('Downloaded 24-Hour Peak Traffic CSV Report!');
+  };
+
   const filteredOrgs = (data?.organizations || []).filter((org) => {
     const q = searchQuery.toLowerCase();
     return (
@@ -209,6 +427,15 @@ export default function SuperAdminPage() {
       org.slug?.toLowerCase().includes(q) ||
       org.owner?.fullName?.toLowerCase().includes(q) ||
       org.owner?.email?.toLowerCase().includes(q)
+    );
+  });
+
+  const filteredLeaderboard = (tokenData?.orgLeaderboard || []).filter((org) => {
+    const q = tokenSearchQuery.toLowerCase();
+    return (
+      org.orgName.toLowerCase().includes(q) ||
+      org.slug?.toLowerCase().includes(q) ||
+      org.campusType?.toLowerCase().includes(q)
     );
   });
 
@@ -233,10 +460,10 @@ export default function SuperAdminPage() {
     <motion.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      className="p-4 sm:p-6 lg:p-8 space-y-8 max-w-7xl mx-auto"
+      className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto"
     >
-      {/* Header & Actions */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-border/40 pb-6">
+      {/* Top Header & Global Actions */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-border/40 pb-5">
         <div>
           <div className="flex items-center gap-2.5">
             <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-primary/10 text-primary border border-primary/20">
@@ -247,7 +474,7 @@ export default function SuperAdminPage() {
             </h1>
           </div>
           <p className="text-muted-foreground text-sm mt-1">
-            Institutional workspace provisioning, cross-campus shadow inspection, and platform health telemetry.
+            Tenant provisioning, AI token metered billing telemetry, student & faculty guardrails, and shadow inspection.
           </p>
         </div>
 
@@ -255,11 +482,11 @@ export default function SuperAdminPage() {
           <Button
             variant="outline"
             size="sm"
-            onClick={fetchData}
-            disabled={loading}
+            onClick={activeTab === 'ai-telemetry' ? fetchTokenDataOnly : fetchData}
+            disabled={loading || tokenLoading}
             className="gap-2 shadow-sm"
           >
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`h-4 w-4 ${loading || tokenLoading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
           <Button
@@ -273,272 +500,950 @@ export default function SuperAdminPage() {
         </div>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <KpiCard
-          icon={Building2}
-          label="Total Campuses"
-          value={data?.metrics.orgs}
-          subtext="Active tenant workspaces"
-          color="text-indigo-500"
-        />
-        <KpiCard
-          icon={Users}
-          label="Total Registered Users"
-          value={data?.metrics.users}
-          subtext="Faculty, Students & Staff"
-          color="text-emerald-500"
-        />
-        <KpiCard
-          icon={Activity}
-          label="Active (Last 24h)"
-          value={data?.metrics.activeUsers}
-          subtext="Live daily campus sessions"
-          color="text-sky-500"
-        />
-        <KpiCard
-          icon={Sparkles}
-          label="AI Messages"
-          value={data?.metrics.aiMessages}
-          subtext="AI Assistant inquiries"
-          color="text-purple-500"
-        />
-        <KpiCard
-          icon={MessageSquare}
-          label="Total Messages"
-          value={data?.metrics.messages}
-          subtext="Across public & team channels"
-          color="text-amber-500"
-        />
-        <KpiCard
-          icon={ListTodo}
-          label="Academic Tasks"
-          value={data?.metrics.tasks}
-          subtext="Homework & practical projects"
-          color="text-rose-500"
-        />
-        <KpiCard
-          icon={HardDrive}
-          label="Stored Files"
-          value={data?.metrics.files}
-          subtext="Assets & verified reports"
-          color="text-teal-500"
-        />
-        <KpiCard
-          icon={Building2}
-          label="Active Channels"
-          value={data?.metrics.channels}
-          subtext="Communication feeds"
-          color="text-cyan-500"
-        />
+      {/* Navigation Tabs Bar */}
+      <div className="flex items-center gap-2 border-b border-border/40 pb-2">
+        <button
+          onClick={() => setActiveTab('campuses')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+            activeTab === 'campuses'
+              ? 'bg-primary text-primary-foreground shadow-sm'
+              : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+          }`}
+        >
+          <Building2 className="h-4 w-4" />
+          Campuses & Tenancy
+          <Badge variant="outline" className={`ml-1 text-[11px] ${activeTab === 'campuses' ? 'bg-primary-foreground/20 text-primary-foreground border-transparent' : ''}`}>
+            {data?.organizations?.length || 0}
+          </Badge>
+        </button>
+
+        <button
+          onClick={() => {
+            setActiveTab('ai-telemetry');
+            if (!tokenData) fetchTokenDataOnly();
+          }}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+            activeTab === 'ai-telemetry'
+              ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-sm'
+              : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+          }`}
+        >
+          <BrainCircuit className="h-4 w-4" />
+          AI Token & Billing Telemetry
+          <span className="flex h-2 w-2 relative">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+          </span>
+        </button>
       </div>
 
-      {/* Organizations Directory & Shadow Access Table */}
-      <Card className="border-border/60 shadow-sm overflow-hidden">
-        <CardHeader className="p-5 sm:p-6 border-b border-border/40 bg-muted/20">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-            <div>
-              <CardTitle className="text-lg font-semibold flex items-center gap-2">
-                <School className="h-5 w-5 text-primary" />
-                Provisioned Institutions & Workspaces ({data?.organizations?.length || 0})
-              </CardTitle>
-              <CardDescription className="text-xs text-muted-foreground mt-0.5">
-                Inspect any school in Shadow Mode without appearing on internal staff rosters.
-              </CardDescription>
-            </div>
-
-            <div className="relative w-full md:w-72">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search campus or director..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9 h-9 text-sm bg-background"
-              />
-            </div>
+      {/* ================= TAB 1: CAMPUSES & TENANCY ================= */}
+      {activeTab === 'campuses' && (
+        <div className="space-y-6">
+          {/* KPI Cards */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <KpiCard
+              icon={Building2}
+              label="Total Campuses"
+              value={data?.metrics.orgs}
+              subtext="Active tenant workspaces"
+              color="text-indigo-500"
+            />
+            <KpiCard
+              icon={Users}
+              label="Total Registered Users"
+              value={data?.metrics.users}
+              subtext="Faculty, Students & Staff"
+              color="text-emerald-500"
+            />
+            <KpiCard
+              icon={Activity}
+              label="Active (Last 24h)"
+              value={data?.metrics.activeUsers}
+              subtext="Live daily campus sessions"
+              color="text-sky-500"
+            />
+            <KpiCard
+              icon={Sparkles}
+              label="AI Messages"
+              value={data?.metrics.aiMessages}
+              subtext="AI Assistant inquiries"
+              color="text-purple-500"
+            />
+            <KpiCard
+              icon={MessageSquare}
+              label="Total Messages"
+              value={data?.metrics.messages}
+              subtext="Across public & team channels"
+              color="text-amber-500"
+            />
+            <KpiCard
+              icon={ListTodo}
+              label="Academic Tasks"
+              value={data?.metrics.tasks}
+              subtext="Homework & practical projects"
+              color="text-rose-500"
+            />
+            <KpiCard
+              icon={HardDrive}
+              label="Stored Files"
+              value={data?.metrics.files}
+              subtext="Assets & verified reports"
+              color="text-teal-500"
+            />
+            <KpiCard
+              icon={Building2}
+              label="Active Channels"
+              value={data?.metrics.channels}
+              subtext="Communication feeds"
+              color="text-cyan-500"
+            />
           </div>
-        </CardHeader>
 
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm text-left">
-              <thead className="text-xs text-muted-foreground uppercase bg-muted/40 border-b border-border/40 font-medium">
-                <tr>
-                  <th className="px-5 py-3.5">Institution & Domain</th>
-                  <th className="px-5 py-3.5">Director / Owner</th>
-                  <th className="px-5 py-3.5 text-center">Add-ons</th>
-                  <th className="px-5 py-3.5 text-center">Members</th>
-                  <th className="px-5 py-3.5 text-center">Wings / Depts</th>
-                  <th className="px-5 py-3.5 text-center">Channels</th>
-                  <th className="px-5 py-3.5">Provisioned Date</th>
-                  <th className="px-5 py-3.5 text-right">Shadow Inspection</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/30">
-                {filteredOrgs.length === 0 ? (
-                  <tr>
-                    <td colSpan={8} className="px-5 py-10 text-center text-muted-foreground">
-                      No institutions match your search query. Click "+ Provision New School" to create one.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredOrgs.map((org) => (
-                    <tr
-                      key={org.id}
-                      className="hover:bg-muted/30 transition-colors group"
-                    >
-                      <td className="px-5 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="h-9 w-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center font-bold text-xs border border-primary/20">
-                            {org.name.substring(0, 2).toUpperCase()}
-                          </div>
-                          <div>
-                            <div className="font-semibold text-foreground">{org.name}</div>
-                            <div className="text-xs text-muted-foreground font-mono">
-                              /{org.slug}
-                            </div>
-                          </div>
-                        </div>
-                      </td>
+          {/* Organizations Directory & Shadow Access Table */}
+          <Card className="border-border/60 shadow-sm overflow-hidden">
+            <CardHeader className="p-5 sm:p-6 border-b border-border/40 bg-muted/20">
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                <div>
+                  <CardTitle className="text-lg font-semibold flex items-center gap-2">
+                    <School className="h-5 w-5 text-primary" />
+                    Provisioned Institutions & Workspaces ({data?.organizations?.length || 0})
+                  </CardTitle>
+                  <CardDescription className="text-xs text-muted-foreground mt-0.5">
+                    Inspect any school in Shadow Mode without appearing on internal staff rosters.
+                  </CardDescription>
+                </div>
 
-                      <td className="px-5 py-4">
-                        <div className="flex items-center gap-2">
-                          <UserCheck className="h-4 w-4 text-emerald-500 shrink-0" />
-                          <div>
-                            <div className="font-medium text-foreground text-xs">
-                              {org.owner?.fullName || 'Appointed Director'}
-                            </div>
-                            <div className="text-[11px] text-muted-foreground">
-                              {org.owner?.email || 'N/A'}
-                            </div>
-                          </div>
-                        </div>
-                      </td>
+                <div className="relative w-full md:w-72">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search campus or director..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-9 h-9 text-sm bg-background"
+                  />
+                </div>
+              </div>
+            </CardHeader>
 
-                      <td className="px-5 py-4 text-center">
-                        {org.hasAiLegal ? (
-                          <div className="flex flex-col items-center gap-1.5">
-                            <div className="flex items-center gap-1">
-                              <Badge
-                                variant="outline"
-                                onClick={() => handleToggleAiLegal(org)}
-                                className="cursor-pointer bg-purple-500/10 text-purple-600 border-purple-500/30 hover:bg-purple-500/20 transition-colors gap-1 text-[11px] font-medium"
-                                title="Click to toggle AI-Legal Add-on"
-                              >
-                                <Scale className="h-3 w-3" /> AI-Legal
-                              </Badge>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left">
+                  <thead className="text-xs text-muted-foreground uppercase bg-muted/40 border-b border-border/40 font-medium">
+                    <tr>
+                      <th className="px-5 py-3.5">Institution & Domain</th>
+                      <th className="px-5 py-3.5">Director / Owner</th>
+                      <th className="px-5 py-3.5 text-center">Add-ons</th>
+                      <th className="px-5 py-3.5 text-center">Members</th>
+                      <th className="px-5 py-3.5 text-center">Wings / Depts</th>
+                      <th className="px-5 py-3.5 text-center">Channels</th>
+                      <th className="px-5 py-3.5">Provisioned Date</th>
+                      <th className="px-5 py-3.5 text-right">Shadow Inspection</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/30">
+                    {filteredOrgs.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="px-5 py-10 text-center text-muted-foreground">
+                          No institutions match your search query. Click "+ Provision New School" to create one.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredOrgs.map((org) => (
+                        <tr
+                          key={org.id}
+                          className="hover:bg-muted/30 transition-colors group"
+                        >
+                          <td className="px-5 py-4">
+                            <div className="flex items-center gap-3">
+                              <div className="h-9 w-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center font-bold text-xs border border-primary/20">
+                                {org.name.substring(0, 2).toUpperCase()}
+                              </div>
+                              <div>
+                                <div className="font-semibold text-foreground">{org.name}</div>
+                                <div className="text-xs text-muted-foreground font-mono">
+                                  /{org.slug}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+
+                          <td className="px-5 py-4">
+                            <div className="flex items-center gap-2">
+                              <UserCheck className="h-4 w-4 text-emerald-500 shrink-0" />
+                              <div>
+                                <div className="font-medium text-foreground text-xs">
+                                  {org.owner?.fullName || 'Appointed Director'}
+                                </div>
+                                <div className="text-[11px] text-muted-foreground">
+                                  {org.owner?.email || 'N/A'}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+
+                          <td className="px-5 py-4 text-center">
+                            {org.hasAiLegal ? (
+                              <div className="flex flex-col items-center gap-1.5">
+                                <div className="flex items-center gap-1">
+                                  <Badge
+                                    variant="outline"
+                                    onClick={() => handleToggleAiLegal(org)}
+                                    className="cursor-pointer bg-purple-500/10 text-purple-600 border-purple-500/30 hover:bg-purple-500/20 transition-colors gap-1 text-[11px] font-medium"
+                                    title="Click to toggle AI-Legal Add-on"
+                                  >
+                                    <Scale className="h-3 w-3" /> AI-Legal
+                                  </Badge>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => handleRenewAiLegalNow(org, e)}
+                                    className="p-1 rounded hover:bg-purple-500/10 text-purple-600 hover:text-purple-700 transition-colors"
+                                    title="Instantly Renew Student Plans for this Campus"
+                                  >
+                                    <RefreshCw className="h-3 w-3" />
+                                  </button>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleToggleAutoMonthlyReset(org, e)}
+                                  className={`text-[10px] font-medium px-1.5 py-0.5 rounded border transition-colors ${
+                                    (org.description || '').toUpperCase().includes('AI_LEGAL_AUTO_RENEW_PAUSED')
+                                      ? 'bg-amber-500/10 text-amber-600 border-amber-500/30 hover:bg-amber-500/20'
+                                      : 'bg-emerald-500/10 text-emerald-600 border-emerald-500/30 hover:bg-emerald-500/20'
+                                  }`}
+                                  title="Click to toggle automated 1st-of-month student plan resets"
+                                >
+                                  {(org.description || '').toUpperCase().includes('AI_LEGAL_AUTO_RENEW_PAUSED')
+                                    ? 'Auto-Reset: Paused'
+                                    : 'Auto-Reset: Active (1st/mo)'}
+                                </button>
+                              </div>
+                            ) : (
                               <button
                                 type="button"
-                                onClick={(e) => handleRenewAiLegalNow(org, e)}
-                                className="p-1 rounded hover:bg-purple-500/10 text-purple-600 hover:text-purple-700 transition-colors"
-                                title="Instantly Renew Student Plans for this Campus"
+                                onClick={() => handleToggleAiLegal(org)}
+                                className="text-[11px] text-muted-foreground hover:text-primary transition-colors hover:underline"
+                                title="Click to enable AI-Legal for this campus"
                               >
-                                <RefreshCw className="h-3 w-3" />
+                                + Add AI-Legal
                               </button>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={(e) => handleToggleAutoMonthlyReset(org, e)}
-                              className={`text-[10px] font-medium px-1.5 py-0.5 rounded border transition-colors ${
-                                (org.description || '').toUpperCase().includes('AI_LEGAL_AUTO_RENEW_PAUSED')
-                                  ? 'bg-amber-500/10 text-amber-600 border-amber-500/30 hover:bg-amber-500/20'
-                                  : 'bg-emerald-500/10 text-emerald-600 border-emerald-500/30 hover:bg-emerald-500/20'
-                              }`}
-                              title="Click to toggle automated 1st-of-month student plan resets"
+                            )}
+                          </td>
+
+                          <td className="px-5 py-4 text-center">
+                            <Badge variant="secondary" className="font-mono text-xs">
+                              {org.metrics?.members ?? 0}
+                            </Badge>
+                          </td>
+
+                          <td className="px-5 py-4 text-center">
+                            <Badge variant="outline" className="font-mono text-xs">
+                              {org.metrics?.departments ?? 0}
+                            </Badge>
+                          </td>
+
+                          <td className="px-5 py-4 text-center text-xs text-muted-foreground font-mono">
+                            {org.metrics?.channels ?? 0}
+                          </td>
+
+                          <td className="px-5 py-4 text-xs text-muted-foreground">
+                            {new Date(org.createdAt).toLocaleDateString('en-US', {
+                              month: 'short',
+                              day: 'numeric',
+                              year: 'numeric',
+                            })}
+                          </td>
+
+                          <td className="px-5 py-4 text-right">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleShadowEnter(org)}
+                              className="gap-1.5 text-xs font-medium border-primary/30 hover:bg-primary hover:text-primary-foreground transition-all shadow-xs"
                             >
-                              {(org.description || '').toUpperCase().includes('AI_LEGAL_AUTO_RENEW_PAUSED')
-                                ? 'Auto-Reset: Paused'
-                                : 'Auto-Reset: Active (1st/mo)'}
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => handleToggleAiLegal(org)}
-                            className="text-[11px] text-muted-foreground hover:text-primary transition-colors hover:underline"
-                            title="Click to enable AI-Legal for this campus"
-                          >
-                            + Add AI-Legal
-                          </button>
-                        )}
-                      </td>
+                              <Eye className="h-3.5 w-3.5" />
+                              Inspect Campus
+                              <ArrowUpRight className="h-3 w-3 opacity-60" />
+                            </Button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
 
-                      <td className="px-5 py-4 text-center">
-                        <Badge variant="secondary" className="font-mono text-xs">
-                          {org.metrics?.members ?? 0}
-                        </Badge>
-                      </td>
+          {/* User Growth Chart */}
+          <Card className="border-border/60 shadow-sm">
+            <CardHeader className="p-5 sm:p-6 border-b border-border/40">
+              <CardTitle className="text-base font-semibold flex items-center gap-2">
+                <Activity className="h-4 w-4 text-primary" />
+                Platform User Growth Trend (Last 6 Months)
+              </CardTitle>
+              <CardDescription className="text-xs">
+                Aggregated institutional user registrations across all provisioned campuses.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-5 sm:p-6 h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={data?.growth || []}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                  <XAxis dataKey="month" stroke="hsl(var(--muted-foreground))" fontSize={12} />
+                  <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} allowDecimals={false} />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Line
+                    type="monotone"
+                    dataKey="count"
+                    stroke="hsl(var(--primary))"
+                    strokeWidth={2.5}
+                    dot={{ r: 4, fill: 'hsl(var(--primary))' }}
+                    activeDot={{ r: 6 }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
-                      <td className="px-5 py-4 text-center">
-                        <Badge variant="outline" className="font-mono text-xs">
-                          {org.metrics?.departments ?? 0}
-                        </Badge>
-                      </td>
+      {/* ================= TAB 2: AI TOKEN & BILLING TELEMETRY ================= */}
+      {activeTab === 'ai-telemetry' && (
+        <div className="space-y-6">
+          {/* AI Telemetry Header KPI Cards */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <Card className="border-purple-500/30 bg-gradient-to-br from-purple-500/10 via-background to-background shadow-sm">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-xs text-purple-600 dark:text-purple-400 uppercase tracking-wider font-semibold">
+                      Today's Consumption
+                    </div>
+                    <div className="font-display text-2xl font-bold mt-1 tabular-nums text-foreground">
+                      {(tokenData?.dailySummary?.today?.totalTokens || 0).toLocaleString()}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">
+                      ₹{(tokenData?.dailySummary?.today?.costInr || 0).toLocaleString()} • {tokenData?.dailySummary?.today?.queryCount || 0} queries today
+                    </div>
+                  </div>
+                  <div className="h-11 w-11 rounded-xl flex items-center justify-center bg-purple-500/20 text-purple-600">
+                    <Coins className="h-5 w-5" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
 
-                      <td className="px-5 py-4 text-center text-xs text-muted-foreground font-mono">
-                        {org.metrics?.channels ?? 0}
-                      </td>
+            <Card className="border-emerald-500/30 bg-gradient-to-br from-emerald-500/10 via-background to-background shadow-sm">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-xs text-emerald-600 dark:text-emerald-400 uppercase tracking-wider font-semibold flex items-center gap-1">
+                      <span>MTD Invoiced ({tokenData?.monthlySummary?.currentMonth?.monthName || 'Current Month'})</span>
+                    </div>
+                    <div className="font-display text-2xl font-bold mt-1 tabular-nums text-foreground">
+                      ₹{(tokenData?.monthlySummary?.currentMonth?.costInr || 0).toLocaleString()}
+                    </div>
+                    <div className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-0.5 font-medium">
+                      Proj. Month-End: ₹{(tokenData?.monthlySummary?.currentMonth?.projectedMonthEndCostInr || 0).toLocaleString()}
+                    </div>
+                  </div>
+                  <div className="h-11 w-11 rounded-xl flex items-center justify-center bg-emerald-500/20 text-emerald-600">
+                    <DollarSign className="h-5 w-5" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
 
-                      <td className="px-5 py-4 text-xs text-muted-foreground">
-                        {new Date(org.createdAt).toLocaleDateString('en-US', {
-                          month: 'short',
-                          day: 'numeric',
-                          year: 'numeric',
-                        })}
-                      </td>
+            <Card className="border-sky-500/30 bg-gradient-to-br from-sky-500/10 via-background to-background shadow-sm">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-xs text-sky-600 dark:text-sky-400 uppercase tracking-wider font-semibold">
+                      Peak Traffic Window
+                    </div>
+                    <div className="font-display text-xl font-bold mt-1 tabular-nums text-foreground">
+                      {tokenData?.dailySummary?.peakHour?.label || '10 AM'}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">
+                      {tokenData?.dailySummary?.peakHour?.percentage || 0}% load • Peak Day: {tokenData?.dailySummary?.peakDay?.displayDate || 'N/A'}
+                    </div>
+                  </div>
+                  <div className="h-11 w-11 rounded-xl flex items-center justify-center bg-sky-500/20 text-sky-600">
+                    <Clock className="h-5 w-5" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
 
-                      <td className="px-5 py-4 text-right">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleShadowEnter(org)}
-                          className="gap-1.5 text-xs font-medium border-primary/30 hover:bg-primary hover:text-primary-foreground transition-all shadow-xs"
-                        >
-                          <Eye className="h-3.5 w-3.5" />
-                          Inspect Campus
-                          <ArrowUpRight className="h-3 w-3 opacity-60" />
-                        </Button>
-                      </td>
-                    </tr>
+            <Card className="border-rose-500/30 bg-gradient-to-br from-rose-500/10 via-background to-background shadow-sm">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-xs text-rose-600 dark:text-rose-400 uppercase tracking-wider font-semibold">
+                      Safety & Guardrails
+                    </div>
+                    <div className="font-display text-2xl font-bold mt-1 tabular-nums text-foreground flex items-center gap-1.5">
+                      <span>100%</span>
+                      <ShieldCheck className="h-5 w-5 text-emerald-500" />
+                    </div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">
+                      {tokenData?.guardrailSummary?.crisisCount || 0} Crisis Assists | {tokenData?.guardrailSummary?.reframedCount || 0} Reframed
+                    </div>
+                  </div>
+                  <div className="h-11 w-11 rounded-xl flex items-center justify-center bg-rose-500/20 text-rose-600">
+                    <HeartHandshake className="h-5 w-5" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Model & Role Breakdown Matrix */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Breakdown by Role */}
+            <Card className="border-border/60 shadow-sm">
+              <CardHeader className="p-4 border-b border-border/40">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <Users className="h-4 w-4 text-primary" />
+                  Token Consumption by Role
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-4 space-y-3">
+                {(!tokenData?.roleBreakdown || tokenData.roleBreakdown.length === 0) ? (
+                  <div className="text-xs text-muted-foreground py-4 text-center">No token logs recorded yet.</div>
+                ) : (
+                  tokenData.roleBreakdown.map((r) => {
+                    const totalAll = tokenData.summary.totalTokens || 1;
+                    const percent = Math.round((r.totalTokens / totalAll) * 100);
+                    return (
+                      <div key={r.role} className="space-y-1">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-medium text-foreground">{r.role}</span>
+                          <span className="font-mono text-muted-foreground">
+                            {r.totalTokens.toLocaleString()} tokens ({percent}%) • ₹{(r.estimatedCost * 86.5).toFixed(2)}
+                          </span>
+                        </div>
+                        <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
+                          <div
+                            className={`h-full ${
+                              r.role === 'STUDENT' ? 'bg-purple-500' : 'bg-indigo-500'
+                            }`}
+                            style={{ width: `${Math.max(percent, 2)}%` }}
+                          ></div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Breakdown by Provider / Model */}
+            <Card className="border-border/60 shadow-sm">
+              <CardHeader className="p-4 border-b border-border/40">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <Cpu className="h-4 w-4 text-primary" />
+                  Provider & Model Routing
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-4 space-y-3">
+                {(!tokenData?.modelBreakdown || tokenData.modelBreakdown.length === 0) ? (
+                  <div className="text-xs text-muted-foreground py-4 text-center">No model queries logged yet.</div>
+                ) : (
+                  tokenData.modelBreakdown.map((m) => (
+                    <div
+                      key={`${m.provider}-${m.model}`}
+                      className="p-3 bg-muted/40 rounded-xl border border-border/60 flex items-center justify-between text-xs"
+                    >
+                      <div>
+                        <div className="font-semibold text-foreground">{m.model}</div>
+                        <div className="text-[11px] text-muted-foreground uppercase">{m.provider}</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-mono font-bold text-foreground">{m.totalTokens.toLocaleString()} tokens</div>
+                        <div className="text-[11px] text-emerald-600 font-medium">₹{(m.estimatedCost * 86.5).toFixed(2)} (${m.estimatedCost.toFixed(4)} USD)</div>
+                      </div>
+                    </div>
                   ))
                 )}
-              </tbody>
-
-            </table>
+              </CardContent>
+            </Card>
           </div>
-        </CardContent>
-      </Card>
 
-      {/* User Growth Chart */}
-      <Card className="border-border/60 shadow-sm">
-        <CardHeader className="p-5 sm:p-6 border-b border-border/40">
-          <CardTitle className="text-base font-semibold flex items-center gap-2">
-            <Activity className="h-4 w-4 text-primary" />
-            Platform User Growth Trend (Last 6 Months)
-          </CardTitle>
-          <CardDescription className="text-xs">
-            Aggregated institutional user registrations across all provisioned campuses.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="p-5 sm:p-6 h-64">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={data?.growth || []}>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-              <XAxis dataKey="month" stroke="hsl(var(--muted-foreground))" fontSize={12} />
-              <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} allowDecimals={false} />
-              <Tooltip content={<CustomTooltip />} />
-              <Line
-                type="monotone"
-                dataKey="count"
-                stroke="hsl(var(--primary))"
-                strokeWidth={2.5}
-                dot={{ r: 4, fill: 'hsl(var(--primary))' }}
-                activeDot={{ r: 6 }}
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </CardContent>
-      </Card>
+          {/* Granularity & View Mode Navigation */}
+          <div className="flex items-center gap-2 border-b border-border/40 pb-3 overflow-x-auto">
+            <button
+              onClick={() => setTelemetryViewMode('daily')}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all shrink-0 ${
+                telemetryViewMode === 'daily'
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+              }`}
+            >
+              <TrendingUp className="h-3.5 w-3.5" />
+              30-Day Daily Velocity
+            </button>
+
+            <button
+              onClick={() => setTelemetryViewMode('monthly')}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all shrink-0 ${
+                telemetryViewMode === 'monthly'
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+              }`}
+            >
+              <Calendar className="h-3.5 w-3.5" />
+              Monthly Billing Ledger
+            </button>
+
+            <button
+              onClick={() => setTelemetryViewMode('hourly')}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all shrink-0 ${
+                telemetryViewMode === 'hourly'
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+              }`}
+            >
+              <Clock className="h-3.5 w-3.5" />
+              Peak Usage by Time of Day (24h)
+            </button>
+
+            <button
+              onClick={() => setTelemetryViewMode('leaderboard')}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all shrink-0 ${
+                telemetryViewMode === 'leaderboard'
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+              }`}
+            >
+              <Building2 className="h-3.5 w-3.5" />
+              Campus Invoicing Leaderboard
+            </button>
+          </div>
+
+          {/* VIEW 1: 30-DAY DAILY VELOCITY */}
+          {telemetryViewMode === 'daily' && (
+            <Card className="border-border/60 shadow-sm">
+              <CardHeader className="p-5 sm:p-6 border-b border-border/40 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                  <CardTitle className="text-base font-semibold flex items-center gap-2">
+                    <TrendingUp className="h-4 w-4 text-primary" />
+                    30-Day Daily Token Consumption Velocity
+                  </CardTitle>
+                  <CardDescription className="text-xs">
+                    Day-by-day metered student curriculum study tokens vs faculty & administrative inquiries.
+                  </CardDescription>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3 text-xs font-medium">
+                    <span className="flex items-center gap-1.5 text-purple-600">
+                      <span className="h-2.5 w-2.5 rounded-full bg-purple-500"></span> Student Tokens
+                    </span>
+                    <span className="flex items-center gap-1.5 text-indigo-600">
+                      <span className="h-2.5 w-2.5 rounded-full bg-indigo-500"></span> Faculty Tokens
+                    </span>
+                  </div>
+
+                  <Button
+                    onClick={exportDailyTelemetryCsv}
+                    variant="outline"
+                    size="sm"
+                    className="gap-2 shrink-0 bg-background hover:bg-muted text-xs h-8"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    Export Daily CSV
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="p-5 sm:p-6 h-72">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={tokenData?.dailyTrends || []}>
+                    <defs>
+                      <linearGradient id="studentGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#9333ea" stopOpacity={0.4} />
+                        <stop offset="95%" stopColor="#9333ea" stopOpacity={0.0} />
+                      </linearGradient>
+                      <linearGradient id="teacherGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.4} />
+                        <stop offset="95%" stopColor="#4f46e5" stopOpacity={0.0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                    <XAxis dataKey="displayDate" stroke="hsl(var(--muted-foreground))" fontSize={12} />
+                    <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} />
+                    <Tooltip content={<CustomTooltip />} />
+                    <Area
+                      type="monotone"
+                      dataKey="studentTokens"
+                      name="Student Tokens"
+                      stroke="#9333ea"
+                      strokeWidth={2}
+                      fillOpacity={1}
+                      fill="url(#studentGrad)"
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="teacherTokens"
+                      name="Faculty Tokens"
+                      stroke="#4f46e5"
+                      strokeWidth={2}
+                      fillOpacity={1}
+                      fill="url(#teacherGrad)"
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* VIEW 2: MONTHLY BILLING LEDGER */}
+          {telemetryViewMode === 'monthly' && (
+            <Card className="border-border/60 shadow-sm overflow-hidden">
+              <CardHeader className="p-5 sm:p-6 border-b border-border/40 bg-muted/20 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                  <CardTitle className="text-base font-semibold flex items-center gap-2">
+                    <Calendar className="h-5 w-5 text-primary" />
+                    Monthly Billing Ledger & Invoicing History
+                  </CardTitle>
+                  <CardDescription className="text-xs text-muted-foreground mt-0.5">
+                    Aggregated calendar month token statements for corporate and institutional accounting.
+                  </CardDescription>
+                </div>
+
+                <Button
+                  onClick={exportMonthlyBillingCsv}
+                  variant="outline"
+                  size="sm"
+                  className="gap-2 shrink-0 bg-background hover:bg-muted text-xs h-8"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Export Monthly Invoicing CSV
+                </Button>
+              </CardHeader>
+              <CardContent className="p-0">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm text-left">
+                    <thead className="text-xs text-muted-foreground uppercase bg-muted/40 border-b border-border/40 font-medium">
+                      <tr>
+                        <th className="px-5 py-3.5">Billing Period</th>
+                        <th className="px-5 py-3.5 text-center">Total Tokens</th>
+                        <th className="px-5 py-3.5 text-center">Prompt / Output</th>
+                        <th className="px-5 py-3.5 text-center">Student vs Faculty</th>
+                        <th className="px-5 py-3.5 text-center">Invoiced (₹ INR)</th>
+                        <th className="px-5 py-3.5 text-center">Invoiced ($ USD)</th>
+                        <th className="px-5 py-3.5 text-center">Active Campuses</th>
+                        <th className="px-5 py-3.5 text-right">Billing Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border/30">
+                      {(!tokenData?.monthlyHistory || tokenData.monthlyHistory.length === 0) ? (
+                        <tr>
+                          <td colSpan={8} className="px-5 py-8 text-center text-muted-foreground text-xs">
+                            No monthly billing statements recorded yet.
+                          </td>
+                        </tr>
+                      ) : (
+                        tokenData.monthlyHistory.map((m) => (
+                          <tr key={m.monthKey} className="hover:bg-muted/30 transition-colors">
+                            <td className="px-5 py-4">
+                              <div className="font-semibold text-foreground">{m.monthName}</div>
+                              <div className="text-[11px] text-muted-foreground font-mono">{m.monthKey} • {m.queryCount} queries</div>
+                            </td>
+                            <td className="px-5 py-4 text-center">
+                              <Badge variant="secondary" className="font-mono text-xs font-bold">
+                                {m.totalTokens.toLocaleString()}
+                              </Badge>
+                            </td>
+                            <td className="px-5 py-4 text-center text-xs font-mono text-muted-foreground">
+                              {m.promptTokens.toLocaleString()} / {m.completionTokens.toLocaleString()}
+                            </td>
+                            <td className="px-5 py-4 text-center text-xs">
+                              <span className="text-purple-600 font-medium">{m.studentTokens.toLocaleString()}</span>
+                              <span className="text-muted-foreground"> / </span>
+                              <span className="text-indigo-600 font-medium">{m.teacherTokens.toLocaleString()}</span>
+                            </td>
+                            <td className="px-5 py-4 text-center font-mono font-bold text-emerald-600">
+                              ₹{m.estimatedCostInr.toLocaleString()}
+                            </td>
+                            <td className="px-5 py-4 text-center font-mono text-xs text-muted-foreground">
+                              ${m.estimatedCostUsd.toFixed(4)}
+                            </td>
+                            <td className="px-5 py-4 text-center text-xs">
+                              {m.activeOrgsCount} campuses ({m.activeUsersCount} users)
+                            </td>
+                            <td className="px-5 py-4 text-right">
+                              <Badge
+                                variant="outline"
+                                className={
+                                  m.isCurrentMonth
+                                    ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/30 text-[11px]'
+                                    : 'bg-muted text-muted-foreground text-[11px]'
+                                }
+                              >
+                                {m.isCurrentMonth ? 'Active Billing' : 'Finalized'}
+                              </Badge>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* VIEW 3: 24-HOUR PEAK USAGE BY TIME OF DAY */}
+          {telemetryViewMode === 'hourly' && (
+            <Card className="border-border/60 shadow-sm">
+              <CardHeader className="p-5 sm:p-6 border-b border-border/40 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                  <CardTitle className="text-base font-semibold flex items-center gap-2">
+                    <Clock className="h-4 w-4 text-primary" />
+                    24-Hour Peak Traffic Load & Time-of-Day Analysis
+                  </CardTitle>
+                  <CardDescription className="text-xs">
+                    Analyze when the AI service is utilized most (school hours vs evening study sessions) without any message privacy exposure.
+                  </CardDescription>
+                </div>
+
+                <Button
+                  onClick={exportHourlyDistributionCsv}
+                  variant="outline"
+                  size="sm"
+                  className="gap-2 shrink-0 bg-background hover:bg-muted text-xs h-8"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Export Hourly CSV
+                </Button>
+              </CardHeader>
+              <CardContent className="p-5 sm:p-6 h-72">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={tokenData?.hourlyDistribution || []}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                    <XAxis dataKey="label" stroke="hsl(var(--muted-foreground))" fontSize={11} interval={1} />
+                    <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} />
+                    <Tooltip content={<CustomTooltip />} />
+                    <Bar dataKey="studentTokens" name="Student Study Tokens" fill="#9333ea" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="teacherTokens" name="Faculty Tokens" fill="#4f46e5" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* VIEW 4 / DEFAULT: CAMPUS LEADERBOARD */}
+          {(telemetryViewMode === 'leaderboard' || telemetryViewMode === 'overview') && (
+            <Card className="border-border/60 shadow-sm overflow-hidden">
+              <CardHeader className="p-5 sm:p-6 border-b border-border/40 bg-muted/20">
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                  <div>
+                    <CardTitle className="text-lg font-semibold flex items-center gap-2">
+                      <Building2 className="h-5 w-5 text-primary" />
+                      Campus Token Invoicing Leaderboard ({tokenData?.orgLeaderboard?.length || 0})
+                    </CardTitle>
+                    <CardDescription className="text-xs text-muted-foreground mt-0.5">
+                      Metered consumption breakdown per tenant for monthly billing and institutional invoicing.
+                    </CardDescription>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <div className="relative w-full md:w-64">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Search institution..."
+                        value={tokenSearchQuery}
+                        onChange={(e) => setTokenSearchQuery(e.target.value)}
+                        className="pl-9 h-9 text-sm bg-background"
+                      />
+                    </div>
+
+                    <Button
+                      onClick={exportTokenUsageCsv}
+                      variant="outline"
+                      size="sm"
+                      className="gap-2 shrink-0 bg-background hover:bg-muted"
+                    >
+                      <Download className="h-4 w-4" />
+                      Export Invoicing CSV
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+
+              <CardContent className="p-0">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm text-left">
+                    <thead className="text-xs text-muted-foreground uppercase bg-muted/40 border-b border-border/40 font-medium">
+                      <tr>
+                        <th className="px-5 py-3.5">Institution & Campus</th>
+                        <th className="px-5 py-3.5 text-center">Total Tokens</th>
+                        <th className="px-5 py-3.5 text-center">Student Tokens</th>
+                        <th className="px-5 py-3.5 text-center">Faculty Tokens</th>
+                        <th className="px-5 py-3.5 text-center">Billed Cost (₹ INR)</th>
+                        <th className="px-5 py-3.5 text-center">Billed Cost ($ USD)</th>
+                        <th className="px-5 py-3.5 text-center">Active Users</th>
+                        <th className="px-5 py-3.5 text-right">Last AI Activity</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border/30">
+                      {filteredLeaderboard.length === 0 ? (
+                        <tr>
+                          <td colSpan={8} className="px-5 py-10 text-center text-muted-foreground">
+                            No tenant usage logs found.
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredLeaderboard.map((o) => (
+                          <tr key={o.orgId} className="hover:bg-muted/30 transition-colors">
+                            <td className="px-5 py-4">
+                              <div className="flex items-center gap-3">
+                                <div className="h-9 w-9 rounded-lg bg-purple-500/10 text-purple-600 flex items-center justify-center font-bold text-xs border border-purple-500/20">
+                                  {o.orgName.substring(0, 2).toUpperCase()}
+                                </div>
+                                <div>
+                                  <div className="font-semibold text-foreground">{o.orgName}</div>
+                                  <div className="text-xs text-muted-foreground font-mono">
+                                    /{o.slug} • <span className="text-[11px] font-sans">{o.campusType}</span>
+                                  </div>
+                                </div>
+                              </div>
+                            </td>
+
+                            <td className="px-5 py-4 text-center">
+                              <Badge variant="secondary" className="font-mono text-xs font-bold">
+                                {o.totalTokens.toLocaleString()}
+                              </Badge>
+                            </td>
+
+                            <td className="px-5 py-4 text-center">
+                              <span className="font-mono text-xs text-purple-600 font-semibold">
+                                {o.studentTokens.toLocaleString()}
+                              </span>
+                            </td>
+
+                            <td className="px-5 py-4 text-center">
+                              <span className="font-mono text-xs text-indigo-600 font-semibold">
+                                {o.teacherTokens.toLocaleString()}
+                              </span>
+                            </td>
+
+                            <td className="px-5 py-4 text-center">
+                              <span className="font-mono text-xs font-bold text-emerald-600">
+                                ₹{o.estimatedCostInr.toLocaleString()}
+                              </span>
+                            </td>
+
+                            <td className="px-5 py-4 text-center text-xs font-mono text-muted-foreground">
+                              ${o.estimatedCostUsd.toFixed(4)}
+                            </td>
+
+                            <td className="px-5 py-4 text-center">
+                              <div className="text-xs font-medium">
+                                {o.activeStudentsCount + o.activeTeachersCount} users
+                              </div>
+                              <div className="text-[10px] text-muted-foreground">
+                                {o.activeStudentsCount} students / {o.activeTeachersCount} staff
+                              </div>
+                            </td>
+
+                            <td className="px-5 py-4 text-right text-xs text-muted-foreground">
+                              {o.lastActive ? new Date(o.lastActive).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'No queries yet'}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* AI Guardrail Safety Audit Feed */}
+          <Card className="border-border/60 shadow-sm overflow-hidden">
+            <CardHeader className="p-5 sm:p-6 border-b border-border/40 bg-muted/20">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-base font-semibold flex items-center gap-2">
+                    <ShieldCheck className="h-5 w-5 text-emerald-500" />
+                    AI Guardrail Safety Telemetry & Crisis Intervention Audit
+                  </CardTitle>
+                  <CardDescription className="text-xs text-muted-foreground mt-0.5">
+                    Live audit trail of dual-use academic allowances, crisis support cards, and PII sanitization events.
+                  </CardDescription>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="bg-rose-500/10 text-rose-600 border-rose-500/30 text-xs">
+                    {tokenData?.guardrailSummary?.crisisCount || 0} Crisis Helps
+                  </Badge>
+                  <Badge variant="outline" className="bg-purple-500/10 text-purple-600 border-purple-500/30 text-xs">
+                    {tokenData?.guardrailSummary?.reframedCount || 0} Academic Reframes
+                  </Badge>
+                </div>
+              </div>
+            </CardHeader>
+
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left">
+                  <thead className="text-xs text-muted-foreground uppercase bg-muted/40 border-b border-border/40 font-medium">
+                    <tr>
+                      <th className="px-5 py-3">Timestamp</th>
+                      <th className="px-5 py-3">User Role</th>
+                      <th className="px-5 py-3">Category</th>
+                      <th className="px-5 py-3">Severity</th>
+                      <th className="px-5 py-3">Action Taken</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/30">
+                    {(!tokenData?.guardrailSummary?.recentEvents || tokenData.guardrailSummary.recentEvents.length === 0) ? (
+                      <tr>
+                        <td colSpan={5} className="px-5 py-6 text-center text-muted-foreground text-xs">
+                          All systems active. No safety violation incidents recorded.
+                        </td>
+                      </tr>
+                    ) : (
+                      tokenData.guardrailSummary.recentEvents.map((ev) => (
+                        <tr key={ev.id} className="hover:bg-muted/30 transition-colors text-xs">
+                          <td className="px-5 py-3 text-muted-foreground font-mono">
+                            {new Date(ev.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                          </td>
+                          <td className="px-5 py-3 font-semibold text-foreground">
+                            {ev.userRole}
+                          </td>
+                          <td className="px-5 py-3 font-medium">
+                            {ev.category}
+                          </td>
+                          <td className="px-5 py-3">
+                            <Badge
+                              variant="outline"
+                              className={
+                                ev.severity === 'CRISIS'
+                                  ? 'bg-rose-500/20 text-rose-600 border-rose-500/40 text-[10px]'
+                                  : ev.severity === 'HIGH'
+                                  ? 'bg-amber-500/20 text-amber-600 border-amber-500/40 text-[10px]'
+                                  : 'bg-sky-500/20 text-sky-600 border-sky-500/40 text-[10px]'
+                              }
+                            >
+                              {ev.severity}
+                            </Badge>
+                          </td>
+                          <td className="px-5 py-3">
+                            <span className="font-semibold text-emerald-600">{ev.actionTaken}</span>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Provisioning Modal */}
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
@@ -579,7 +1484,6 @@ export default function SuperAdminPage() {
                     </div>
                   </div>
 
-                  {/* Add-on Active Badge (if enabled) */}
                   {createdResult.organization.hasAiLegal && (
                     <div className="bg-purple-500/10 border border-purple-500/30 rounded-xl p-3.5 text-xs text-purple-700 dark:text-purple-300 flex items-center justify-between">
                       <div className="flex items-center gap-2 font-semibold">
@@ -698,43 +1602,83 @@ export default function SuperAdminPage() {
                           id="campusType"
                           value={formData.campusType}
                           onChange={(e) => setFormData({ ...formData, campusType: e.target.value })}
-                          className="w-full h-9 px-3 rounded-md border border-input bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                          className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
                         >
-                          <option value="K-12 School">K-12 School (Playschool to Grade 12)</option>
-                          <option value="Higher Secondary Institute">Higher Secondary Institute (Grades 11-12)</option>
-                          <option value="Degree College / University">Degree College / University</option>
-                          <option value="Training & Educational Academy">Training & Educational Academy</option>
+                          <option value="K-12 School">K-12 School (CBSE / ICSE / State)</option>
+                          <option value="Higher Secondary">Higher Secondary / Jr College (11th-12th)</option>
+                          <option value="University / College">University / Degree College / Autonomous</option>
+                          <option value="Law School">Law School / Legal Institute</option>
+                          <option value="Coaching Institute">Coaching & Competitive Prep Academy</option>
                         </select>
                       </div>
 
                       <div className="space-y-1.5">
-                        <Label htmlFor="slug" className="text-xs">
-                          Workspace URL Slug
+                        <Label htmlFor="orgSlug" className="text-xs">
+                          Workspace Domain Slug *
                         </Label>
-                        <Input
-                          id="slug"
-                          placeholder="e.g. st-xavier-academy"
-                          value={formData.slug}
-                          onChange={(e) => setFormData({ ...formData, slug: e.target.value })}
-                          className="h-9 text-sm font-mono"
-                        />
+                        <div className="relative">
+                          <Input
+                            id="orgSlug"
+                            placeholder="st-xavier"
+                            value={formData.slug}
+                            onChange={(e) => setFormData({ ...formData, slug: e.target.value })}
+                            required
+                            className="h-9 text-sm font-mono"
+                          />
+                        </div>
                       </div>
                     </div>
                   </div>
 
-                  <div className="pt-2 border-t border-border/40 space-y-3">
+                  <div className="space-y-3 pt-2 border-t border-border/40">
                     <h4 className="text-xs uppercase font-semibold tracking-wider text-muted-foreground flex items-center gap-1.5">
-                      <UserCheck className="h-3.5 w-3.5 text-emerald-500" /> 2. Appointed Director Credentials
+                      <Scale className="h-3.5 w-3.5 text-purple-600" /> 2. Enterprise Add-ons & Suites
                     </h4>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div className="space-y-1.5 sm:col-span-2">
+                    <div
+                      onClick={() => setFormData((prev) => ({ ...prev, enableAiLegal: !prev.enableAiLegal }))}
+                      className={`p-3.5 rounded-xl border transition-all cursor-pointer flex items-start justify-between gap-3 ${
+                        formData.enableAiLegal
+                          ? 'border-purple-500/60 bg-purple-500/10 shadow-sm'
+                          : 'border-border/60 bg-muted/20 hover:border-border'
+                      }`}
+                    >
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-xs text-foreground">AI-Legal Suite (Indian Law & Judgments)</span>
+                          <Badge variant="outline" className="bg-purple-500/20 text-purple-600 border-purple-500/40 text-[10px]">
+                            Recommended for Law Schools
+                          </Badge>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground">
+                          Provides Supreme Court/High Court case search, legal research briefing, Indian Penal Code / BNS reference tools.
+                        </p>
+                      </div>
+                      <div
+                        className={`h-5 w-5 rounded-md border flex items-center justify-center transition-colors shrink-0 ${
+                          formData.enableAiLegal
+                            ? 'bg-purple-600 border-purple-600 text-white'
+                            : 'border-muted-foreground/40 bg-background'
+                        }`}
+                      >
+                        {formData.enableAiLegal && <Check className="h-3.5 w-3.5" />}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3 pt-2 border-t border-border/40">
+                    <h4 className="text-xs uppercase font-semibold tracking-wider text-muted-foreground flex items-center gap-1.5">
+                      <UserCheck className="h-3.5 w-3.5 text-primary" /> 3. Appointed Institutional Director
+                    </h4>
+
+                    <div className="space-y-3">
+                      <div className="space-y-1.5">
                         <Label htmlFor="directorName" className="text-xs">
                           Director Full Name *
                         </Label>
                         <Input
                           id="directorName"
-                          placeholder="e.g. Dr. Arthur Vance (Director)"
+                          placeholder="e.g. Dr. Rajesh Sharma"
                           value={formData.directorName}
                           onChange={(e) => setFormData({ ...formData, directorName: e.target.value })}
                           required
@@ -742,83 +1686,42 @@ export default function SuperAdminPage() {
                         />
                       </div>
 
-                      <div className="space-y-1.5">
-                        <Label htmlFor="directorEmail" className="text-xs">
-                          Director Work Email *
-                        </Label>
-                        <div className="relative">
-                          <Mail className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="space-y-1.5">
+                          <Label htmlFor="directorEmail" className="text-xs">
+                            Work Email (Login ID) *
+                          </Label>
                           <Input
                             id="directorEmail"
                             type="email"
-                            placeholder="director@school.edu"
+                            placeholder="director@stxavier.edu.in"
                             value={formData.directorEmail}
                             onChange={(e) => setFormData({ ...formData, directorEmail: e.target.value })}
                             required
-                            className="h-9 pl-9 text-sm font-mono"
+                            className="h-9 text-sm"
                           />
                         </div>
-                      </div>
 
-                      <div className="space-y-1.5">
-                        <Label htmlFor="directorPassword" className="text-xs">
-                          Initial Password
-                        </Label>
-                        <div className="relative">
-                          <KeyRound className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                        <div className="space-y-1.5">
+                          <Label htmlFor="directorPassword" className="text-xs">
+                            Initial Temporary Password *
+                          </Label>
                           <Input
                             id="directorPassword"
-                            placeholder="Generated Password"
                             value={formData.directorPassword}
                             onChange={(e) => setFormData({ ...formData, directorPassword: e.target.value })}
-                            className="h-9 pl-9 text-sm font-mono"
+                            required
+                            className="h-9 text-sm font-mono"
                           />
                         </div>
                       </div>
                     </div>
                   </div>
 
-                  {/* 3. Platform Add-ons */}
-                  <div className="pt-2 border-t border-border/40 space-y-3">
-                    <h4 className="text-xs uppercase font-semibold tracking-wider text-muted-foreground flex items-center gap-1.5">
-                      <Scale className="h-3.5 w-3.5 text-purple-500" /> 3. Add-ons & Platform Extensions
-                    </h4>
-
-                    <div
-                      onClick={() => setFormData((prev) => ({ ...prev, enableAiLegal: !prev.enableAiLegal }))}
-                      className={`cursor-pointer p-3 rounded-lg border transition-all flex items-start gap-3 ${
-                        formData.enableAiLegal
-                          ? 'bg-purple-500/10 border-purple-500/40'
-                          : 'bg-background hover:bg-muted/30 border-border/60'
-                      }`}
-                    >
-                      <div
-                        className={`mt-0.5 h-4 w-4 rounded border flex items-center justify-center transition-colors shrink-0 ${
-                          formData.enableAiLegal
-                            ? 'bg-purple-600 border-purple-600 text-white'
-                            : 'border-muted-foreground/50'
-                        }`}
-                      >
-                        {formData.enableAiLegal && <Check className="h-3 w-3" />}
-                      </div>
-                      <div className="flex-1 select-none">
-                        <div className="flex items-center gap-2">
-                          <span className="font-semibold text-xs text-foreground">AI-Legal Suite Add-on</span>
-                          <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-600 dark:text-purple-400 border border-purple-500/30">
-                            Add-on Module
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-muted-foreground mt-0.5">
-                          Enables AI legal research, case precedent lookups, and prepares student onboarding accounts to sync with the AI-Legal database.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <DialogFooter className="pt-4 border-t border-border/40">
+                  <div className="flex justify-end gap-3 pt-4 border-t border-border/40">
                     <Button
                       type="button"
-                      variant="ghost"
+                      variant="outline"
                       size="sm"
                       onClick={() => setIsModalOpen(false)}
                       disabled={provisioning}
@@ -829,21 +1732,21 @@ export default function SuperAdminPage() {
                       type="submit"
                       size="sm"
                       disabled={provisioning}
-                      className="gap-2 bg-gradient-to-r from-primary to-indigo-600 hover:from-primary/90 hover:to-indigo-600/90 text-primary-foreground shadow-sm"
+                      className="gap-2 bg-gradient-to-r from-primary to-indigo-600 hover:from-primary/90 hover:to-indigo-600/90 text-primary-foreground shadow-md"
                     >
                       {provisioning ? (
                         <>
-                          <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                          Provisioning...
+                          <RefreshCw className="h-4 w-4 animate-spin" />
+                          Provisioning Tenant Workspace...
                         </>
                       ) : (
                         <>
-                          <PlusCircle className="h-3.5 w-3.5" />
-                          Provision Campus & Director
+                          <PlusCircle className="h-4 w-4" />
+                          Complete & Provision School
                         </>
                       )}
                     </Button>
-                  </DialogFooter>
+                  </div>
                 </form>
               )}
             </AnimatePresence>
@@ -853,5 +1756,3 @@ export default function SuperAdminPage() {
     </motion.div>
   );
 }
-
-

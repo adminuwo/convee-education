@@ -52,6 +52,16 @@ class ChatResponse(BaseModel):
     session_key: str
     provider: str
     model: str
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+
+
+def estimate_token_count(text: str) -> int:
+    """Fallback tokenizer estimation (~4 characters per token)."""
+    if not text:
+        return 0
+    return max(1, len(text.strip()) // 4)
 
 
 @app.get('/llm_bridge/health')
@@ -71,9 +81,10 @@ async def health():
     }
 
 
-async def call_vertexai_gemini(project_id: str, location: str, model: str, system_msg: str, user_msg: str) -> str:
+async def call_vertexai_gemini(project_id: str, location: str, model: str, system_msg: str, user_msg: str):
     """
-    Invokes Gemini 2.5 Flash on Vertex AI (region asia-south1) using Application Default Credentials (ADC).
+    Invokes Gemini on Vertex AI (region asia-south1) using Application Default Credentials (ADC).
+    Returns (text, prompt_tokens, completion_tokens, total_tokens).
     """
     model_name = model or VERTEX_GEMINI_MODEL
     logger.info(f"Invoking Vertex AI Gemini: project={project_id}, location={location}, model={model_name}")
@@ -98,15 +109,37 @@ async def call_vertexai_gemini(project_id: str, location: str, model: str, syste
             contents=user_msg,
             config=config,
         )
-        return response.text or ""
+
+        text = response.text or ""
+        
+        # Extract token usage metadata from Vertex AI if available
+        prompt_tokens = 0
+        completion_tokens = 0
+        total_tokens = 0
+
+        try:
+            if hasattr(response, 'usage_metadata') and response.usage_metadata:
+                prompt_tokens = getattr(response.usage_metadata, 'prompt_token_count', 0) or 0
+                completion_tokens = getattr(response.usage_metadata, 'candidates_token_count', 0) or 0
+                total_tokens = getattr(response.usage_metadata, 'total_token_count', 0) or 0
+        except Exception:
+            pass
+
+        if total_tokens == 0:
+            prompt_tokens = estimate_token_count(system_msg + ' ' + user_msg)
+            completion_tokens = estimate_token_count(text)
+            total_tokens = prompt_tokens + completion_tokens
+
+        return text, prompt_tokens, completion_tokens, total_tokens
 
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, _sync_vertex_call)
 
 
-async def call_openai_direct(api_key: str, model: str, system_msg: str, user_msg: str) -> str:
+async def call_openai_direct(api_key: str, model: str, system_msg: str, user_msg: str):
     """
-    Invokes OpenAI API for Faculty/Staff (defaults to gpt-4o-mini).
+    Invokes OpenAI API (defaults to gpt-4o-mini).
+    Returns (text, prompt_tokens, completion_tokens, total_tokens).
     """
     import json
     import urllib.request
@@ -135,7 +168,14 @@ async def call_openai_direct(api_key: str, model: str, system_msg: str, user_msg
             return json.loads(resp.read().decode('utf-8'))
 
     res_data = await loop.run_in_executor(None, _fetch)
-    return res_data['choices'][0]['message']['content']
+    text = res_data['choices'][0]['message']['content'] or ""
+    
+    usage = res_data.get('usage', {})
+    prompt_tokens = usage.get('prompt_tokens') or estimate_token_count(system_msg + ' ' + user_msg)
+    completion_tokens = usage.get('completion_tokens') or estimate_token_count(text)
+    total_tokens = usage.get('total_tokens') or (prompt_tokens + completion_tokens)
+
+    return text, prompt_tokens, completion_tokens, total_tokens
 
 
 @app.post('/llm_bridge/chat', response_model=ChatResponse)
@@ -146,21 +186,37 @@ async def chat(req: ChatRequest):
     if provider in ['vertexai', 'gemini', 'google']:
         target_model = req.model or VERTEX_GEMINI_MODEL
         try:
-            text = await call_vertexai_gemini(
+            text, p_tok, c_tok, t_tok = await call_vertexai_gemini(
                 project_id=VERTEX_PROJECT_ID,
                 location=VERTEX_LOCATION,
                 model=target_model,
                 system_msg=req.system_message,
                 user_msg=req.user_message
             )
-            return ChatResponse(text=text, session_key=req.session_key, provider='vertexai', model=target_model)
+            return ChatResponse(
+                text=text,
+                session_key=req.session_key,
+                provider='vertexai',
+                model=target_model,
+                prompt_tokens=p_tok,
+                completion_tokens=c_tok,
+                total_tokens=t_tok
+            )
         except Exception as e:
             logger.error(f"Vertex AI Gemini generation failed: {e}")
             if OPENAI_API_KEY:
                 logger.warning("Falling back to OpenAI due to Vertex AI error...")
                 try:
-                    text = await call_openai_direct(OPENAI_API_KEY, 'gpt-4o-mini', req.system_message, req.user_message)
-                    return ChatResponse(text=text, session_key=req.session_key, provider='openai (fallback)', model='gpt-4o-mini')
+                    text, p_tok, c_tok, t_tok = await call_openai_direct(OPENAI_API_KEY, 'gpt-4o-mini', req.system_message, req.user_message)
+                    return ChatResponse(
+                        text=text,
+                        session_key=req.session_key,
+                        provider='openai (fallback)',
+                        model='gpt-4o-mini',
+                        prompt_tokens=p_tok,
+                        completion_tokens=c_tok,
+                        total_tokens=t_tok
+                    )
                 except Exception as fb_err:
                     logger.error(f"Fallback OpenAI error: {fb_err}")
             raise HTTPException(status_code=500, detail=f"Vertex AI Error ({target_model} in {VERTEX_LOCATION}): {str(e)}")
@@ -169,27 +225,44 @@ async def chat(req: ChatRequest):
         if not OPENAI_API_KEY:
             logger.warning("OpenAI API key missing, routing to Vertex AI Gemini...")
             try:
-                text = await call_vertexai_gemini(
+                text, p_tok, c_tok, t_tok = await call_vertexai_gemini(
                     project_id=VERTEX_PROJECT_ID,
                     location=VERTEX_LOCATION,
                     model=VERTEX_GEMINI_MODEL,
                     system_msg=req.system_message,
                     user_msg=req.user_message
                 )
-                return ChatResponse(text=text, session_key=req.session_key, provider='vertexai (fallback)', model=VERTEX_GEMINI_MODEL)
+                return ChatResponse(
+                    text=text,
+                    session_key=req.session_key,
+                    provider='vertexai (fallback)',
+                    model=VERTEX_GEMINI_MODEL,
+                    prompt_tokens=p_tok,
+                    completion_tokens=c_tok,
+                    total_tokens=t_tok
+                )
             except Exception as v_err:
                 raise HTTPException(status_code=503, detail=f"No OpenAI key configured and Vertex AI fallback failed: {str(v_err)}")
 
         target_model = req.model or 'gpt-4o-mini'
         try:
-            text = await call_openai_direct(OPENAI_API_KEY, target_model, req.system_message, req.user_message)
-            return ChatResponse(text=text, session_key=req.session_key, provider='openai', model=target_model)
+            text, p_tok, c_tok, t_tok = await call_openai_direct(OPENAI_API_KEY, target_model, req.system_message, req.user_message)
+            return ChatResponse(
+                text=text,
+                session_key=req.session_key,
+                provider='openai',
+                model=target_model,
+                prompt_tokens=p_tok,
+                completion_tokens=c_tok,
+                total_tokens=t_tok
+            )
         except Exception as e:
             logger.error(f"OpenAI API error: {e}")
             raise HTTPException(status_code=500, detail=f"OpenAI API error: {str(e)}")
 
     else:
         raise HTTPException(status_code=400, detail=f"Unknown LLM provider: {req.provider}. Use 'vertexai' or 'openai'.")
+
 
 
 if __name__ == '__main__':

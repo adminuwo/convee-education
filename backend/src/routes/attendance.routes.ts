@@ -20,13 +20,24 @@ router.post('/batch', async (req, res, next) => {
       return res.status(403).json({ error: 'Insufficient permissions to log attendance' });
     }
 
-    const targetDate = date ? new Date(date) : new Date();
+    let targetDate: Date;
+    if (date) {
+      targetDate = new Date(date);
+      const year = targetDate.getFullYear();
+      if (isNaN(targetDate.getTime()) || isNaN(year) || year < 2000 || year > 2100) {
+        return res.status(400).json({ error: 'Invalid date format or year provided for attendance. Date must be between 2000 and 2100.' });
+      }
+    } else {
+      targetDate = new Date();
+    }
     targetDate.setHours(0, 0, 0, 0);
 
     const savedRecords: any[] = [];
 
     for (const rec of records) {
       if (!rec.studentId || !rec.status) continue;
+      const validStatuses = ['PRESENT', 'ABSENT', 'LATE', 'EXCUSED', 'HALF_DAY'];
+      const statusToSave = validStatuses.includes(rec.status.toUpperCase()) ? rec.status.toUpperCase() : 'PRESENT';
       const result = await prisma.attendanceRecord.upsert({
         where: {
           teamId_studentId_date: {

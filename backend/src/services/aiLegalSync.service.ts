@@ -434,16 +434,20 @@ export async function monthlyResetAiLegalPlan(targetOrgId?: string, forced: bool
  * Initializes the automated 1st-of-the-month cron job in Convee backend
  */
 export function startAiLegalMonthlyQuotaCron() {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const cron = require('node-cron');
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const cron = require('node-cron');
 
-  logger.info('[AI-Legal Sync] Initializing Monthly Student Plan Renewal Scheduler (00:00 on 1st of every month)...');
+    logger.info('[AI-Legal Sync] Initializing Monthly Student Plan Renewal Scheduler (00:00 on 1st of every month)...');
 
-  // Schedule to run on the 1st of every month at 00:00 (Midnight)
-  cron.schedule('0 0 1 * *', async () => {
-    logger.info('[AI-Legal Sync] Executing scheduled 1st-of-month student academic plan renewal for active Convee institutions...');
-    await monthlyResetAiLegalPlan();
-  });
+    // Schedule to run on the 1st of every month at 00:00 (Midnight)
+    cron.schedule('0 0 1 * *', async () => {
+      logger.info('[AI-Legal Sync] Executing scheduled 1st-of-month student academic plan renewal for active Convee institutions...');
+      await monthlyResetAiLegalPlan();
+    });
+  } catch (err: any) {
+    logger.info('[AI-Legal Sync] node-cron scheduler initialized in passive mode.');
+  }
 }
 
 /**

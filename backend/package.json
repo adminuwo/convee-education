@@ -10,7 +10,10 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate deploy",
     "prisma:push": "prisma db push",
-    "seed": "ts-node src/seed.ts"
+    "seed": "ts-node src/seed.ts",
+    "test": "ts-node scripts/run_complete_backend_tests.ts",
+    "test:security": "ts-node scripts/run_security_privacy_crash_tests.ts",
+    "test:all": "ts-node scripts/run_complete_backend_tests.ts && ts-node scripts/run_security_privacy_crash_tests.ts"
   },
   "prisma": {
     "seed": "ts-node src/seed.ts"

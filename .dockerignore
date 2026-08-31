@@ -1,12 +1,37 @@
+# ==========================================
+# CONVEE - Docker Build Ignore Rules
+# ==========================================
+
+# Dependencies & Build artifacts
 node_modules
-npm-debug.log
+**/node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+dist
+**/dist
+build
+**/build
+coverage
+
+# Environment & Credentials
 .env
-.env.local
+.env.*
+!.env.example
 .git
 .gitignore
 .vscode
-dist
-build
 .emergent
-coverage
 *.log
+
+# Workspace media & test artifacts
+*.png
+*.jpg
+*.jpeg
+*.mp4
+*.webm
+agent_artifacts/
+mock_*.csv
+DUMMY_DATA.txt
+backend/scripts/
+backend/src/scripts/

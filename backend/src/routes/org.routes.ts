@@ -44,6 +44,19 @@ const inviteLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+export const ROLE_RANKS: Record<string, number> = {
+  OWNER: 6,
+  DIRECTOR: 6,
+  ADMIN: 5,
+  PRINCIPAL: 5,
+  DEAN: 4,
+  HOD: 4,
+  TEACHER: 2,
+  ACCOUNTANT: 2,
+  PARENT: 1,
+  STUDENT: 1,
+};
+
 export function parseOrgAddons(description: string | null | undefined): string[] {
   if (!description) return [];
   const match = description.match(/\[ADDONS:([^\]]+)\]/);
@@ -1458,7 +1471,11 @@ router.post('/:orgId/invite', inviteLimiter, async (req, res, next) => {
     const { email, fullName, role, departmentId, teamId } = req.body;
     if (!email) return res.status(400).json({ error: 'Email required' });
 
-    const targetRole = role || 'TEACHER';
+    if (role && !ROLE_RANKS[role.toUpperCase()]) {
+      return res.status(400).json({ error: `Invalid role enum value. Allowed roles: ${Object.keys(ROLE_RANKS).join(', ')}` });
+    }
+
+    const targetRole = (role ? role.toUpperCase() : 'TEACHER');
     const inviterRank = ROLE_RANKS[m.role] ?? -2;
     const targetRoleRank = ROLE_RANKS[targetRole] ?? -2;
 
@@ -1869,17 +1886,6 @@ router.post('/:orgId/transfer-respond', async (req, res, next) => {
     res.json({ ok: true, message: 'Ownership transferred successfully! You are now the Director.' });
   } catch (e) { next(e); }
 });
-
-const ROLE_RANKS: Record<string, number> = {
-  OWNER: 6,
-  DIRECTOR: 6,
-  PRINCIPAL: 5,
-  DEAN: 4,
-  HOD: 4,
-  TEACHER: 2,
-  ACCOUNTANT: 2,
-  STUDENT: 1,
-};
 
 // Update member role
 router.patch('/:orgId/members/:membershipId', async (req, res, next) => {

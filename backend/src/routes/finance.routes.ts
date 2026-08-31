@@ -51,6 +51,7 @@ async function getOrgId(req: Request): Promise<string | null> {
     });
     if (membership) return membership.orgId;
     if (req.user.systemRole === 'SUPER_ADMIN') return targetOrgId;
+    return null;
   }
 
   const defaultMembership = await prisma.membership.findFirst({
@@ -707,6 +708,11 @@ router.get('/overview', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Organization ID required' });
     }
 
+    const isAuthorized = await verifyFinanceStaff(req, orgId);
+    if (!isAuthorized) {
+      return res.status(403).json({ error: 'Access denied: Financial overview is restricted to institutional accountants and administrators.' });
+    }
+
     await ensureSampleFinanceData(orgId);
 
     const feeLedgers = await db.studentFeeLedger.findMany({ where: { orgId } });
@@ -828,7 +834,7 @@ router.get('/fees', async (req: Request, res: Response) => {
   try {
     const orgId = await getOrgId(req);
     if (!orgId) {
-      return res.status(400).json({ error: 'Organization ID required' });
+      return res.status(403).json({ error: 'Organization ID required or access denied' });
     }
 
     const isAuthorized = await verifyFinanceStaff(req, orgId);
@@ -873,7 +879,7 @@ router.post('/fees', async (req: Request, res: Response) => {
   try {
     const orgId = await getOrgId(req);
     if (!orgId) {
-      return res.status(400).json({ error: 'Organization ID required' });
+      return res.status(403).json({ error: 'Organization ID required or access denied' });
     }
 
     const isAuthorized = await verifyFinanceStaff(req, orgId);
@@ -1120,7 +1126,7 @@ router.get('/fees/parent', async (req: Request, res: Response) => {
   try {
     const orgId = await getOrgId(req);
     if (!orgId) {
-      return res.status(400).json({ error: 'Organization ID required' });
+      return res.status(403).json({ error: 'Organization ID required or access denied' });
     }
 
     await ensureSampleFinanceData(orgId);
@@ -1187,7 +1193,7 @@ router.get('/payroll', async (req: Request, res: Response) => {
   try {
     const orgId = await getOrgId(req);
     if (!orgId) {
-      return res.status(400).json({ error: 'Organization ID required' });
+      return res.status(403).json({ error: 'Organization ID required or access denied' });
     }
 
     const isAuthorized = await verifyFinanceStaff(req, orgId);
@@ -1474,6 +1480,10 @@ router.get('/bank-accounts', async (req: Request, res: Response) => {
   try {
     const orgId = await getOrgId(req);
     if (!orgId) return res.status(400).json({ error: 'Organization ID required' });
+    const isAuthorized = await verifyFinanceStaff(req, orgId);
+    if (!isAuthorized) {
+      return res.status(403).json({ error: 'Access denied: Bank accounts are restricted to institutional accountants and administrators.' });
+    }
     await ensureSampleFinanceData(orgId);
     const bankAccounts = await db.bankAccount.findMany({
       where: { orgId, isActive: true },
@@ -1493,6 +1503,10 @@ router.post('/bank-accounts', async (req: Request, res: Response) => {
   try {
     const orgId = await getOrgId(req);
     if (!orgId) return res.status(400).json({ error: 'Organization ID required' });
+    const isAuthorized = await verifyFinanceStaff(req, orgId);
+    if (!isAuthorized) {
+      return res.status(403).json({ error: 'Access denied: Bank account management is restricted to institutional accountants and administrators.' });
+    }
 
     const {
       accountName,
@@ -1689,6 +1703,9 @@ router.post('/expenses', async (req: Request, res: Response) => {
     }
 
     const parsedAmount = parseFloat(amount);
+    if (isNaN(parsedAmount) || parsedAmount <= 0) {
+      return res.status(400).json({ error: 'amount must be a positive number greater than zero' });
+    }
     const uniqueSeq = Math.floor(100000 + Math.random() * 900000);
     const isDonation = category === 'DONATION';
     const isCash = (paymentMethod || '').toUpperCase().includes('CASH');
@@ -1772,7 +1789,6 @@ router.post('/expenses', async (req: Request, res: Response) => {
         amount: parsedAmount,
         expenseDate: expenseDate ? new Date(expenseDate) : new Date(),
         paymentMethod,
-        bankAccountId: targetBank?.id || null,
         bankAccountName: resolvedBankName,
         vendorName: vendorName || (isDonation ? 'Endowment Donor' : 'Vendor Service'),
         receiptNo: assignedReceiptNo,

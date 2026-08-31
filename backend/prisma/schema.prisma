@@ -1164,5 +1164,46 @@ model StudentDailyQuiz {
   @@index([orgId, teamId])
 }
 
+// ============ AI TOKEN USAGE TELEMETRY & BILLING ============
 
+model AITokenUsageLog {
+  id               String   @id @default(uuid())
+  orgId            String?
+  userId           String
+  role             String   @default("STUDENT") // STUDENT, TEACHER, HOD, PRINCIPAL, DIRECTOR, ACCOUNTANT, PARENT, SUPER_ADMIN
+  sessionKey       String?
+  promptTokens     Int      @default(0)
+  completionTokens Int      @default(0)
+  totalTokens      Int      @default(0)
+  provider         String   @default("vertexai") // vertexai, openai
+  model            String   @default("gemini-2.5-flash")
+  estimatedCost    Float    @default(0.0) // In USD
+  feature          String   @default("CHAT") // CHAT, QUIZ, BRIEFING, LESSON_PLAN, GRADING, REPORT_CARD
+  guardrailStatus  String   @default("PASSED") // PASSED, REFRAMED, CRISIS_INTERVENTION, SANITIZED
+  createdAt        DateTime @default(now())
 
+  @@index([orgId, createdAt])
+  @@index([userId])
+  @@index([role])
+  @@index([createdAt])
+}
+
+// ============ AI SAFETY & GUARDRAIL AUDIT TRAIL ============
+
+model AIGuardrailEvent {
+  id             String   @id @default(uuid())
+  orgId          String?
+  userId         String
+  userRole       String   @default("STUDENT")
+  severity       String   @default("MEDIUM") // CRISIS, HIGH, MEDIUM, LOW
+  category       String   // SELF_HARM, CYBERBULLYING, PII_LEAK, EXAM_INTEGRITY, DANGEROUS_CONTENT, HARASSMENT
+  actionTaken    String   // CRISIS_CARD_SHOWN, REFRAMED_ACADEMIC, REJECTED_POLITE, SANITIZED_PII, AUDITED
+  promptSnippet  String?  // Sanitized prompt snippet
+  responseSnippet String? // Safe response returned
+  createdAt      DateTime @default(now())
+
+  @@index([orgId, createdAt])
+  @@index([userId])
+  @@index([severity])
+  @@index([category])
+}

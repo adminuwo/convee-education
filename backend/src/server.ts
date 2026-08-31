@@ -105,16 +105,11 @@ app.use('/api/v1/timetable', timetableRoutes);
 app.use('/api/v1/orgs/:orgId/promotion', promotionRoutes);
 app.use('/api/v1/exams', examRoutes);
 
-// Handle unmatched /api routes
-app.use('/api', notFound);
-
-// Error Handler
-app.use(errorHandler);
-
 // Serve Frontend Static Build (Full-stack single container / Cloud Run production)
 const candidateStaticDirs = [
   path.resolve(__dirname, '../frontend-build'),
   path.resolve(__dirname, '../../frontend/build'),
+  path.resolve(process.cwd(), '../frontend/build'),
   path.resolve(process.cwd(), 'frontend-build'),
   path.resolve(process.cwd(), 'frontend/build'),
 ];
@@ -143,15 +138,23 @@ if (staticDir) {
   });
 }
 
+// Handle unmatched /api routes
+app.use('/api', notFound);
+
+// Error Handler
+app.use(errorHandler);
+
 // Setup Socket.IO
 const io = setupSocketIO(server);
 app.locals.io = io;
 
-server.listen(env.PORT, '0.0.0.0', () => {
-  logger.info(`🚀 Backend listening on 0.0.0.0:${env.PORT}`);
-  logger.info(`📖 API Docs at /api/docs`);
-  startAiLegalMonthlyQuotaCron();
-});
+if (process.env.NODE_ENV !== 'test') {
+  server.listen(env.PORT, '0.0.0.0', () => {
+    logger.info(`🚀 Backend listening on 0.0.0.0:${env.PORT}`);
+    logger.info(`📖 API Docs at /api/docs`);
+    startAiLegalMonthlyQuotaCron();
+  });
+}
 
 // Graceful shutdown — ensures port is released before nodemon restarts
 // This prevents the recurring "EADDRINUSE: address already in use" error

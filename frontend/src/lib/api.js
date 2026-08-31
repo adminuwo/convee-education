@@ -345,6 +345,7 @@ export const examApi = {
 
 export const superAdminApi = {
   dashboard: () => api.get('/dashboard/super-admin').then((r) => r.data),
+  tokenAnalytics: () => api.get('/dashboard/super-admin/token-analytics').then((r) => r.data),
   provisionOrg: (data) => api.post('/orgs/super-admin/provision', data).then((r) => r.data),
   listOrgs: () => api.get('/orgs').then((r) => r.data),
   updateOrgAddons: (orgId, data) => api.patch(`/orgs/${orgId}/addons`, data).then((r) => r.data),

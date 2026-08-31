@@ -4,6 +4,7 @@ import prisma from '../db/prisma';
 import { authenticate } from '../middleware/auth';
 import { env } from '../config/env';
 import { logger } from '../utils/logger';
+import { GuardrailService } from '../services/guardrail.service';
 
 import { canUserAccessChannel } from './channel.routes';
 
@@ -46,7 +47,7 @@ export function cleanBriefingPlainText(text: string): string {
     .replace(/\\'/g, "'")
     .replace(/\*\*\*([^*]+)\*\*\*/g, '$1')
     .replace(/\*\*([^*]+)\*\*/g, '$1')
-    .replace(/\*([^*]+)\*/g, '$1')
+    .replace(/\*([^*]+)\*\*/g, '$1')
     .replace(/___([^_]+)___/g, '$1')
     .replace(/__([^_]+)__/g, '$1')
     .replace(/_([^_]+)_/g, '$1')
@@ -63,7 +64,7 @@ export function cleanBriefingPlainText(text: string): string {
     .trim();
 }
 
-async function callLLM(sessionKey: string, systemPrompt: string, userMessage: string, provider?: string, model?: string) {
+export async function callLLM(sessionKey: string, systemPrompt: string, userMessage: string, provider?: string, model?: string) {
   try {
     const url = env.LLM_BRIDGE_URL.endsWith('/llm_bridge')
       ? `${env.LLM_BRIDGE_URL}/chat`
@@ -76,10 +77,17 @@ async function callLLM(sessionKey: string, systemPrompt: string, userMessage: st
       model: model || env.DEFAULT_LLM_MODEL,
     }, { timeout: 60000 });
     const rawText = resp.data?.text || (typeof resp.data === 'string' ? resp.data : '');
+    const promptTokens = Number(resp.data?.prompt_tokens || Math.max(1, Math.floor((systemPrompt.length + userMessage.length) / 4)));
+    const completionTokens = Number(resp.data?.completion_tokens || Math.max(1, Math.floor(rawText.length / 4)));
+    const totalTokens = Number(resp.data?.total_tokens || (promptTokens + completionTokens));
+
     return {
       text: cleanLLMText(rawText),
       provider: resp.data?.provider || provider || env.DEFAULT_LLM_PROVIDER,
       model: resp.data?.model || model || env.DEFAULT_LLM_MODEL,
+      promptTokens,
+      completionTokens,
+      totalTokens,
     };
   } catch (e: any) {
     logger.warn('callLLM bridge unavailable, returning pedagogical fallback: ' + (e?.response?.data || e?.message));
@@ -95,10 +103,16 @@ async function callLLM(sessionKey: string, systemPrompt: string, userMessage: st
       fallbackText = `Thank you for the update. I have reviewed the shared material and will proceed accordingly with our academic deliverables.`;
     }
 
+    const promptTokens = Math.max(1, Math.floor((systemPrompt.length + userMessage.length) / 4));
+    const completionTokens = Math.max(1, Math.floor(fallbackText.length / 4));
+
     return {
       text: fallbackText,
       provider: provider || env.DEFAULT_LLM_PROVIDER || 'fallback',
       model: model || env.DEFAULT_LLM_MODEL || 'fallback-v1',
+      promptTokens,
+      completionTokens,
+      totalTokens: promptTokens + completionTokens,
     };
   }
 }
@@ -849,11 +863,102 @@ YOUR MISSION & CAPABILITIES:
     }
 
     // Server-enforced model routing based strictly on authenticated role & user permissions
+    const userRole = membership?.role || currentUser?.systemRole || 'STUDENT';
+    const isStudentRole = userRole === 'STUDENT' || (req.user!.email || '').toLowerCase().includes('student');
+
+    // Run Role-Specific Guardrail Assessment
+    const guardrailResult = isStudentRole
+      ? GuardrailService.evaluateStudentQuery(message, membership?.team?.name || membership?.department?.name)
+      : GuardrailService.evaluateTeacherQuery(message, userRole);
+
+    // If query is blocked or triggers a compassionate crisis intervention card
+    if (!guardrailResult.allowed && guardrailResult.overrideResponse) {
+      const safeText = guardrailResult.overrideResponse;
+      if (convo) {
+        await prisma.aIMessage.create({ data: { conversationId: convo.id, role: 'assistant', content: safeText } }).catch(() => {});
+      }
+
+      // Record Safety Audit Event
+      await GuardrailService.recordGuardrailEvent({
+        orgId: membership?.orgId || null,
+        userId: req.user!.id,
+        userRole,
+        severity: guardrailResult.severity || 'HIGH',
+        category: guardrailResult.category || 'SAFETY_INTERVENTION',
+        actionTaken: guardrailResult.status === 'CRISIS_INTERVENTION' ? 'CRISIS_CARD_SHOWN' : 'BLOCKED',
+        promptSnippet: message,
+        responseSnippet: safeText,
+      });
+
+      // Record metered token usage for telemetry
+      const pTokens = Math.max(1, Math.floor(message.length / 4));
+      const cTokens = Math.max(1, Math.floor(safeText.length / 4));
+      await GuardrailService.recordTokenUsage({
+        orgId: membership?.orgId || null,
+        userId: req.user!.id,
+        role: userRole,
+        sessionKey: key,
+        promptTokens: pTokens,
+        completionTokens: cTokens,
+        totalTokens: pTokens + cTokens,
+        provider: 'local_guardrail',
+        model: 'rule-engine',
+        feature: 'CHAT',
+        guardrailStatus: guardrailResult.status,
+      });
+
+      return res.json({
+        response: safeText,
+        sessionKey: key,
+        title: convo?.title || 'Safety Support',
+        provider: 'guardrail',
+        model: 'rule-engine',
+        guardrailStatus: guardrailResult.status,
+        promptTokens: pTokens,
+        completionTokens: cTokens,
+        totalTokens: pTokens + cTokens,
+      });
+    }
+
+    // If guardrail provides educational steering or privacy guidance, augment system prompt
+    if (guardrailResult.augmentedSystemPrompt) {
+      sys += guardrailResult.augmentedSystemPrompt;
+    }
+
     const llmConfig = resolveLLMProviderAndModel(membership?.role, req.user!.email, currentUser?.systemRole);
     const chosenProvider = llmConfig.provider;
     const chosenModel = llmConfig.model;
 
-    const { text, provider: usedProvider, model: usedModel } = await callLLM(key, sys, message, chosenProvider, chosenModel);
+    const { text, provider: usedProvider, model: usedModel, promptTokens, completionTokens, totalTokens } = await callLLM(key, sys, message, chosenProvider, chosenModel);
+
+    // Record Metered Token Usage (No Quota Cap - Metered Billing)
+    await GuardrailService.recordTokenUsage({
+      orgId: membership?.orgId || null,
+      userId: req.user!.id,
+      role: userRole,
+      sessionKey: key,
+      promptTokens: promptTokens || Math.max(1, Math.floor((sys.length + message.length) / 4)),
+      completionTokens: completionTokens || Math.max(1, Math.floor((text || '').length / 4)),
+      totalTokens: totalTokens || (Math.max(1, Math.floor((sys.length + message.length) / 4)) + Math.max(1, Math.floor((text || '').length / 4))),
+      provider: usedProvider,
+      model: usedModel,
+      feature: 'CHAT',
+      guardrailStatus: guardrailResult.status,
+    });
+
+    // If query was non-standard (e.g. reframed dual-use or sanitized PII), audit it
+    if (guardrailResult.status !== 'PASSED') {
+      await GuardrailService.recordGuardrailEvent({
+        orgId: membership?.orgId || null,
+        userId: req.user!.id,
+        userRole,
+        severity: guardrailResult.severity || 'LOW',
+        category: guardrailResult.category || 'ACADEMIC_REFRAME',
+        actionTaken: guardrailResult.status,
+        promptSnippet: message,
+        responseSnippet: text,
+      });
+    }
 
     let finalTitle = convo?.title;
     if (convo) {
@@ -880,6 +985,10 @@ YOUR MISSION & CAPABILITIES:
       title: finalTitle,
       provider: usedProvider,
       model: usedModel,
+      guardrailStatus: guardrailResult.status,
+      promptTokens,
+      completionTokens,
+      totalTokens,
     });
   } catch (e: any) {
     logger.error('AI chat error:', e?.response?.data || e?.message);
