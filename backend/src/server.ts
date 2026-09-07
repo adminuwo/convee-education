@@ -14,6 +14,7 @@ import axios from 'axios';
 import { env } from './config/env';
 import { logger } from './utils/logger';
 import { errorHandler, notFound } from './middleware/validate';
+import { logsCreatorMiddleware } from './middleware/logsCreator';
 import { setupSocketIO } from './sockets';
 
 import authRoutes from './routes/auth.routes';
@@ -53,10 +54,40 @@ app.use(express.json({ limit: '15mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 app.use(morgan('tiny'));
+app.use(logsCreatorMiddleware('convee-backend'));
 
-// Rate limit (5000 requests/min for local dev)
+// Rate limit (5000 requests/min for general dev endpoints)
 const limiter = rateLimit({ windowMs: 60 * 1000, max: 5000, standardHeaders: true, legacyHeaders: false });
 app.use('/api', limiter);
+
+// Campus & Classroom-Friendly Auth Rate Limiting (CASA & Educational Network Best Practices)
+// 1. skipSuccessfulRequests: Legitimate student/faculty logins NEVER consume rate limit quota.
+// 2. keyGenerator: Combines IP + email so a failed brute-force on one account won't lock out other students sharing the same school Wi-Fi / NAT router.
+const authLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 15, // Up to 15 failed attempts per minute before temporary lock
+  skipSuccessfulRequests: true,
+  standardHeaders: true,
+  legacyHeaders: false,
+  statusCode: 429,
+  message: { error: 'Too many failed authentication attempts. Please wait 60 seconds before trying again.' },
+  keyGenerator: (req) => {
+    const email = req.body?.email ? String(req.body.email).toLowerCase().trim() : '';
+    const ip = req.ip || req.socket.remoteAddress || '127.0.0.1';
+    return email ? `${ip}:${email}` : ip;
+  },
+});
+app.use('/api/v1/auth/login', authLimiter);
+app.use('/api/v1/auth/forgot-password', authLimiter);
+app.use('/api/v1/auth/reset-password', authLimiter);
+
+// Anti-Caching Headers for Authenticated API Endpoints (CASA Tier-2 Data Minimization & Anti-Leak)
+app.use('/api/v1', (_req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  next();
+});
 
 // Health
 app.get('/api/health', (_req, res) => res.json({ status: 'ok', ts: new Date().toISOString() }));

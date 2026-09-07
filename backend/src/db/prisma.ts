@@ -4,9 +4,9 @@ import { env } from '../config/env';
 let dbUrl = env.DATABASE_URL || process.env.DATABASE_URL || '';
 if (dbUrl) {
   if (dbUrl.includes('connection_limit=')) {
-    dbUrl = dbUrl.replace(/connection_limit=\d+/, 'connection_limit=5');
+    dbUrl = dbUrl.replace(/connection_limit=\d+/, 'connection_limit=15');
   } else {
-    dbUrl += (dbUrl.includes('?') ? '&' : '?') + 'connection_limit=5&pool_timeout=30';
+    dbUrl += (dbUrl.includes('?') ? '&' : '?') + 'connection_limit=15&pool_timeout=10';
   }
 }
 
