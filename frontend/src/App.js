@@ -264,7 +264,7 @@ export default function App() {
                 <Route
                   path="parent"
                   element={
-                    <RequireRole allowedRoles={['PARENT', 'DIRECTOR', 'OWNER', 'PRINCIPAL', 'ADMIN']}>
+                    <RequireRole allowedRoles={['PARENT']}>
                       <ParentPortalPage />
                     </RequireRole>
                   }
@@ -272,7 +272,7 @@ export default function App() {
                 <Route
                   path="accountant"
                   element={
-                    <RequireRole allowedRoles={['ACCOUNTANT', 'DIRECTOR', 'OWNER', 'PRINCIPAL', 'ADMIN']}>
+                    <RequireRole allowedRoles={['ACCOUNTANT']}>
                       <AccountantPage />
                     </RequireRole>
                   }
@@ -328,7 +328,7 @@ export default function App() {
                 <Route
                   path="role-permissions"
                   element={
-                    <RequireRole allowedRoles={['SUPERADMIN', 'DIRECTOR', 'OWNER', 'ADMIN', 'PRINCIPAL']}>
+                    <RequireRole allowedRoles={['SUPERADMIN', 'DIRECTOR', 'OWNER']}>
                       <RolePermissionsPage />
                     </RequireRole>
                   }

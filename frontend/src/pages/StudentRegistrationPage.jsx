@@ -123,7 +123,9 @@ export default function StudentRegistrationPage() {
   };
 
   const copyToClipboard = (text, fieldName) => {
-    navigator.clipboard.writeText(text);
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(text).catch(() => {});
+    }
     setCopiedField(fieldName);
     toast.success(`${fieldName} copied to clipboard!`);
     setTimeout(() => setCopiedField(null), 2500);

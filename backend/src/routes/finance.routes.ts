@@ -910,8 +910,8 @@ router.post('/fees', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'studentName, feeHeader, and totalAmount are required' });
     }
 
-    const total = parseFloat(totalAmount);
-    const paid = parseFloat(paidAmount);
+    const total = isNaN(parseFloat(totalAmount)) ? 0 : parseFloat(totalAmount);
+    const paid = isNaN(parseFloat(paidAmount)) ? 0 : parseFloat(paidAmount);
     const pending = Math.max(0, total - paid);
     const computedStatus = status || (pending === 0 ? 'PAID' : paid > 0 ? 'PARTIAL' : 'PENDING');
 

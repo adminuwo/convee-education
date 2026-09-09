@@ -221,7 +221,8 @@ export function Sidebar({ onNavigate }) {
     if (it.key === 'parent') return false;
     if (it.key === 'accountant') return false;
     if (it.key === 'fee-status' && !isLeadershipOrDept) return false;
-    if (isStudent && (it.key === 'analytics' || it.key === 'tasks' || it.key === 'my-payslips' || it.key === 'fee-status')) return false;
+    if (it.key === 'analytics' && !isLeadershipOrDept) return false;
+    if (isStudent && (it.key === 'tasks' || it.key === 'my-payslips' || it.key === 'fee-status')) return false;
     return true;
   }).map((it) => {
     if (isStudent && it.key === 'ai') {
@@ -230,7 +231,7 @@ export function Sidebar({ onNavigate }) {
     return it;
   });
 
-  const isFullAccessRole = ['DIRECTOR', 'PRINCIPAL', 'DEAN', 'ADMIN'].includes(currentOrg?.role);
+  const isFullAccessRole = ['DIRECTOR', 'PRINCIPAL', 'ADMIN'].includes(currentOrg?.role);
 
   const activeMembership = useMemo(() => {
     if (!memberships) return null;

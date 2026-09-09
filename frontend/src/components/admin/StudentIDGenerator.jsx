@@ -154,7 +154,9 @@ Parent Name: ${pName}
 Parent ID: ${pId}
 Parent Email: ${pEmail}
 Parent Temp Password: ${pPass}`;
-    navigator.clipboard.writeText(text);
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(text).catch(() => {});
+    }
     setCopied(true);
     toast.success('Student & Parent credentials copied to clipboard!');
     setTimeout(() => setCopied(false), 2000);
@@ -955,7 +957,9 @@ Michael Brown,ADM-2026-003,Middle School,Grade 8 - Sec B,Sarah Brown
                     <Button
                       size="sm"
                       onClick={() => {
-                        navigator.clipboard.writeText(generatedLinkData.fullUrl);
+                        if (navigator?.clipboard?.writeText) {
+                          navigator.clipboard.writeText(generatedLinkData.fullUrl).catch(() => {});
+                        }
                         setLinkCopied(true);
                         toast.success('Registration link copied to clipboard!');
                         setTimeout(() => setLinkCopied(false), 2500);
