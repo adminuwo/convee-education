@@ -1715,7 +1715,7 @@ router.post('/:orgId/transfer-request', async (req, res, next) => {
 
     // Find target user by email in this org
     const targetUser = await prisma.user.findFirst({
-      where: { email: { equals: targetEmail.trim(), mode: 'insensitive' } },
+      where: { email: targetEmail.trim().toLowerCase() },
     });
 
     if (!targetUser) {

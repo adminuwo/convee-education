@@ -53,7 +53,11 @@ export function errorHandler(err: any, _req: Request, res: Response, _next: Next
 
   // Handle Prisma client validation errors (e.g. null bytes in strings, type mismatches)
   if (err?.name === 'PrismaClientValidationError' || err?.message?.includes('null characters') || err?.message?.includes('Invalid `prisma')) {
-    return res.status(400).json({ error: 'Invalid input format or unsupported character sequences in payload.' });
+    logger.error('Prisma Validation Error:', err?.message || err);
+    const clientError = process.env.NODE_ENV === 'production'
+      ? 'Invalid input format or unsupported character sequences in payload.'
+      : (err?.message || 'Invalid input format or unsupported character sequences in payload.');
+    return res.status(400).json({ error: clientError });
   }
 
   // Handle custom status codes or fallback to 500

@@ -65,7 +65,7 @@ router.post('/register', authLimiter, validate(RegisterSchema), async (req, res,
   try {
     const { email, password, fullName } = req.body;
     const cleanEmail = email.toLowerCase().trim();
-    const existing = await prisma.user.findFirst({ where: { email: { equals: cleanEmail, mode: 'insensitive' } } });
+    const existing = await prisma.user.findFirst({ where: { email: cleanEmail } });
     
     // If user exists and already has a password set, return conflict
     if (existing && existing.passwordHash) {
@@ -203,8 +203,8 @@ router.post('/resend-verification', authLimiter, async (req, res, next) => {
     const user = await prisma.user.findFirst({
       where: {
         OR: [
-          { email: { equals: rawInput, mode: 'insensitive' as const } },
-          { email: { equals: cleanInput, mode: 'insensitive' as const } },
+          { email: rawInput },
+          { email: cleanInput },
           { email: { contains: cleanInput, mode: 'insensitive' as const } },
           ...(codeSlug ? [{ email: { contains: codeSlug, mode: 'insensitive' as const } }] : []),
           {
@@ -267,8 +267,8 @@ router.post('/forgot-password', authLimiter, validate(ForgotPasswordSchema), asy
     const user = await prisma.user.findFirst({
       where: {
         OR: [
-          { email: { equals: rawInput, mode: 'insensitive' as const } },
-          { email: { equals: cleanInput, mode: 'insensitive' as const } },
+          { email: rawInput },
+          { email: cleanInput },
           { email: { contains: cleanInput, mode: 'insensitive' as const } },
           ...(codeSlug && codeSlug.length >= 3 ? [{ email: { contains: codeSlug, mode: 'insensitive' as const } }] : []),
           {
@@ -348,8 +348,8 @@ router.post('/login', authLimiter, validate(LoginSchema), async (req, res, next)
     let user = await prisma.user.findFirst({
       where: {
         OR: [
-          { email: { equals: rawInput, mode: 'insensitive' as const } },
-          { email: { equals: cleanInput, mode: 'insensitive' as const } },
+          { email: rawInput },
+          { email: cleanInput },
         ],
       },
     });
@@ -364,7 +364,7 @@ router.post('/login', authLimiter, validate(LoginSchema), async (req, res, next)
       user = await prisma.user.findFirst({
         where: {
           AND: [
-            roleFilter ? { memberships: { some: { role: roleFilter as any } } } : {},
+            ...(roleFilter ? [{ memberships: { some: { role: roleFilter as any } } }] : []),
             {
               OR: [
                 { email: { contains: cleanInput, mode: 'insensitive' as const } },
@@ -578,7 +578,7 @@ router.post('/google/callback', async (req, res, next) => {
       where: {
         OR: [
           { googleId: payload.sub },
-          { email: { equals: cleanGoogleEmail, mode: 'insensitive' } },
+          { email: cleanGoogleEmail },
         ],
       },
     });
