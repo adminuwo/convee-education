@@ -49,11 +49,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       await hydrateAuthTokens();
       const meData = await authApi.me();
-      setUser(meData.user || null);
-      setMemberships(meData.memberships || []);
+      const currentUser = meData?.user || (meData?.id ? {
+        id: meData.id,
+        email: meData.email,
+        fullName: meData.fullName,
+        avatarUrl: meData.avatarUrl,
+        systemRole: meData.systemRole,
+      } : null);
+
+      if (currentUser) {
+        setUser(currentUser);
+      }
+      
+      const userMemberships = meData?.memberships || [];
+      setMemberships(userMemberships);
 
       const savedOrgId = await storage.get('currentOrgId');
-      const activeMem = meData.memberships?.find((m: any) => m.orgId === savedOrgId) || meData.memberships?.[0];
+      const activeMem = userMemberships.find((m: any) => m.orgId === savedOrgId) || userMemberships[0];
       if (activeMem) {
         setCurrentOrg({
           id: activeMem.organization?.id || activeMem.orgId,
@@ -64,8 +76,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         await setCurrentOrgId(activeMem.orgId);
       }
     } catch (e) {
-      setUser(null);
-      setCurrentOrg(null);
+      const token = await storage.get('accessToken');
+      if (!token) {
+        setUser(null);
+        setCurrentOrg(null);
+      }
     } finally {
       setLoading(false);
     }
@@ -78,7 +93,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const login = async (data: { email: string; password: string; portalMode?: string }) => {
     const res = await authApi.login(data);
     await setTokens(res.accessToken, res.refreshToken);
-    setUser(res.user);
+    if (res.user) {
+      setUser(res.user);
+    }
 
     if (res.org) {
       const activeOrg = { ...res.org, role: res.role || res.user?.role || 'STUDENT' };
