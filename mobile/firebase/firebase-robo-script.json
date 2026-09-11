@@ -5,37 +5,36 @@
     {
       "eventType": "VIEW_CLICKED",
       "elementDescriptors": [
-        { "contentDescription": "email-input" },
-        { "className": "android.widget.EditText" }
+        { "className": "android.widget.EditText" },
+        { "text": "e.g. director@demo.edu" }
       ]
     },
     {
       "eventType": "VIEW_TEXT_CHANGED",
       "replacementText": "director@convee.edu",
       "elementDescriptors": [
-        { "contentDescription": "email-input" },
-        { "className": "android.widget.EditText" }
+        { "className": "android.widget.EditText" },
+        { "text": "e.g. director@demo.edu" }
       ]
     },
     {
       "eventType": "VIEW_CLICKED",
       "elementDescriptors": [
-        { "contentDescription": "password-input" },
-        { "className": "android.widget.EditText" }
+        { "className": "android.widget.EditText" },
+        { "text": "••••••••" }
       ]
     },
     {
       "eventType": "VIEW_TEXT_CHANGED",
       "replacementText": "password123",
       "elementDescriptors": [
-        { "contentDescription": "password-input" },
-        { "className": "android.widget.EditText" }
+        { "className": "android.widget.EditText" },
+        { "text": "••••••••" }
       ]
     },
     {
       "eventType": "VIEW_CLICKED",
       "elementDescriptors": [
-        { "contentDescription": "login-button" },
         { "text": "Sign In to Portal" }
       ]
     },

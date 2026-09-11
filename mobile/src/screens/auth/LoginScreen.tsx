@@ -125,8 +125,6 @@ export default function LoginScreen() {
               <View style={[styles.inputWrapper, { backgroundColor: colors.cardSecondary, borderColor: colors.border }]}>
                 <Mail size={18} color={colors.textMuted} style={styles.inputIcon} />
                 <TextInput
-                  testID="email-input"
-                  accessibilityLabel="email-input"
                   value={email}
                   onChangeText={setEmail}
                   placeholder="e.g. director@demo.edu"
@@ -144,8 +142,6 @@ export default function LoginScreen() {
               <View style={[styles.inputWrapper, { backgroundColor: colors.cardSecondary, borderColor: colors.border }]}>
                 <Lock size={18} color={colors.textMuted} style={styles.inputIcon} />
                 <TextInput
-                  testID="password-input"
-                  accessibilityLabel="password-input"
                   value={password}
                   onChangeText={setPassword}
                   placeholder="••••••••"
@@ -165,8 +161,6 @@ export default function LoginScreen() {
 
             {/* Sign In Button */}
             <TouchableOpacity
-              testID="login-button"
-              accessibilityLabel="login-button"
               onPress={handleLogin}
               disabled={loading}
               style={[styles.submitButton, { backgroundColor: colors.primary }]}
