@@ -51,19 +51,23 @@ export function errorHandler(err: any, _req: Request, res: Response, _next: Next
     return res.status(400).json({ error: 'Required relation constraint violation.' });
   }
 
+  // Handle Database Connection / Unreachable Errors (e.g. Aiven/Postgres down or P1001)
+  if (err?.code === 'P1001' || err?.name === 'PrismaClientInitializationError' || err?.message?.includes("Can't reach database server")) {
+    logger.error('Database connection error:', err?.message || err);
+    return res.status(503).json({ error: 'Database service is currently unreachable. Please try again shortly.' });
+  }
+
   // Handle Prisma client validation errors (e.g. null bytes in strings, type mismatches)
   if (err?.name === 'PrismaClientValidationError' || err?.message?.includes('null characters') || err?.message?.includes('Invalid `prisma')) {
     logger.error('Prisma Validation Error:', err?.message || err);
-    const clientError = process.env.NODE_ENV === 'production'
-      ? 'Invalid input format or unsupported character sequences in payload.'
-      : (err?.message || 'Invalid input format or unsupported character sequences in payload.');
-    return res.status(400).json({ error: clientError });
+    return res.status(400).json({ error: 'Invalid input format or unsupported character sequences in payload.' });
   }
 
   // Handle custom status codes or fallback to 500
   const status = typeof err?.status === 'number' ? err.status : (typeof err?.statusCode === 'number' ? err.statusCode : 500);
+  const safeMessage = status < 500 ? (err?.message || 'Bad request') : 'An internal server error occurred.';
   res.status(status).json({
-    error: err?.message || 'Internal server error',
+    error: safeMessage,
   });
 }
 

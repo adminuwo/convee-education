@@ -42,21 +42,6 @@ export default function LoginScreen() {
     }
   };
 
-  const handleQuickFill = (type: 'faculty' | 'student' | 'parent') => {
-    setPortalMode(type);
-    if (type === 'faculty') {
-      setEmail('director@demo.edu');
-      setPassword('Demo1234!');
-    } else if (type === 'student') {
-      setEmail('student@demo.edu');
-      setPassword('Demo1234!');
-    } else {
-      setEmail('parent@demo.edu');
-      setPassword('Demo1234!');
-    }
-    setErrorMsg('');
-  };
-
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <KeyboardAvoidingView
@@ -186,31 +171,6 @@ export default function LoginScreen() {
                 <Text style={styles.submitButtonText}>Sign In to Portal</Text>
               )}
             </TouchableOpacity>
-
-            {/* Quick Demo Credentials Autofill */}
-            <View style={styles.quickFillSection}>
-              <Text style={[styles.quickFillTitle, { color: colors.textMuted }]}>Tap for Demo Credentials:</Text>
-              <View style={styles.quickFillButtons}>
-                <TouchableOpacity
-                  onPress={() => handleQuickFill('faculty')}
-                  style={[styles.chipButton, { borderColor: colors.border, backgroundColor: colors.cardSecondary }]}
-                >
-                  <Text style={[styles.chipText, { color: colors.text }]}>Director</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => handleQuickFill('student')}
-                  style={[styles.chipButton, { borderColor: colors.border, backgroundColor: colors.cardSecondary }]}
-                >
-                  <Text style={[styles.chipText, { color: colors.text }]}>Student</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => handleQuickFill('parent')}
-                  style={[styles.chipButton, { borderColor: colors.border, backgroundColor: colors.cardSecondary }]}
-                >
-                  <Text style={[styles.chipText, { color: colors.text }]}>Parent</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -241,9 +201,4 @@ const styles = StyleSheet.create({
   eyeButton: { padding: 4 },
   submitButton: { height: 48, borderRadius: 10, alignItems: 'center', justifyContent: 'center', marginTop: 8 },
   submitButtonText: { color: '#ffffff', fontSize: 15, fontWeight: '700' },
-  quickFillSection: { marginTop: 20, paddingTop: 16, borderTopWidth: 1, borderTopColor: 'rgba(150, 150, 150, 0.15)' },
-  quickFillTitle: { fontSize: 11, fontWeight: '600', marginBottom: 8, textAlign: 'center' },
-  quickFillButtons: { flexDirection: 'row', justifyContent: 'center', gap: 8 },
-  chipButton: { paddingVertical: 6, paddingHorizontal: 14, borderRadius: 20, borderWidth: 1 },
-  chipText: { fontSize: 11, fontWeight: '600' },
 });
