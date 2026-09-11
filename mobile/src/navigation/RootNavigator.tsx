@@ -4,11 +4,13 @@ import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
+import { navigationRef } from './navigationRef';
 
 import LoginScreen from '../screens/auth/LoginScreen';
 import MainTabNavigator from './MainTabNavigator';
 import ChatRoomScreen from '../screens/chat/ChatRoomScreen';
 import AIScreen from '../screens/ai/AIScreen';
+import ProfileScreen from '../screens/profile/ProfileScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -49,7 +51,7 @@ export default function RootNavigator() {
       };
 
   return (
-    <NavigationContainer theme={navTheme}>
+    <NavigationContainer ref={navigationRef} theme={navTheme}>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {!user ? (
           <Stack.Screen name="Login" component={LoginScreen} />
@@ -59,7 +61,11 @@ export default function RootNavigator() {
             <Stack.Screen
               name="ChatRoom"
               component={ChatRoomScreen}
-              options={{ headerShown: true }}
+              options={{
+                headerShown: true,
+                headerStyle: { backgroundColor: colors.card },
+                headerTintColor: colors.text,
+              }}
             />
             <Stack.Screen
               name="AIScreen"
@@ -67,6 +73,16 @@ export default function RootNavigator() {
               options={{
                 headerShown: true,
                 title: 'Convee AI Assistant',
+                headerStyle: { backgroundColor: colors.card },
+                headerTintColor: colors.text,
+              }}
+            />
+            <Stack.Screen
+              name="Profile"
+              component={ProfileScreen}
+              options={{
+                headerShown: true,
+                title: 'My Profile & Settings',
                 headerStyle: { backgroundColor: colors.card },
                 headerTintColor: colors.text,
               }}

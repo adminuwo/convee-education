@@ -1,19 +1,20 @@
 import React from 'react';
-import { Platform } from 'react-native';
+import { Platform, TouchableOpacity, View, Text, StyleSheet } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useTheme } from '../contexts/ThemeContext';
-import { Home, BookOpen, CalendarCheck, MessageSquare, User } from 'lucide-react-native';
+import { useDrawer } from '../contexts/DrawerContext';
+import { Menu, Bell, Home, BookOpen, CalendarCheck, MessageSquare } from 'lucide-react-native';
 
 import HomeScreen from '../screens/home/HomeScreen';
 import HomeworkScreen from '../screens/homework/HomeworkScreen';
 import AttendanceScreen from '../screens/attendance/AttendanceScreen';
 import ChannelsScreen from '../screens/chat/ChannelsScreen';
-import ProfileScreen from '../screens/profile/ProfileScreen';
 
 const Tab = createBottomTabNavigator();
 
 export default function MainTabNavigator() {
   const { colors } = useTheme();
+  const { openDrawer, openNotifications, unreadCount } = useDrawer();
 
   return (
     <Tab.Navigator
@@ -21,6 +22,7 @@ export default function MainTabNavigator() {
         headerStyle: {
           backgroundColor: colors.card,
           borderBottomColor: colors.border,
+          borderBottomWidth: 1,
           shadowOpacity: 0,
           elevation: 0,
         },
@@ -29,11 +31,39 @@ export default function MainTabNavigator() {
           fontSize: 16,
           fontWeight: '700',
         },
+        headerLeft: () => (
+          <TouchableOpacity
+            onPress={openDrawer}
+            style={styles.headerButtonLeft}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            accessibilityLabel="Open navigation drawer"
+          >
+            <Menu size={22} color={colors.text} />
+          </TouchableOpacity>
+        ),
+        headerRight: () => (
+          <TouchableOpacity
+            onPress={openNotifications}
+            style={styles.headerButtonRight}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            accessibilityLabel="Open notifications"
+          >
+            <Bell size={21} color={colors.text} />
+            {unreadCount > 0 && (
+              <View style={[styles.badge, { borderColor: colors.card }]}>
+                <Text style={styles.badgeText}>
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        ),
         tabBarStyle: {
           backgroundColor: colors.card,
           borderTopColor: colors.border,
-          height: Platform.OS === 'ios' ? 84 : 68,
-          paddingBottom: Platform.OS === 'ios' ? 22 : 10,
+          borderTopWidth: 1,
+          height: Platform.OS === 'ios' ? 86 : 72,
+          paddingBottom: Platform.OS === 'ios' ? 24 : 12,
           paddingTop: 8,
         },
         tabBarItemStyle: {
@@ -88,16 +118,41 @@ export default function MainTabNavigator() {
           tabBarIcon: ({ color, size }) => <MessageSquare size={size - 2} color={color} />,
         }}
       />
-
-      <Tab.Screen
-        name="Profile"
-        component={ProfileScreen}
-        options={{
-          title: 'Profile',
-          headerTitle: 'Account & Settings',
-          tabBarIcon: ({ color, size }) => <User size={size - 2} color={color} />,
-        }}
-      />
     </Tab.Navigator>
   );
 }
+
+const styles = StyleSheet.create({
+  headerButtonLeft: {
+    marginLeft: 16,
+    padding: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  headerButtonRight: {
+    marginRight: 16,
+    padding: 6,
+    position: 'relative',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  badge: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
+    backgroundColor: '#EF4444',
+    borderRadius: 8,
+    minWidth: 16,
+    height: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+    borderWidth: 1.5,
+  },
+  badgeText: {
+    color: '#ffffff',
+    fontSize: 9,
+    fontWeight: '700',
+    lineHeight: 11,
+  },
+});
