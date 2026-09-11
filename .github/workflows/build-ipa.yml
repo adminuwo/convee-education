@@ -1,0 +1,65 @@
+name: Build iOS IPA for Firebase
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ master ]
+    paths:
+      - 'mobile/**'
+      - '.github/workflows/build-ipa.yml'
+
+jobs:
+  build-ipa:
+    name: Build iOS IPA
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Install NPM Dependencies
+        working-directory: mobile
+        run: npm ci
+
+      - name: Generate Native iOS Project via Expo Prebuild
+        working-directory: mobile
+        run: npx expo prebuild --platform ios --clean
+
+      - name: Install CocoaPods
+        working-directory: mobile/ios
+        run: pod install
+
+      - name: Build iOS Archive (for Firebase Testing)
+        working-directory: mobile/ios
+        run: |
+          xcodebuild archive \
+            -workspace ConveeEducation.xcworkspace \
+            -scheme ConveeEducation \
+            -configuration Release \
+            -archivePath build/ConveeEducation.xcarchive \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=""
+
+      - name: Package App into IPA
+        working-directory: mobile/ios
+        run: |
+          mkdir -p Payload
+          cp -r build/ConveeEducation.xcarchive/Products/Applications/ConveeEducation.app Payload/
+          zip -r ConveeEducation-Firebase-Test.ipa Payload
+          mkdir -p ../dist
+          mv ConveeEducation-Firebase-Test.ipa ../dist/
+
+      - name: Upload IPA Artifact for Firebase
+        uses: actions/upload-artifact@v4
+        with:
+          name: ConveeEducation-Firebase-Test-IPA
+          path: mobile/dist/ConveeEducation-Firebase-Test.ipa
+          if-no-files-found: error
