@@ -2,11 +2,6 @@ name: Build iOS IPA for Firebase
 
 on:
   workflow_dispatch:
-  push:
-    branches: [ master ]
-    paths:
-      - 'mobile/**'
-      - '.github/workflows/build-ipa.yml'
 
 jobs:
   build-ipa:
