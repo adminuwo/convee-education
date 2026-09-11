@@ -9,8 +9,8 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  SafeAreaView,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { Sparkles, GraduationCap, UserCheck, ShieldCheck, Eye, EyeOff, Lock, Mail } from 'lucide-react-native';

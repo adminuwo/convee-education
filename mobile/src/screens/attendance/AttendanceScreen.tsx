@@ -71,9 +71,10 @@ export default function AttendanceScreen() {
         status: attendanceMap[s.studentId] || 'PRESENT',
       }));
 
+      const targetTeamId = stats.studentStats[0]?.teamId || stats.studentStats[0]?.className || 'class-section';
       await attendanceApi.batchLog({
         orgId: currentOrg.id,
-        teamId: 'default-section',
+        teamId: targetTeamId,
         records,
       });
 
