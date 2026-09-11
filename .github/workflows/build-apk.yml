@@ -36,15 +36,15 @@ jobs:
         working-directory: mobile
         run: npx expo prebuild --platform android --clean
 
-      - name: Build Standalone Test APK
+      - name: Build Standalone Production Release APK
         working-directory: mobile/android
         run: |
           chmod +x ./gradlew
-          ./gradlew assembleDebug --no-daemon
+          ./gradlew assembleRelease --no-daemon
 
-      - name: Upload APK Artifact for Firebase
+      - name: Upload Production APK Artifact for Firebase
         uses: actions/upload-artifact@v4
         with:
-          name: ConveeEducation-Firebase-Test-APK
-          path: mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          name: ConveeEducation-Firebase-Production-APK
+          path: mobile/android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
