@@ -10,7 +10,7 @@
   },
   {
     "eventType": "VIEW_TEXT_CHANGED",
-    "replacementText": "director@convee.edu",
+    "replacementText": "director@demo.edu",
     "elementDescriptors": [
       {
         "className": "android.widget.EditText"
@@ -28,7 +28,7 @@
   },
   {
     "eventType": "VIEW_TEXT_CHANGED",
-    "replacementText": "password123",
+    "replacementText": "Demo1234!",
     "elementDescriptors": [
       {
         "className": "android.widget.EditText"

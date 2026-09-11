@@ -13,12 +13,12 @@ This directory contains automated testing scripts and configuration for running 
 4. Click **Continue** to configure the test:
    * Expand **Robo script (optional)**:
      * Upload the [`firebase-robo-script.json`](./firebase-robo-script.json) file located in this directory.
-     * *The Robo script will automatically enter credentials (`director@convee.edu` / `password123`), submit the login form, open the hamburger navigation drawer, check the notification center, and switch through bottom tabs before exploratory crawling.*
+     * *The Robo script will automatically enter credentials (`director@demo.edu` / `Demo1234!`), submit the login form, open the hamburger navigation drawer, check the notification center, and switch through bottom tabs before exploratory crawling.*
    * *(Alternative without script file)* Under **Authentication credentials**, set:
      * **Username field**: `email-input` (or `e.g. director@demo.edu`)
-     * **Username**: `director@convee.edu`
+     * **Username**: `director@demo.edu`
      * **Password field**: `password-input` (or `••••••••`)
-     * **Password**: `password123`
+     * **Password**: `Demo1234!`
 5. Select your test devices (e.g. *Google Pixel 8, Samsung Galaxy S23 on Android 14/15*).
 6. Click **Start 1 test**.
 
@@ -29,9 +29,9 @@ This directory contains automated testing scripts and configuration for running 
 2. Upload **`ConveeEducation-Firebase-Test.ipa`**.
 3. Under **Authentication credentials**:
    * **Username label**: `email-input`
-   * **Username**: `director@convee.edu`
+   * **Username**: `director@demo.edu`
    * **Password label**: `password-input`
-   * **Password**: `password123`
+   * **Password**: `Demo1234!`
 4. Select target iOS devices (e.g. *iPhone 15, iPhone 14 Pro on iOS 17.x*).
 5. Click **Start test**.
 
