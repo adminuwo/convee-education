@@ -1,0 +1,103 @@
+{
+  "id": "convee_edu_firebase_robo_script",
+  "version": "1.0",
+  "actions": [
+    {
+      "eventType": "VIEW_CLICKED",
+      "elementDescriptors": [
+        { "contentDescription": "email-input" },
+        { "className": "android.widget.EditText" }
+      ]
+    },
+    {
+      "eventType": "VIEW_TEXT_CHANGED",
+      "replacementText": "director@convee.edu",
+      "elementDescriptors": [
+        { "contentDescription": "email-input" },
+        { "className": "android.widget.EditText" }
+      ]
+    },
+    {
+      "eventType": "VIEW_CLICKED",
+      "elementDescriptors": [
+        { "contentDescription": "password-input" },
+        { "className": "android.widget.EditText" }
+      ]
+    },
+    {
+      "eventType": "VIEW_TEXT_CHANGED",
+      "replacementText": "password123",
+      "elementDescriptors": [
+        { "contentDescription": "password-input" },
+        { "className": "android.widget.EditText" }
+      ]
+    },
+    {
+      "eventType": "VIEW_CLICKED",
+      "elementDescriptors": [
+        { "contentDescription": "login-button" },
+        { "text": "Sign In to Portal" }
+      ]
+    },
+    {
+      "eventType": "WAITING_FOR_OPEN_ACTIVITY",
+      "timeout": 6000
+    },
+    {
+      "eventType": "VIEW_CLICKED",
+      "elementDescriptors": [
+        { "contentDescription": "Open navigation drawer" }
+      ]
+    },
+    {
+      "eventType": "WAITING_FOR_OPEN_ACTIVITY",
+      "timeout": 1000
+    },
+    {
+      "eventType": "VIEW_CLICKED",
+      "elementDescriptors": [
+        { "text": "Homework & Rubrics" }
+      ]
+    },
+    {
+      "eventType": "WAITING_FOR_OPEN_ACTIVITY",
+      "timeout": 2000
+    },
+    {
+      "eventType": "VIEW_CLICKED",
+      "elementDescriptors": [
+        { "contentDescription": "Open notifications" }
+      ]
+    },
+    {
+      "eventType": "WAITING_FOR_OPEN_ACTIVITY",
+      "timeout": 2000
+    },
+    {
+      "eventType": "VIEW_CLICKED",
+      "elementDescriptors": [
+        { "contentDescription": "Attendance" }
+      ]
+    },
+    {
+      "eventType": "WAITING_FOR_OPEN_ACTIVITY",
+      "timeout": 2000
+    },
+    {
+      "eventType": "VIEW_CLICKED",
+      "elementDescriptors": [
+        { "contentDescription": "Messages" }
+      ]
+    },
+    {
+      "eventType": "WAITING_FOR_OPEN_ACTIVITY",
+      "timeout": 2000
+    },
+    {
+      "eventType": "VIEW_CLICKED",
+      "elementDescriptors": [
+        { "contentDescription": "Home" }
+      ]
+    }
+  ]
+}
