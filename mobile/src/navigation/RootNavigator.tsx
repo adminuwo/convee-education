@@ -8,6 +8,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import LoginScreen from '../screens/auth/LoginScreen';
 import MainTabNavigator from './MainTabNavigator';
 import ChatRoomScreen from '../screens/chat/ChatRoomScreen';
+import AIScreen from '../screens/ai/AIScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -59,6 +60,16 @@ export default function RootNavigator() {
               name="ChatRoom"
               component={ChatRoomScreen}
               options={{ headerShown: true }}
+            />
+            <Stack.Screen
+              name="AIScreen"
+              component={AIScreen}
+              options={{
+                headerShown: true,
+                title: 'Convee AI Assistant',
+                headerStyle: { backgroundColor: colors.card },
+                headerTintColor: colors.text,
+              }}
             />
           </>
         )}

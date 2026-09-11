@@ -71,9 +71,13 @@ export default function HomeScreen({ navigation }: any) {
     >
       {/* Header Banner */}
       <View style={styles.header}>
-        <View>
+        <View style={styles.headerTextWrap}>
           <Text style={[styles.greeting, { color: colors.textSecondary }]}>Welcome back,</Text>
-          <Text style={[styles.userName, { color: colors.text }]}>
+          <Text
+            style={[styles.userName, { color: colors.text }]}
+            numberOfLines={1}
+            ellipsizeMode="tail"
+          >
             {user?.fullName || user?.email?.split('@')[0] || 'Member'}
           </Text>
         </View>
@@ -180,7 +184,7 @@ export default function HomeScreen({ navigation }: any) {
         </TouchableOpacity>
 
         <TouchableOpacity
-          onPress={() => navigation.navigate('AI')}
+          onPress={() => navigation.navigate('AIScreen')}
           style={[styles.actionItem, { backgroundColor: colors.card, borderColor: colors.border }]}
         >
           <View style={styles.actionLeft}>
@@ -205,9 +209,10 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   content: { padding: 18, paddingBottom: 40 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  headerTextWrap: { flex: 1, marginRight: 10 },
   greeting: { fontSize: 12, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
-  userName: { fontSize: 22, fontWeight: '800', marginTop: 2 },
-  roleBadge: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20, borderWidth: 1 },
+  userName: { fontSize: 20, fontWeight: '800', marginTop: 2 },
+  roleBadge: { flexShrink: 0, paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20, borderWidth: 1 },
   roleText: { fontSize: 11, fontWeight: '800' },
   orgName: { fontSize: 12, fontWeight: '500', marginTop: 4, marginBottom: 16 },
   briefingCard: { borderRadius: 14, borderWidth: 1, padding: 16, marginBottom: 16 },

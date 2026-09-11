@@ -1,13 +1,13 @@
 import React from 'react';
+import { Platform } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useTheme } from '../contexts/ThemeContext';
-import { Home, BookOpen, CalendarCheck, MessageSquare, Sparkles, User } from 'lucide-react-native';
+import { Home, BookOpen, CalendarCheck, MessageSquare, User } from 'lucide-react-native';
 
 import HomeScreen from '../screens/home/HomeScreen';
 import HomeworkScreen from '../screens/homework/HomeworkScreen';
 import AttendanceScreen from '../screens/attendance/AttendanceScreen';
 import ChannelsScreen from '../screens/chat/ChannelsScreen';
-import AIScreen from '../screens/ai/AIScreen';
 import ProfileScreen from '../screens/profile/ProfileScreen';
 
 const Tab = createBottomTabNavigator();
@@ -32,15 +32,20 @@ export default function MainTabNavigator() {
         tabBarStyle: {
           backgroundColor: colors.card,
           borderTopColor: colors.border,
-          height: 60,
-          paddingBottom: 8,
-          paddingTop: 6,
+          height: Platform.OS === 'ios' ? 84 : 68,
+          paddingBottom: Platform.OS === 'ios' ? 22 : 10,
+          paddingTop: 8,
+        },
+        tabBarItemStyle: {
+          justifyContent: 'center',
+          alignItems: 'center',
         },
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.textMuted,
         tabBarLabelStyle: {
-          fontSize: 10,
-          fontWeight: '700',
+          fontSize: 11,
+          fontWeight: '600',
+          marginTop: 2,
         },
       }}
     >
@@ -81,16 +86,6 @@ export default function MainTabNavigator() {
           title: 'Messages',
           headerTitle: 'Channels & Direct Chats',
           tabBarIcon: ({ color, size }) => <MessageSquare size={size - 2} color={color} />,
-        }}
-      />
-
-      <Tab.Screen
-        name="AI"
-        component={AIScreen}
-        options={{
-          title: 'AI Assistant',
-          headerTitle: 'Convee AI Assistant',
-          tabBarIcon: ({ color, size }) => <Sparkles size={size - 2} color={color} />,
         }}
       />
 
