@@ -2,6 +2,11 @@ name: Build Android APK for Firebase
 
 on:
   workflow_dispatch:
+  push:
+    branches: [ master ]
+    paths:
+      - 'mobile/**'
+      - '.github/workflows/build-apk.yml'
 
 jobs:
   build-apk:
