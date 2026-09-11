@@ -1,9 +1,12 @@
 import axios from 'axios';
 import { storage } from './storage';
 
-export const LIVE_BACKEND_URL = 'https://convee-education-977864306871.asia-south1.run.app';
-export const LOCAL_BACKEND_URL = 'http://10.0.2.2:8001';
+import { Platform } from 'react-native';
 
+export const LIVE_BACKEND_URL = 'https://convee-education-977864306871.asia-south1.run.app';
+export const LOCAL_BACKEND_URL = Platform.OS === 'android' ? 'http://10.0.2.2:8001' : 'http://localhost:8001';
+
+// Default to Cloud Run live API for reliable access on all platforms
 let activeBaseUrl = `${LIVE_BACKEND_URL}/api/v1`;
 
 export const getBaseUrl = () => activeBaseUrl;
@@ -19,11 +22,16 @@ export const api = axios.create({
   timeout: 15000,
 });
 
-// Initialize server URL from storage
+// Initialize server URL from storage (ignoring invalid 10.0.2.2 on web)
 storage.get('custom_server_url').then((saved) => {
   if (saved) {
-    activeBaseUrl = saved;
-    api.defaults.baseURL = saved;
+    if (Platform.OS === 'web' && saved.includes('10.0.2.2')) {
+      activeBaseUrl = `${LIVE_BACKEND_URL}/api/v1`;
+      storage.remove('custom_server_url');
+    } else {
+      activeBaseUrl = saved;
+    }
+    api.defaults.baseURL = activeBaseUrl;
   }
 });
 
