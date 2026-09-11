@@ -103,6 +103,7 @@ Thumbs.db
 # --- Testing, Reports & Temporary Output ---
 /coverage
 **/coverage/
+tests/artifacts/
 test_reports/
 test_result.md
 scraped_output.json
@@ -116,10 +117,12 @@ mock_students.csv
 *.png
 *.jpg
 *.jpeg
+*.docx
 
-# Whitelist UI Assets in frontend
+# Whitelist UI Assets in frontend and mobile
 !frontend/public/**
 !frontend/src/assets/**
+!mobile/assets/**
 
 # Scratch, Test & Seed Scripts
 backend/scripts/*.ts

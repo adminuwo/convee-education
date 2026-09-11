@@ -35,3 +35,5 @@ mock_*.csv
 DUMMY_DATA.txt
 backend/scripts/
 backend/src/scripts/
+mobile/
+tests/
