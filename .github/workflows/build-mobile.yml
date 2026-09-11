@@ -3,30 +3,29 @@ name: Build Mobile App (Interactive)
 on:
   workflow_dispatch:
     inputs:
-      target:
-        description: 'Package format to build'
+      platform:
+        description: 'Platform'
         required: true
-        default: 'apk'
+        default: 'android'
         type: choice
         options:
-          - 'apk'
-          - 'ipa'
-          - 'aab'
+          - 'android'
+          - 'ios'
           - 'all'
-      environment:
-        description: 'Build environment / mode'
+      profile:
+        description: 'Build Profile (preview = APK/Test, production = AAB/Store, development = Debug)'
         required: true
-        default: 'production'
+        default: 'preview'
         type: choice
         options:
-          - 'production'
           - 'preview'
+          - 'production'
           - 'development'
 
 jobs:
   build-android:
-    name: Build Android (${{ inputs.target }} - ${{ inputs.environment }})
-    if: inputs.target == 'apk' || inputs.target == 'aab' || inputs.target == 'all'
+    name: Build Android (${{ inputs.profile }})
+    if: inputs.platform == 'android' || inputs.platform == 'all'
     runs-on: ubuntu-latest
 
     steps:
@@ -61,41 +60,31 @@ jobs:
         working-directory: mobile/android
         run: |
           chmod +x ./gradlew
-          TARGET="${{ inputs.target }}"
-          ENV="${{ inputs.environment }}"
+          PROFILE="${{ inputs.profile }}"
 
-          if [ "$TARGET" = "apk" ] || [ "$TARGET" = "all" ]; then
-            if [ "$ENV" = "development" ]; then
-              echo ">>> Building Android Debug APK..."
-              ./gradlew assembleDebug --no-daemon
-            else
-              echo ">>> Building Android Release APK ($ENV)..."
-              ./gradlew assembleRelease --no-daemon
-            fi
-          fi
-
-          if [ "$TARGET" = "aab" ] || [ "$TARGET" = "all" ]; then
-            if [ "$ENV" = "development" ]; then
-              echo ">>> Building Android Debug AAB..."
-              ./gradlew bundleDebug --no-daemon
-            else
-              echo ">>> Building Android Release AAB ($ENV)..."
-              ./gradlew bundleRelease --no-daemon
-            fi
+          if [ "$PROFILE" = "preview" ]; then
+            echo ">>> Building Standalone Release APK for Firebase / Testers..."
+            ./gradlew assembleRelease --no-daemon
+          elif [ "$PROFILE" = "production" ]; then
+            echo ">>> Building Production Release AAB for Google Play Store..."
+            ./gradlew bundleRelease --no-daemon
+          elif [ "$PROFILE" = "development" ]; then
+            echo ">>> Building Development Debug APK..."
+            ./gradlew assembleDebug --no-daemon
           fi
 
       - name: Upload Android Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ConveeEducation-Android-${{ inputs.target }}-${{ inputs.environment }}
+          name: ConveeEducation-Android-${{ inputs.profile }}
           path: |
             mobile/android/app/build/outputs/apk/**/*.apk
             mobile/android/app/build/outputs/bundle/**/*.aab
           if-no-files-found: error
 
   build-ios:
-    name: Build iOS (${{ inputs.target }} - ${{ inputs.environment }})
-    if: inputs.target == 'ipa' || inputs.target == 'all'
+    name: Build iOS (${{ inputs.profile }})
+    if: inputs.platform == 'ios' || inputs.platform == 'all'
     runs-on: macos-14
 
     steps:
@@ -124,8 +113,8 @@ jobs:
       - name: Compile iOS Archive
         working-directory: mobile/ios
         run: |
-          ENV="${{ inputs.environment }}"
-          if [ "$ENV" = "development" ]; then
+          PROFILE="${{ inputs.profile }}"
+          if [ "$PROFILE" = "development" ]; then
             CONFIG="Debug"
           else
             CONFIG="Release"
@@ -145,13 +134,13 @@ jobs:
         run: |
           mkdir -p Payload
           cp -r build/ConveeEducation.xcarchive/Products/Applications/ConveeEducation.app Payload/
-          zip -r ConveeEducation-${{ inputs.environment }}.ipa Payload
+          zip -r ConveeEducation-${{ inputs.profile }}.ipa Payload
           mkdir -p ../dist
-          mv ConveeEducation-${{ inputs.environment }}.ipa ../dist/
+          mv ConveeEducation-${{ inputs.profile }}.ipa ../dist/
 
       - name: Upload iOS Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ConveeEducation-iOS-IPA-${{ inputs.environment }}
-          path: mobile/dist/ConveeEducation-${{ inputs.environment }}.ipa
+          name: ConveeEducation-iOS-IPA-${{ inputs.profile }}
+          path: mobile/dist/ConveeEducation-${{ inputs.profile }}.ipa
           if-no-files-found: error
