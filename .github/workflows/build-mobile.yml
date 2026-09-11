@@ -1,0 +1,157 @@
+name: Build Mobile App (Interactive)
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Package format to build'
+        required: true
+        default: 'apk'
+        type: choice
+        options:
+          - 'apk'
+          - 'ipa'
+          - 'aab'
+          - 'all'
+      environment:
+        description: 'Build environment / mode'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - 'production'
+          - 'preview'
+          - 'development'
+
+jobs:
+  build-android:
+    name: Build Android (${{ inputs.target }} - ${{ inputs.environment }})
+    if: inputs.target == 'apk' || inputs.target == 'aab' || inputs.target == 'all'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Setup Java JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: 17
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install NPM Dependencies
+        working-directory: mobile
+        run: npm ci
+
+      - name: Generate Android Native Project via Expo Prebuild
+        working-directory: mobile
+        run: npx expo prebuild --platform android --clean
+
+      - name: Compile Android Package
+        working-directory: mobile/android
+        run: |
+          chmod +x ./gradlew
+          TARGET="${{ inputs.target }}"
+          ENV="${{ inputs.environment }}"
+
+          if [ "$TARGET" = "apk" ] || [ "$TARGET" = "all" ]; then
+            if [ "$ENV" = "development" ]; then
+              echo ">>> Building Android Debug APK..."
+              ./gradlew assembleDebug --no-daemon
+            else
+              echo ">>> Building Android Release APK ($ENV)..."
+              ./gradlew assembleRelease --no-daemon
+            fi
+          fi
+
+          if [ "$TARGET" = "aab" ] || [ "$TARGET" = "all" ]; then
+            if [ "$ENV" = "development" ]; then
+              echo ">>> Building Android Debug AAB..."
+              ./gradlew bundleDebug --no-daemon
+            else
+              echo ">>> Building Android Release AAB ($ENV)..."
+              ./gradlew bundleRelease --no-daemon
+            fi
+          fi
+
+      - name: Upload Android Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ConveeEducation-Android-${{ inputs.target }}-${{ inputs.environment }}
+          path: |
+            mobile/android/app/build/outputs/apk/**/*.apk
+            mobile/android/app/build/outputs/bundle/**/*.aab
+          if-no-files-found: error
+
+  build-ios:
+    name: Build iOS (${{ inputs.target }} - ${{ inputs.environment }})
+    if: inputs.target == 'ipa' || inputs.target == 'all'
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Install NPM Dependencies
+        working-directory: mobile
+        run: npm ci
+
+      - name: Generate Native iOS Project via Expo Prebuild
+        working-directory: mobile
+        run: npx expo prebuild --platform ios --clean
+
+      - name: Install CocoaPods
+        working-directory: mobile/ios
+        run: pod install
+
+      - name: Compile iOS Archive
+        working-directory: mobile/ios
+        run: |
+          ENV="${{ inputs.environment }}"
+          if [ "$ENV" = "development" ]; then
+            CONFIG="Debug"
+          else
+            CONFIG="Release"
+          fi
+          echo ">>> Building Xcode Archive for configuration: $CONFIG"
+          xcodebuild archive \
+            -workspace ConveeEducation.xcworkspace \
+            -scheme ConveeEducation \
+            -configuration $CONFIG \
+            -archivePath build/ConveeEducation.xcarchive \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=""
+
+      - name: Package IPA
+        working-directory: mobile/ios
+        run: |
+          mkdir -p Payload
+          cp -r build/ConveeEducation.xcarchive/Products/Applications/ConveeEducation.app Payload/
+          zip -r ConveeEducation-${{ inputs.environment }}.ipa Payload
+          mkdir -p ../dist
+          mv ConveeEducation-${{ inputs.environment }}.ipa ../dist/
+
+      - name: Upload iOS Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ConveeEducation-iOS-IPA-${{ inputs.environment }}
+          path: mobile/dist/ConveeEducation-${{ inputs.environment }}.ipa
+          if-no-files-found: error
