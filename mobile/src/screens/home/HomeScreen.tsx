@@ -20,6 +20,8 @@ import {
   Bell,
   ArrowRight,
   GraduationCap,
+  Video,
+  TrendingUp,
 } from 'lucide-react-native';
 
 export default function HomeScreen({ navigation }: any) {
@@ -177,6 +179,64 @@ export default function HomeScreen({ navigation }: any) {
               <Text style={[styles.actionName, { color: colors.text }]}>Class Attendance</Text>
               <Text style={[styles.actionDesc, { color: colors.textSecondary }]}>
                 {userRole === 'PARENT' ? "Check child's attendance rate" : '1-Click section attendance logger'}
+              </Text>
+            </View>
+          </View>
+          <ArrowRight size={18} color={colors.textMuted} />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={() => navigation.navigate('Meetings')}
+          style={[styles.actionItem, { backgroundColor: colors.card, borderColor: colors.border }]}
+        >
+          <View style={styles.actionLeft}>
+            <View style={[styles.actionIcon, { backgroundColor: colors.primaryLight }]}>
+              <Video size={18} color={colors.primary} />
+            </View>
+            <View>
+              <Text style={[styles.actionName, { color: colors.text }]}>Live Meetings & Classes</Text>
+              <Text style={[styles.actionDesc, { color: colors.textSecondary }]}>
+                Join audio/video classes with 1-tap Jitsi links
+              </Text>
+            </View>
+          </View>
+          <ArrowRight size={18} color={colors.textMuted} />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={() => navigation.navigate('Analytics')}
+          style={[styles.actionItem, { backgroundColor: colors.card, borderColor: colors.border }]}
+        >
+          <View style={styles.actionLeft}>
+            <View style={[styles.actionIcon, { backgroundColor: colors.emeraldLight }]}>
+              <TrendingUp size={18} color={colors.emerald} />
+            </View>
+            <View>
+              <Text style={[styles.actionName, { color: colors.text }]}>Academic Analytics</Text>
+              <Text style={[styles.actionDesc, { color: colors.textSecondary }]}>
+                {userRole === 'STUDENT' || userRole === 'PARENT'
+                  ? 'Personal attendance %, rubric grades & feedback'
+                  : 'Campus attendance rate & assignment pipeline'}
+              </Text>
+            </View>
+          </View>
+          <ArrowRight size={18} color={colors.textMuted} />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={() => navigation.navigate('Portal')}
+          style={[styles.actionItem, { backgroundColor: colors.card, borderColor: colors.border }]}
+        >
+          <View style={styles.actionLeft}>
+            <View style={[styles.actionIcon, { backgroundColor: colors.purpleLight }]}>
+              <GraduationCap size={18} color={colors.purple} />
+            </View>
+            <View>
+              <Text style={[styles.actionName, { color: colors.text }]}>
+                {userRole === 'PARENT' ? 'Parent Portal' : 'Student Portal'}
+              </Text>
+              <Text style={[styles.actionDesc, { color: colors.textSecondary }]}>
+                Mentors, 30-day attendance health & report card
               </Text>
             </View>
           </View>

@@ -168,4 +168,26 @@ export const aiApi = {
   dailyBriefing: (orgId: string) => api.post('/ai/daily-briefing', { orgId }).then((r) => r.data),
 };
 
+// 8. Meetings API
+export const meetingApi = {
+  list: (orgId: string) => api.get('/meetings', { params: { orgId } }).then((r) => r.data),
+  create: (data: {
+    orgId: string;
+    title: string;
+    description?: string;
+    startTime: string;
+    endTime: string;
+    location?: string;
+    meetingUrl?: string;
+    attendeeIds?: string[];
+  }) => api.post('/meetings', data).then((r) => r.data),
+};
+
+// 9. Analytics API
+export const analyticsApi = {
+  getOrgAnalytics: (orgId: string) => api.get('/dashboard/analytics', { params: { orgId } }).then((r) => r.data),
+  getAttendanceStats: (orgId: string) => api.get('/attendance/stats', { params: { orgId } }).then((r) => r.data),
+  getManagerAnalytics: (orgId: string) => api.get('/dashboard/manager', { params: { orgId } }).then((r) => r.data),
+};
+
 export default api;

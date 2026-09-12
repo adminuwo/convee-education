@@ -11,6 +11,9 @@ import MainTabNavigator from './MainTabNavigator';
 import ChatRoomScreen from '../screens/chat/ChatRoomScreen';
 import AIScreen from '../screens/ai/AIScreen';
 import ProfileScreen from '../screens/profile/ProfileScreen';
+import MeetingsScreen from '../screens/meetings/MeetingsScreen';
+import AnalyticsScreen from '../screens/analytics/AnalyticsScreen';
+import ParentStudentPortalScreen from '../screens/portal/ParentStudentPortalScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -73,6 +76,36 @@ export default function RootNavigator() {
               options={{
                 headerShown: true,
                 title: 'Convee AI Assistant',
+                headerStyle: { backgroundColor: colors.card },
+                headerTintColor: colors.text,
+              }}
+            />
+            <Stack.Screen
+              name="Meetings"
+              component={MeetingsScreen}
+              options={{
+                headerShown: true,
+                title: 'Live Meetings & Classes',
+                headerStyle: { backgroundColor: colors.card },
+                headerTintColor: colors.text,
+              }}
+            />
+            <Stack.Screen
+              name="Analytics"
+              component={AnalyticsScreen}
+              options={{
+                headerShown: true,
+                title: 'Academic Analytics',
+                headerStyle: { backgroundColor: colors.card },
+                headerTintColor: colors.text,
+              }}
+            />
+            <Stack.Screen
+              name="Portal"
+              component={ParentStudentPortalScreen}
+              options={{
+                headerShown: true,
+                title: 'Student & Parent Portal',
                 headerStyle: { backgroundColor: colors.card },
                 headerTintColor: colors.text,
               }}

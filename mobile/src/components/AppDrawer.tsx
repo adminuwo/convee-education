@@ -25,6 +25,8 @@ import {
   X,
   ChevronRight,
   GraduationCap,
+  Video,
+  TrendingUp,
 } from 'lucide-react-native';
 import { useTheme } from '../contexts/ThemeContext';
 import { useDrawer } from '../contexts/DrawerContext';
@@ -160,6 +162,27 @@ export default function AppDrawer() {
       subtitle: 'Classroom chat & staff',
       icon: MessageSquare,
       onPress: () => handleNavigate('MainTabs', { screen: 'Messages' }),
+    },
+    {
+      id: 'analytics',
+      label: 'Academic Analytics',
+      subtitle: userRole === 'STUDENT' || userRole === 'PARENT' ? 'Personal progress & grades' : 'Campus trends & pipeline',
+      icon: TrendingUp,
+      onPress: () => handleNavigate('Analytics'),
+    },
+    {
+      id: 'meetings',
+      label: 'Live Meetings & Classes',
+      subtitle: 'Video classes & Jitsi huddles',
+      icon: Video,
+      onPress: () => handleNavigate('Meetings'),
+    },
+    {
+      id: 'portal',
+      label: userRole === 'PARENT' ? 'Parent Portal' : 'Student Portal',
+      subtitle: 'Report card, mentors & records',
+      icon: GraduationCap,
+      onPress: () => handleNavigate('Portal'),
     },
     {
       id: 'ai',
