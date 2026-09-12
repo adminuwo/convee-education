@@ -62,7 +62,8 @@ jobs:
         working-directory: mobile
         run: |
           npx expo prebuild --platform android --clean
-          # Configure build memory for 16 KB native compilation
+          # Configure build memory and New Architecture for 16 KB native compilation
+          echo "newArchEnabled=true" >> android/gradle.properties
           echo "org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m" >> android/gradle.properties
 
       - name: Compile Android Package (16 KB Page Aligned)

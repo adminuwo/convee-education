@@ -3,6 +3,7 @@
     "name": "Convee Education",
     "slug": "convee-education-mobile",
     "version": "1.0.0",
+    "newArchEnabled": true,
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
