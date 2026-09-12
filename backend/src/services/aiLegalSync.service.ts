@@ -646,3 +646,69 @@ export async function getAiLegalOrgTelemetry(orgName: string, orgSlug: string, o
     };
   }
 }
+
+export interface FeatureRequestPayload {
+  orgId: string;
+  orgName: string;
+  orgSlug: string;
+  userEmail: string;
+  userName?: string;
+  feature: string;
+}
+
+/**
+ * Stores a feature add-on request directly into the 'organizations' collection in AI-Legal MongoDB.
+ * Strictly avoids modifying any other collections or external schemas.
+ */
+export async function submitAiLegalFeatureRequest(payload: FeatureRequestPayload) {
+  try {
+    const client = await getMongoClient();
+    if (!client) {
+      logger.warn('[AI-Legal Feature Request] MongoDB client unreachable, returning offline status.');
+      return {
+        success: false,
+        reason: 'AI-Legal database is temporarily unreachable. Request was preserved in Convee logs.',
+      };
+    }
+
+    const db = client.db(env.AI_LEGAL_DB_NAME || 'AISA');
+    const orgsCol = db.collection('organizations');
+
+    const cleanFeature = (payload.feature || '').trim();
+    const cleanEmail = (payload.userEmail || '').toLowerCase().trim();
+    const now = new Date();
+
+    // 1. Insert a dedicated request document in the 'organizations' collection
+    const insertResult = await orgsCol.insertOne({
+      organizationName: payload.orgName,
+      organizationSlug: payload.orgSlug,
+      email: cleanEmail,
+      userName: payload.userName || '',
+      feature: cleanFeature,
+      type: 'FEATURE_ADDON_REQUEST',
+      status: 'pending',
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    logger.info(
+      `[AI-Legal Feature Request] Successfully stored feature request in organizations schema for "${payload.orgName}" by ${cleanEmail} (ID: ${insertResult.insertedId})`
+    );
+
+    return {
+      success: true,
+      requestId: insertResult.insertedId.toString(),
+      organizationName: payload.orgName,
+      email: cleanEmail,
+      feature: cleanFeature,
+      status: 'pending',
+      createdAt: now,
+    };
+  } catch (error: any) {
+    logger.error({ err: error?.message }, '[AI-Legal Feature Request] Error storing feature request in organizations schema.');
+    return {
+      success: false,
+      error: error?.message || 'Failed to record feature request in AI-Legal database',
+    };
+  }
+}

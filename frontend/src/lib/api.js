@@ -121,6 +121,7 @@ export const orgApi = {
   removeMember: (orgId, membershipId) => api.delete(`/orgs/${orgId}/members/${membershipId}`).then((r) => r.data),
   getAiLegalTelemetry: (orgId) => api.get(`/orgs/${orgId}/ai-legal-telemetry`).then((r) => r.data),
   renewAiLegal: (orgId) => api.post(`/orgs/${orgId}/ai-legal-renew`).then((r) => r.data),
+  requestAiLegalFeature: (orgId, feature) => api.post(`/orgs/${orgId}/ai-legal-feature-request`, { feature }).then((r) => r.data),
 };
 
 

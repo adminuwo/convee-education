@@ -19,6 +19,7 @@ import { motion } from 'framer-motion';
 import StudentIDGenerator from '@/components/admin/StudentIDGenerator';
 import OrgRenameModal from '@/components/org/OrgRenameModal';
 import AcademicPromotionModal from '@/components/admin/AcademicPromotionModal';
+import AiLegalFeatureRequestModal from '@/components/admin/AiLegalFeatureRequestModal';
 
 function initials(n) { return (n || '?').split(' ').map((x) => x[0]).slice(0, 2).join('').toUpperCase(); }
 
@@ -69,6 +70,7 @@ export default function AdminPage() {
   const [studentClassFilter, setStudentClassFilter] = useState('ALL');
   const [renameModalOpen, setRenameModalOpen] = useState(false);
   const [promotionModalOpen, setPromotionModalOpen] = useState(false);
+  const [featureModalOpen, setFeatureModalOpen] = useState(false);
 
   const facultyMembers = useMemo(() => {
     return members.filter(
@@ -330,6 +332,18 @@ export default function AdminPage() {
                   <Building2 className="h-3.5 w-3.5" />
                 )}
                 Institution Logo & Settings
+              </Button>
+            )}
+            {(currentOrg?.hasAiLegal || currentOrg?.addons?.includes('AI_LEGAL')) && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setFeatureModalOpen(true)}
+                className="h-8 gap-1.5 text-xs border-purple-500/30 text-purple-600 dark:text-purple-400 hover:bg-purple-500/10"
+                data-testid="request-ai-legal-feature-btn"
+              >
+                <Scale className="h-3.5 w-3.5 text-purple-500" />
+                Request AI-Legal Feature
               </Button>
             )}
           </h1>
@@ -1381,6 +1395,12 @@ export default function AdminPage() {
         onClose={() => setPromotionModalOpen(false)}
         orgId={currentOrg?.id}
         onPromotionSuccess={load}
+      />
+      <AiLegalFeatureRequestModal
+        open={featureModalOpen}
+        onOpenChange={setFeatureModalOpen}
+        currentOrg={currentOrg}
+        user={user}
       />
     </motion.div>
   );
