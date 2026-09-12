@@ -107,7 +107,9 @@ export default function LoginPage({ initialPortal = 'faculty' }) {
       <div className="absolute inset-0 gradient-brand-soft pointer-events-none" />
       <div className="relative z-10">
         <div className="flex items-center gap-2 font-display text-2xl font-semibold">
-          <div className="h-9 w-9 rounded-md gradient-brand flex items-center justify-center text-white"><Sparkles className="h-5 w-5" /></div>
+          <div className="h-9 w-9 rounded-md gradient-brand flex items-center justify-center text-white overflow-hidden p-0.5">
+            <img src="/favicon.png" alt="Convee Education Logo" className="h-full w-full object-contain rounded" />
+          </div>
           Convee Education
         </div>
       </div>

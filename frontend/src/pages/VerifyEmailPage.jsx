@@ -37,8 +37,8 @@ export default function VerifyEmailPage() {
     <div className="min-h-screen bg-background flex items-center justify-center p-6">
       <div className="w-full max-w-md">
         <div className="flex items-center justify-center gap-2 font-display text-2xl font-semibold mb-8">
-          <div className="h-9 w-9 rounded-md gradient-brand flex items-center justify-center text-white">
-            <Sparkles className="h-5 w-5" />
+          <div className="h-9 w-9 rounded-md gradient-brand flex items-center justify-center text-white overflow-hidden p-0.5">
+            <img src="/favicon.png" alt="Convee Logo" className="h-full w-full object-contain rounded" />
           </div>
           Convee
         </div>

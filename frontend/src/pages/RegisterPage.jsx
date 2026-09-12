@@ -49,7 +49,9 @@ export default function RegisterPage() {
     <div className="relative hidden lg:flex flex-col justify-between p-12 bg-[hsl(var(--sidebar))] overflow-hidden">
       <div className="absolute inset-0 gradient-brand-soft pointer-events-none" />
       <div className="relative z-10 font-display text-2xl font-semibold flex items-center gap-2">
-        <div className="h-9 w-9 rounded-md gradient-brand flex items-center justify-center text-white"><Sparkles className="h-5 w-5" /></div>
+        <div className="h-9 w-9 rounded-md gradient-brand flex items-center justify-center text-white overflow-hidden p-0.5">
+          <img src="/favicon.png" alt="Convee Logo" className="h-full w-full object-contain rounded" />
+        </div>
         Convee
       </div>
       <div className="relative z-10 max-w-md">
