@@ -124,7 +124,8 @@ export const dashboardApi = {
 
 // 3. Homework API
 export const homeworkApi = {
-  tasks: (orgId: string) => api.get('/tasks', { params: { orgId } }).then((r) => r.data),
+  tasks: (orgId: string, params?: Record<string, any>) =>
+    api.get('/tasks', { params: { orgId, ...params } }).then((r) => r.data),
   submit: (taskId: string, data: { content?: string; attachmentUrl?: string }) =>
     api.post(`/homework/${taskId}/submit`, data).then((r) => r.data),
   getSubmissions: (taskId: string) => api.get(`/homework/${taskId}/submissions`).then((r) => r.data),
@@ -140,6 +141,13 @@ export const attendanceApi = {
   getStats: (orgId: string) => api.get('/attendance/stats', { params: { orgId } }).then((r) => r.data),
   getByTeam: (teamId: string, date?: string) =>
     api.get(`/attendance/team/${teamId}`, { params: { date } }).then((r) => r.data),
+  getTeamAnalytics: (teamId: string, orgId: string) =>
+    api.get(`/attendance/team/${teamId}/analytics`, { params: { orgId } }).then((r) => r.data),
+};
+
+// 4b. Organization & Department API
+export const orgApi = {
+  departments: (orgId: string) => api.get(`/orgs/${orgId}/departments`).then((r) => r.data),
 };
 
 // 5. Parent API

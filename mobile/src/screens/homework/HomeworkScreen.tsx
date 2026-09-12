@@ -67,7 +67,11 @@ export default function HomeworkScreen() {
     if (!currentOrg?.id) return;
     try {
       setLoading(true);
-      const res = await homeworkApi.tasks(currentOrg.id);
+      const params: Record<string, any> = { isHomework: 'true' };
+      if (isStudent) {
+        params.assignee = 'me';
+      }
+      const res = await homeworkApi.tasks(currentOrg.id, params);
       setTasks(res || []);
     } catch {
       // ignore
@@ -75,7 +79,7 @@ export default function HomeworkScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [currentOrg?.id]);
+  }, [currentOrg?.id, isStudent]);
 
   useEffect(() => {
     loadTasks();

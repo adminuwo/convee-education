@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
-import { aiApi, dashboardApi, attendanceApi } from '../../lib/api';
+import { aiApi, dashboardApi, attendanceApi, parentApi } from '../../lib/api';
 import {
   Sparkles,
   BookOpen,
@@ -31,28 +31,60 @@ export default function HomeScreen({ navigation }: any) {
   const [briefing, setBriefing] = useState('');
   const [briefingLoading, setBriefingLoading] = useState(false);
   const [attendanceStats, setAttendanceStats] = useState<any>(null);
+  const [personalAttendancePct, setPersonalAttendancePct] = useState<number | null>(null);
   const [dashboardData, setDashboardData] = useState<any>(null);
   const [refreshing, setRefreshing] = useState(false);
+
+  const isStudent = currentOrg?.role === 'STUDENT';
+  const isParent = currentOrg?.role === 'PARENT';
 
   const loadData = useCallback(async () => {
     if (!currentOrg?.id) return;
     try {
       setBriefingLoading(true);
-      const [bRes, aRes, dRes] = await Promise.all([
+      const promises: Promise<any>[] = [
         aiApi.dailyBriefing(currentOrg.id).catch(() => null),
-        attendanceApi.getStats(currentOrg.id).catch(() => null),
         dashboardApi.employee(currentOrg.id).catch(() => null),
-      ]);
+      ];
+
+      if (isStudent && user?.id) {
+        promises.push(parentApi.getChildReport(user.id, currentOrg.id).catch(() => null));
+      } else if (isParent) {
+        promises.push(
+          parentApi
+            .getMyChildren()
+            .then(async (kids) => {
+              if (kids?.length > 0) {
+                const childId = kids[0].userId || kids[0].user?.id;
+                return parentApi.getChildReport(childId, currentOrg.id).catch(() => null);
+              }
+              return null;
+            })
+            .catch(() => null)
+        );
+      } else {
+        promises.push(attendanceApi.getStats(currentOrg.id).catch(() => null));
+      }
+
+      const [bRes, dRes, attRes] = await Promise.all(promises);
+
       if (bRes?.briefing) setBriefing(bRes.briefing);
-      if (aRes) setAttendanceStats(aRes);
       if (dRes) setDashboardData(dRes);
+
+      if (isStudent || isParent) {
+        if (attRes?.attendance?.percentage !== undefined) {
+          setPersonalAttendancePct(attRes.attendance.percentage);
+        }
+      } else {
+        if (attRes) setAttendanceStats(attRes);
+      }
     } catch {
       // ignore
     } finally {
       setBriefingLoading(false);
       setRefreshing(false);
     }
-  }, [currentOrg?.id]);
+  }, [currentOrg?.id, isParent, isStudent, user?.id]);
 
   useEffect(() => {
     loadData();
@@ -125,11 +157,17 @@ export default function HomeScreen({ navigation }: any) {
             <CalendarCheck size={20} color={colors.emerald} />
           </View>
           <Text style={[styles.kpiValue, { color: colors.text }]}>
-            {attendanceStats?.overallCampusPercentage !== undefined
+            {isStudent || isParent
+              ? personalAttendancePct !== null
+                ? `${personalAttendancePct}%`
+                : '—'
+              : attendanceStats?.overallCampusPercentage !== undefined
               ? `${attendanceStats.overallCampusPercentage}%`
               : '—'}
           </Text>
-          <Text style={[styles.kpiLabel, { color: colors.textSecondary }]}>Attendance Rate</Text>
+          <Text style={[styles.kpiLabel, { color: colors.textSecondary }]}>
+            {isStudent ? 'My Attendance' : isParent ? 'Child Attendance' : 'Attendance Rate'}
+          </Text>
         </TouchableOpacity>
 
         {/* Homework / Tasks KPI */}
