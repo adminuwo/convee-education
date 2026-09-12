@@ -9,6 +9,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../contexts/AuthContext';
@@ -51,9 +52,11 @@ export default function LoginScreen() {
         <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
           {/* Brand Header */}
           <View style={styles.brandHeader}>
-            <View style={[styles.brandIcon, { backgroundColor: colors.primaryLight }]}>
-              <Sparkles size={28} color={colors.primary} />
-            </View>
+            <Image
+              source={require('../../../assets/splash-icon.png')}
+              style={{ width: 72, height: 72, borderRadius: 18, marginBottom: 12 }}
+              resizeMode="contain"
+            />
             <Text style={[styles.brandTitle, { color: colors.text }]}>Convee Education</Text>
             <Text style={[styles.brandSubtitle, { color: colors.textSecondary }]}>
               Digital Campus & Academic Portal

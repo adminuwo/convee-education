@@ -11,6 +11,7 @@ import {
   Platform,
   ScrollView,
   Alert,
+  Image,
 } from 'react-native';
 import {
   Home,
@@ -248,7 +249,11 @@ export default function AppDrawer() {
           <View style={[styles.header, { borderBottomColor: colors.border }]}>
             <View style={styles.headerTopRow}>
               <View style={[styles.campusBadge, { backgroundColor: colors.primaryLight }]}>
-                <GraduationCap size={14} color={colors.primary} />
+                <Image
+                  source={require('../../assets/favicon.png')}
+                  style={{ width: 15, height: 15, borderRadius: 3, marginRight: 6 }}
+                  resizeMode="contain"
+                />
                 <Text style={[styles.campusText, { color: colors.primary }]} numberOfLines={1}>
                   {currentOrg?.name ? currentOrg.name.toUpperCase() : 'CONVEE EDUCATION'}
                 </Text>
