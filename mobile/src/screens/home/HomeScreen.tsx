@@ -262,25 +262,27 @@ export default function HomeScreen({ navigation }: any) {
           <ArrowRight size={18} color={colors.textMuted} />
         </TouchableOpacity>
 
-        <TouchableOpacity
-          onPress={() => navigation.navigate('Portal')}
-          style={[styles.actionItem, { backgroundColor: colors.card, borderColor: colors.border }]}
-        >
-          <View style={styles.actionLeft}>
-            <View style={[styles.actionIcon, { backgroundColor: colors.purpleLight }]}>
-              <GraduationCap size={18} color={colors.purple} />
+        {(isStudent || isParent) && (
+          <TouchableOpacity
+            onPress={() => navigation.navigate('Portal')}
+            style={[styles.actionItem, { backgroundColor: colors.card, borderColor: colors.border }]}
+          >
+            <View style={styles.actionLeft}>
+              <View style={[styles.actionIcon, { backgroundColor: colors.purpleLight }]}>
+                <GraduationCap size={18} color={colors.purple} />
+              </View>
+              <View>
+                <Text style={[styles.actionName, { color: colors.text }]}>
+                  {userRole === 'PARENT' ? 'Parent Portal' : 'Student Portal'}
+                </Text>
+                <Text style={[styles.actionDesc, { color: colors.textSecondary }]}>
+                  Mentors, 30-day attendance health & report card
+                </Text>
+              </View>
             </View>
-            <View>
-              <Text style={[styles.actionName, { color: colors.text }]}>
-                {userRole === 'PARENT' ? 'Parent Portal' : 'Student Portal'}
-              </Text>
-              <Text style={[styles.actionDesc, { color: colors.textSecondary }]}>
-                Mentors, 30-day attendance health & report card
-              </Text>
-            </View>
-          </View>
-          <ArrowRight size={18} color={colors.textMuted} />
-        </TouchableOpacity>
+            <ArrowRight size={18} color={colors.textMuted} />
+          </TouchableOpacity>
+        )}
 
         <TouchableOpacity
           onPress={() => navigation.navigate('AIScreen')}

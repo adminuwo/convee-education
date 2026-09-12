@@ -161,6 +161,21 @@ export default function ParentStudentPortalScreen({ navigation }: any) {
             administration to link your child's student enrollment account.
           </Text>
         </View>
+      ) : !isParent && role !== 'STUDENT' ? (
+        <View style={[styles.emptyBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <GraduationCap size={44} color={colors.primary} />
+          <Text style={[styles.emptyTitle, { color: colors.text }]}>Learner & Family Portal</Text>
+          <Text style={[styles.emptyDesc, { color: colors.textSecondary }]}>
+            This portal is designated for students and parents to review personal report cards, attendance records, and mentors.
+            As a faculty member ({role}), your institutional tools are located under Class Attendance, Homework & Rubrics, and Academic Analytics.
+          </Text>
+          <TouchableOpacity
+            style={[styles.msgBtn, { alignSelf: 'center', marginTop: 14, backgroundColor: colors.primary }]}
+            onPress={() => navigation.navigate('MainTabs', { screen: 'Home' })}
+          >
+            <Text style={styles.msgBtnText}>Go to Home Dashboard</Text>
+          </TouchableOpacity>
+        </View>
       ) : !report ? (
         <View style={[styles.emptyBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <GraduationCap size={44} color={colors.textMuted} />

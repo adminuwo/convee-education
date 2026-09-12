@@ -132,7 +132,10 @@ export default function AppDrawer() {
     .slice(0, 2)
     .toUpperCase() || 'U';
 
-  const userRole = currentOrg?.role || user?.systemRole || 'FACULTY';
+  const userRole = (currentOrg?.role || user?.systemRole || 'FACULTY').toUpperCase();
+  const isStudent = userRole === 'STUDENT';
+  const isParent = userRole === 'PARENT';
+  const isStudentOrParent = isStudent || isParent;
 
   const menuItems = [
     {
@@ -166,7 +169,7 @@ export default function AppDrawer() {
     {
       id: 'analytics',
       label: 'Academic Analytics',
-      subtitle: userRole === 'STUDENT' || userRole === 'PARENT' ? 'Personal progress & grades' : 'Campus trends & pipeline',
+      subtitle: isStudentOrParent ? 'Personal progress & grades' : 'Campus trends & pipeline',
       icon: TrendingUp,
       onPress: () => handleNavigate('Analytics'),
     },
@@ -177,13 +180,17 @@ export default function AppDrawer() {
       icon: Video,
       onPress: () => handleNavigate('Meetings'),
     },
-    {
-      id: 'portal',
-      label: userRole === 'PARENT' ? 'Parent Portal' : 'Student Portal',
-      subtitle: 'Report card, mentors & records',
-      icon: GraduationCap,
-      onPress: () => handleNavigate('Portal'),
-    },
+    ...(isStudentOrParent
+      ? [
+          {
+            id: 'portal',
+            label: isParent ? 'Parent Portal' : 'Student Portal',
+            subtitle: isParent ? 'Child progress, mentors & report card' : 'Report card, mentors & records',
+            icon: GraduationCap,
+            onPress: () => handleNavigate('Portal'),
+          },
+        ]
+      : []),
     {
       id: 'ai',
       label: 'Convee AI Assistant',
