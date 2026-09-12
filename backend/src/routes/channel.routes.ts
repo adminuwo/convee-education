@@ -289,8 +289,19 @@ router.post('/', async (req, res, next) => {
     const { orgId, name, description, type, memberIds } = req.body;
     const membership = await prisma.membership.findFirst({ where: { userId: req.user!.id, orgId, isActive: true } });
     if (!membership) return res.status(403).json({ error: 'Not a member' });
+
+    const roleUpper = (membership.role || '').toUpperCase();
+    const isRestrictedRole = ['STUDENT', 'PARENT', 'ALUMNI'].includes(roleUpper);
+    const requestedType = type || 'PUBLIC';
+
+    if (isRestrictedRole && !['PRIVATE', 'DIRECT'].includes(requestedType)) {
+      return res.status(403).json({
+        error: 'Access denied: Students, parents, and alumni can only create private study groups or direct messages.',
+      });
+    }
+
     const channel = await prisma.channel.create({
-      data: { orgId, name, description, type: type || 'PUBLIC', createdById: req.user!.id },
+      data: { orgId, name, description, type: requestedType, createdById: req.user!.id },
     });
     const membersToAdd = new Set<string>([req.user!.id, ...(memberIds || [])]);
     for (const uid of Array.from(membersToAdd)) {
@@ -506,6 +517,10 @@ router.delete('/:channelId', async (req, res, next) => {
 
     if (!isOrgAdmin && !isCreator) {
       return res.status(403).json({ error: 'Only Organization Owners/Admins can delete channels' });
+    }
+
+    if (['STUDENT', 'PARENT', 'ALUMNI'].includes(m.role) && ['PUBLIC', 'ANNOUNCEMENT', 'DEPARTMENT', 'TEAM'].includes(channel.type)) {
+      return res.status(403).json({ error: 'Access denied: You do not have permission to delete institutional channels.' });
     }
 
     if (channel.type === 'TEAM' || channel.type === 'PROJECT') {

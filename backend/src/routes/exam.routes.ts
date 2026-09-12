@@ -388,6 +388,13 @@ router.post('/:id/class/:teamId/submit-grades', async (req, res, next) => {
     });
     if (!exam) return res.status(404).json({ error: 'Exam not found' });
 
+    const m = await prisma.membership.findFirst({
+      where: { userId: req.user!.id, orgId: exam.orgId, isActive: true },
+    });
+    if (!m || !['OWNER', 'ADMIN', 'DIRECTOR', 'PRINCIPAL', 'DEAN', 'HOD', 'TEACHER'].includes(m.role)) {
+      return res.status(403).json({ error: 'Access denied: Students and parents cannot submit or modify exam grades.' });
+    }
+
     const subjectMap = new Map(exam.subjects.map((s) => [s.id, s]));
 
     const savedList: any[] = [];

@@ -238,8 +238,23 @@ router.post('/:taskId/submit', async (req, res, next) => {
     const { taskId } = req.params;
     const { content, attachmentUrl } = req.body;
 
-    const task = await prisma.task.findUnique({ where: { id: taskId } });
+    const task = await prisma.task.findUnique({
+      where: { id: taskId },
+      include: { assignees: true },
+    });
     if (!task) return res.status(404).json({ error: 'Homework task not found' });
+
+    const m = await prisma.membership.findFirst({
+      where: { userId: req.user!.id, orgId: task.orgId, isActive: true },
+    });
+    if (!m && req.user!.systemRole !== 'SUPER_ADMIN') {
+      return res.status(403).json({ error: 'Not a member of this organization' });
+    }
+
+    const isAssigned = task.assignees.some((a) => a.userId === req.user!.id);
+    if (!isAssigned && req.user!.systemRole !== 'SUPER_ADMIN') {
+      return res.status(403).json({ error: 'Access denied: You are not assigned to this homework task.' });
+    }
 
     const submission = await prisma.homeworkSubmission.upsert({
       where: {

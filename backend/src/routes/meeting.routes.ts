@@ -53,8 +53,8 @@ router.post('/', async (req, res, next) => {
     const m = await prisma.membership.findFirst({ where: { userId: req.user!.id, orgId, isActive: true } });
     if (!m) return res.status(403).json({ error: 'Not a member' });
 
-    if (m.role === 'STUDENT') {
-      return res.status(403).json({ error: 'Students are not authorized to create meetings. Only faculty and administration can schedule meetings.' });
+    if (['STUDENT', 'PARENT', 'ALUMNI'].includes(m.role)) {
+      return res.status(403).json({ error: 'Students and parents are not authorized to create meetings. Only faculty and administration can schedule meetings.' });
     }
 
     const start = new Date(startTime);
@@ -158,17 +158,20 @@ router.patch('/:id', async (req, res, next) => {
     const m = await prisma.membership.findFirst({ where: { userId: req.user!.id, orgId: existing.orgId, isActive: true } });
     if (!m) return res.status(403).json({ error: 'Not a member' });
 
-    const isOrganizer = existing.createdById === req.user!.id || ['OWNER', 'ADMIN'].includes(m.role);
+    const isOrganizer =
+      existing.createdById === req.user!.id ||
+      ['OWNER', 'ADMIN', 'DIRECTOR', 'PRINCIPAL', 'DEAN', 'HOD'].includes(m.role) ||
+      req.user?.systemRole === 'SUPER_ADMIN';
+
+    if (!isOrganizer) {
+      return res.status(403).json({ error: 'Only the meeting organizer or administration can edit this meeting.' });
+    }
 
     const { title, description, notes, status, agenda, startTime, endTime } = req.body;
 
-    // Reschedule or Cancel attempt requires organizer permissions
+    // Reschedule or Cancel attempt
     const isRescheduling = startTime !== undefined || endTime !== undefined;
     const isCancelling = status === 'CANCELLED';
-
-    if ((isRescheduling || isCancelling) && !isOrganizer) {
-      return res.status(403).json({ error: 'Only the meeting organizer or an admin can reschedule or cancel this meeting.' });
-    }
 
     const updated = await prisma.meeting.update({
       where: { id: req.params.id },

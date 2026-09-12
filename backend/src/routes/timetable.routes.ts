@@ -42,6 +42,17 @@ async function getOrgId(req: Request): Promise<string | null> {
   return null;
 }
 
+async function getOrgMembership(req: Request, orgId: string) {
+  if (!req.user) return null;
+  return await prisma.membership.findFirst({
+    where: {
+      userId: req.user.id,
+      orgId,
+      isActive: true,
+    },
+  });
+}
+
 // Auto-seed sample timetable data if empty or using legacy dummy names
 async function ensureSampleTimetableData(orgId: string) {
   try {
@@ -347,6 +358,16 @@ router.post('/absences', async (req: Request, res: Response) => {
     const orgId = await getOrgId(req);
     if (!orgId) return res.status(400).json({ error: 'Organization ID required' });
 
+    const m = await getOrgMembership(req, orgId);
+    const roleUpper = (m?.role || '').toUpperCase();
+    const isAllowed =
+      ['OWNER', 'ADMIN', 'DIRECTOR', 'PRINCIPAL', 'DEAN', 'HOD', 'TEACHER'].includes(roleUpper) ||
+      req.user?.systemRole === 'SUPER_ADMIN';
+
+    if (!isAllowed) {
+      return res.status(403).json({ error: 'Access denied: Students and parents cannot report teacher absences.' });
+    }
+
     const { teacherName, teacherUserId, departmentId, reason, date } = req.body;
 
     if (!teacherName) return res.status(400).json({ error: 'teacherName is required' });
@@ -529,6 +550,16 @@ router.post('/proxy/assign', async (req: Request, res: Response) => {
     const orgId = await getOrgId(req);
     if (!orgId) return res.status(400).json({ error: 'Organization ID required' });
 
+    const m = await getOrgMembership(req, orgId);
+    const roleUpper = (m?.role || '').toUpperCase();
+    const isAllowed =
+      ['OWNER', 'ADMIN', 'DIRECTOR', 'PRINCIPAL', 'DEAN', 'HOD'].includes(roleUpper) ||
+      req.user?.systemRole === 'SUPER_ADMIN';
+
+    if (!isAllowed) {
+      return res.status(403).json({ error: 'Access denied: Only administrators, Deans, and HODs can assign substitute teachers.' });
+    }
+
     const {
       slotId,
       substituteTeacherId,
@@ -582,6 +613,16 @@ router.post('/slots', async (req: Request, res: Response) => {
   try {
     const orgId = await getOrgId(req);
     if (!orgId) return res.status(400).json({ error: 'Organization ID required' });
+
+    const m = await getOrgMembership(req, orgId);
+    const roleUpper = (m?.role || '').toUpperCase();
+    const isAllowed =
+      ['OWNER', 'ADMIN', 'DIRECTOR', 'PRINCIPAL', 'DEAN', 'HOD'].includes(roleUpper) ||
+      req.user?.systemRole === 'SUPER_ADMIN';
+
+    if (!isAllowed) {
+      return res.status(403).json({ error: 'Access denied: Only administrators and HODs can create or edit timetable slots.' });
+    }
 
     const {
       id,
@@ -708,6 +749,19 @@ router.post('/slots', async (req: Request, res: Response) => {
 router.delete('/slots/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    const slot = await db.timetableSlot.findUnique({ where: { id } });
+    if (!slot) return res.status(404).json({ error: 'Timetable slot not found' });
+
+    const m = await getOrgMembership(req, slot.orgId);
+    const roleUpper = (m?.role || '').toUpperCase();
+    const isAllowed =
+      ['OWNER', 'ADMIN', 'DIRECTOR', 'PRINCIPAL', 'DEAN', 'HOD'].includes(roleUpper) ||
+      req.user?.systemRole === 'SUPER_ADMIN';
+
+    if (!isAllowed) {
+      return res.status(403).json({ error: 'Access denied: Only administrators and HODs can delete timetable slots.' });
+    }
+
     await db.timetableSlot.delete({ where: { id } });
     res.json({ message: 'Timetable slot deleted successfully' });
   } catch (err: any) {

@@ -86,8 +86,36 @@ router.post('/', validate(CreateTaskSchema), async (req, res, next) => {
     const m = await prisma.membership.findFirst({ where: { userId: req.user!.id, orgId, isActive: true } });
     if (!m) return res.status(403).json({ error: 'Not a member' });
 
+    const roleUpper = (m.role || '').toUpperCase();
+    const titleUpper = (m.title || '').toUpperCase();
+    const isLeadershipOrFaculty =
+      ['OWNER', 'ADMIN', 'DIRECTOR', 'PRINCIPAL', 'DEAN', 'HOD', 'TEACHER'].some(
+        (r) => roleUpper.includes(r) || titleUpper.includes(r)
+      ) || req.user?.systemRole === 'SUPER_ADMIN';
+
+    // Safeguard 1: Only faculty and administration can assign homework
+    if (isHomework && !isLeadershipOrFaculty) {
+      return res.status(403).json({
+        error: 'Access denied: Students and parents cannot assign homework. Only faculty and administration can create homework assignments.',
+      });
+    }
+
     let finalAssigneeIds: string[] = assigneeIds || [];
     let targetClassNames: string[] = [];
+
+    // Safeguard 2: Students and parents cannot assign tasks to class sections or other users
+    if (!isLeadershipOrFaculty) {
+      if (classTeamIds && classTeamIds.length > 0) {
+        return res.status(403).json({ error: 'Students and parents cannot assign tasks to class sections.' });
+      }
+      if (assigneeIds && assigneeIds.length > 0) {
+        const otherAssignees = assigneeIds.filter((id: string) => id !== req.user!.id);
+        if (otherAssignees.length > 0) {
+          return res.status(403).json({ error: 'Students and parents can only create personal tasks for themselves.' });
+        }
+      }
+      finalAssigneeIds = [req.user!.id];
+    }
 
     // If marked as homework and classTeamIds provided, fetch all student members of those classes
     if (isHomework && classTeamIds && classTeamIds.length > 0) {
@@ -213,10 +241,39 @@ router.get('/:taskId', async (req, res, next) => {
 
 router.patch('/:taskId', async (req, res, next) => {
   try {
-    const task = await prisma.task.findUnique({ where: { id: req.params.taskId } });
+    const task = await prisma.task.findUnique({
+      where: { id: req.params.taskId },
+      include: { assignees: true },
+    });
     if (!task) return res.status(404).json({ error: 'Not found' });
     const m = await prisma.membership.findFirst({ where: { userId: req.user!.id, orgId: task.orgId, isActive: true } });
     if (!m) return res.status(403).json({ error: 'Forbidden' });
+
+    const roleUpper = (m.role || '').toUpperCase();
+    const titleUpper = (m.title || '').toUpperCase();
+    const isLeadershipOrFaculty =
+      ['OWNER', 'ADMIN', 'DIRECTOR', 'PRINCIPAL', 'DEAN', 'HOD', 'TEACHER'].some(
+        (r) => roleUpper.includes(r) || titleUpper.includes(r)
+      ) || req.user?.systemRole === 'SUPER_ADMIN';
+
+    const isCreator = task.createdById === req.user!.id;
+    const isAssignee = task.assignees.some((a) => a.userId === req.user!.id);
+
+    // Safeguard: If user is not the task creator and not faculty/leadership
+    if (!isCreator && !isLeadershipOrFaculty) {
+      const forbiddenFields = ['title', 'description', 'dueDate', 'priority', 'projectId', 'assigneeIds'];
+      const hasForbiddenField = forbiddenFields.some((f) => req.body[f] !== undefined);
+      if (hasForbiddenField) {
+        return res.status(403).json({ error: 'Access denied: Only the task creator or faculty can edit task configuration.' });
+      }
+      const isHomework = !!(task.metadata as any)?.isHomework;
+      if (isHomework && req.body.status) {
+        return res.status(403).json({ error: 'Homework status cannot be edited manually. Submit your assignment solution via the submission portal.' });
+      }
+      if (!isAssignee) {
+        return res.status(403).json({ error: 'Access denied: You are not assigned to this task.' });
+      }
+    }
     if (task.status === 'CANCELLED' && req.body.status && req.body.status !== 'CANCELLED') {
       return res.status(400).json({ error: 'Cancelled tasks are locked and cannot be moved.' });
     }
@@ -380,6 +437,20 @@ router.post('/:taskId/assignees/:userId/respond', async (req, res, next) => {
 
 router.post('/:taskId/approve-submission', async (req, res, next) => {
   try {
+    const task = await prisma.task.findUnique({ where: { id: req.params.taskId } });
+    if (!task) return res.status(404).json({ error: 'Task not found' });
+    const m = await prisma.membership.findFirst({ where: { userId: req.user!.id, orgId: task.orgId, isActive: true } });
+    if (!m) return res.status(403).json({ error: 'Forbidden' });
+
+    const roleUpper = (m.role || '').toUpperCase();
+    const isLeadershipOrFaculty =
+      ['OWNER', 'ADMIN', 'DIRECTOR', 'PRINCIPAL', 'DEAN', 'HOD', 'TEACHER'].includes(roleUpper) ||
+      req.user?.systemRole === 'SUPER_ADMIN';
+
+    if (task.createdById !== req.user!.id && !isLeadershipOrFaculty) {
+      return res.status(403).json({ error: 'Access denied: Only the task creator or faculty can approve submissions.' });
+    }
+
     const { assigneeUserId } = req.body;
     const targetUserId = assigneeUserId || req.user!.id;
 
@@ -412,6 +483,20 @@ router.post('/:taskId/approve-submission', async (req, res, next) => {
 
 router.post('/:taskId/request-changes', async (req, res, next) => {
   try {
+    const task = await prisma.task.findUnique({ where: { id: req.params.taskId } });
+    if (!task) return res.status(404).json({ error: 'Task not found' });
+    const m = await prisma.membership.findFirst({ where: { userId: req.user!.id, orgId: task.orgId, isActive: true } });
+    if (!m) return res.status(403).json({ error: 'Forbidden' });
+
+    const roleUpper = (m.role || '').toUpperCase();
+    const isLeadershipOrFaculty =
+      ['OWNER', 'ADMIN', 'DIRECTOR', 'PRINCIPAL', 'DEAN', 'HOD', 'TEACHER'].includes(roleUpper) ||
+      req.user?.systemRole === 'SUPER_ADMIN';
+
+    if (task.createdById !== req.user!.id && !isLeadershipOrFaculty) {
+      return res.status(403).json({ error: 'Access denied: Only the task creator or faculty can request changes.' });
+    }
+
     const { assigneeUserId, feedback } = req.body;
     const targetUserId = assigneeUserId || req.user!.id;
     await prisma.taskAssignee.updateMany({
@@ -438,9 +523,21 @@ router.post('/:taskId/request-changes', async (req, res, next) => {
 
 router.post('/:taskId/approve-extension', async (req, res, next) => {
   try {
-    const { assigneeUserId, newDueDate } = req.body;
     const task = await prisma.task.findUnique({ where: { id: req.params.taskId } });
     if (!task) return res.status(404).json({ error: 'Task not found' });
+    const m = await prisma.membership.findFirst({ where: { userId: req.user!.id, orgId: task.orgId, isActive: true } });
+    if (!m) return res.status(403).json({ error: 'Forbidden' });
+
+    const roleUpper = (m.role || '').toUpperCase();
+    const isLeadershipOrFaculty =
+      ['OWNER', 'ADMIN', 'DIRECTOR', 'PRINCIPAL', 'DEAN', 'HOD', 'TEACHER'].includes(roleUpper) ||
+      req.user?.systemRole === 'SUPER_ADMIN';
+
+    if (task.createdById !== req.user!.id && !isLeadershipOrFaculty) {
+      return res.status(403).json({ error: 'Access denied: Only the task creator or faculty can approve extensions.' });
+    }
+
+    const { assigneeUserId, newDueDate } = req.body;
 
     let finalDueDate = task.dueDate;
     if (newDueDate) {
@@ -480,6 +577,20 @@ router.post('/:taskId/approve-extension', async (req, res, next) => {
 
 router.post('/:taskId/reject-extension', async (req, res, next) => {
   try {
+    const task = await prisma.task.findUnique({ where: { id: req.params.taskId } });
+    if (!task) return res.status(404).json({ error: 'Task not found' });
+    const m = await prisma.membership.findFirst({ where: { userId: req.user!.id, orgId: task.orgId, isActive: true } });
+    if (!m) return res.status(403).json({ error: 'Forbidden' });
+
+    const roleUpper = (m.role || '').toUpperCase();
+    const isLeadershipOrFaculty =
+      ['OWNER', 'ADMIN', 'DIRECTOR', 'PRINCIPAL', 'DEAN', 'HOD', 'TEACHER'].includes(roleUpper) ||
+      req.user?.systemRole === 'SUPER_ADMIN';
+
+    if (task.createdById !== req.user!.id && !isLeadershipOrFaculty) {
+      return res.status(403).json({ error: 'Access denied: Only the task creator or faculty can reject extensions.' });
+    }
+
     const { assigneeUserId, note } = req.body;
     await prisma.taskAssignee.updateMany({
       where: { taskId: req.params.taskId, userId: assigneeUserId },
@@ -512,6 +623,18 @@ router.delete('/:taskId', async (req, res, next) => {
   try {
     const task = await prisma.task.findUnique({ where: { id: req.params.taskId } });
     if (!task) return res.status(404).json({ error: 'Not found' });
+    const m = await prisma.membership.findFirst({ where: { userId: req.user!.id, orgId: task.orgId, isActive: true } });
+    if (!m) return res.status(403).json({ error: 'Forbidden' });
+
+    const roleUpper = (m.role || '').toUpperCase();
+    const isLeadershipOrFaculty =
+      ['OWNER', 'ADMIN', 'DIRECTOR', 'PRINCIPAL', 'DEAN', 'HOD', 'TEACHER'].includes(roleUpper) ||
+      req.user?.systemRole === 'SUPER_ADMIN';
+
+    if (task.createdById !== req.user!.id && !isLeadershipOrFaculty) {
+      return res.status(403).json({ error: 'Access denied: You do not have permission to delete this task.' });
+    }
+
     await prisma.task.update({ where: { id: task.id }, data: { deletedAt: new Date() } });
     res.json({ ok: true });
   } catch (e) { next(e); }

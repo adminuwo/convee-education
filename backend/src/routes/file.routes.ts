@@ -38,8 +38,8 @@ router.post('/upload', upload.single('file'), async (req, res, next) => {
       const membership = await prisma.membership.findFirst({
         where: { userId: req.user!.id, orgId, isActive: true },
       });
-      if (membership?.role === 'STUDENT') {
-        return res.status(403).json({ error: 'Students are not permitted to upload files. Only teachers and faculty can upload files.' });
+      if (['STUDENT', 'PARENT', 'ALUMNI'].includes(membership?.role || '')) {
+        return res.status(403).json({ error: 'Students and parents are not permitted to upload institutional files. Only teachers and faculty can upload files.' });
       }
     }
 

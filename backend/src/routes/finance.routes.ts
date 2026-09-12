@@ -86,6 +86,42 @@ async function verifyFinanceStaff(req: Request, orgId: string): Promise<boolean>
   return Boolean(membership);
 }
 
+async function requireFinanceStaff(req: Request, res: Response, targetOrgId?: string): Promise<string | null> {
+  const orgId = targetOrgId || (await getOrgId(req));
+  if (!orgId) {
+    res.status(400).json({ error: 'Organization ID required' });
+    return null;
+  }
+  const isAuthorized = await verifyFinanceStaff(req, orgId);
+  if (!isAuthorized) {
+    res.status(403).json({ error: 'Access denied: Restricted to institutional finance administrators.' });
+    return null;
+  }
+  return orgId;
+}
+
+// RBAC Middleware: Protect all institutional finance operations
+router.use(async (req, res, next) => {
+  // Allow non-privileged personal access endpoints
+  if (req.method === 'GET' && (req.path === '/fees/parent' || req.path === '/my-payslips')) {
+    return next();
+  }
+
+  try {
+    const orgId = await getOrgId(req);
+    if (!orgId) {
+      return res.status(400).json({ error: 'Organization ID required' });
+    }
+    const isAuthorized = await verifyFinanceStaff(req, orgId);
+    if (!isAuthorized) {
+      return res.status(403).json({ error: 'Access denied: Restricted to institutional finance administrators.' });
+    }
+    next();
+  } catch (err) {
+    next(err);
+  }
+});
+
 const syncLockMap = new Map<string, Promise<void>>();
 
 async function ensureSampleFinanceData(orgId: string) {
@@ -1014,6 +1050,9 @@ router.put('/fees/:id', async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Fee record not found' });
     }
 
+    const orgId = await requireFinanceStaff(req, res, existing.orgId);
+    if (!orgId) return;
+
     const total = totalAmount !== undefined ? parseFloat(totalAmount) : existing.totalAmount;
     const paid = paidAmount !== undefined ? parseFloat(paidAmount) : existing.paidAmount;
     const pending = Math.max(0, total - paid);
@@ -1100,15 +1139,16 @@ router.put('/fees/:id', async (req: Request, res: Response) => {
  */
 router.delete('/fees/:id', async (req: Request, res: Response) => {
   try {
-    const orgId = await getOrgId(req);
     const { id } = req.params;
     const existing = await db.studentFeeLedger.findUnique({ where: { id: String(id) } });
     if (!existing) {
       return res.status(404).json({ error: 'Fee record not found' });
     }
 
-    const effectiveOrgId = orgId || existing.orgId;
-    await deleteFeeLive(existing, effectiveOrgId);
+    const orgId = await requireFinanceStaff(req, res, existing.orgId);
+    if (!orgId) return;
+
+    await deleteFeeLive(existing, orgId);
     await db.studentFeeLedger.delete({ where: { id: String(id) } });
 
     res.json({ success: true, message: 'Fee record deleted successfully and purged from Tally Prime' });
@@ -1348,15 +1388,16 @@ router.post('/payroll', async (req: Request, res: Response) => {
  */
 router.delete('/payroll/:id', async (req: Request, res: Response) => {
   try {
-    const orgId = await getOrgId(req);
     const { id } = req.params;
     const existing = await prisma.payrollRecord.findUnique({ where: { id: String(id) } });
     if (!existing) {
       return res.status(404).json({ error: 'Payroll record not found' });
     }
 
-    const effectiveOrgId = orgId || existing.orgId;
-    await deletePayrollLive(existing, effectiveOrgId);
+    const orgId = await requireFinanceStaff(req, res, existing.orgId);
+    if (!orgId) return;
+
+    await deletePayrollLive(existing, orgId);
     await prisma.payrollRecord.delete({ where: { id: String(id) } });
 
     res.json({ success: true, message: 'Payroll record deleted successfully and purged from Tally Prime' });
@@ -1566,7 +1607,13 @@ router.post('/bank-accounts', async (req: Request, res: Response) => {
 router.put('/bank-accounts/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const orgId = await getOrgId(req);
+    const existing = await db.bankAccount.findUnique({ where: { id: String(id) } });
+    if (!existing) {
+      return res.status(404).json({ error: 'Bank account not found' });
+    }
+
+    const orgId = await requireFinanceStaff(req, res, existing.orgId);
+    if (!orgId) return;
 
     const {
       accountName,
@@ -1603,7 +1650,7 @@ router.put('/bank-accounts/:id', async (req: Request, res: Response) => {
     });
 
     // Update master in Tally Prime
-    const liveSynced = await syncBankAccountLive(updated, orgId || updated.orgId);
+    const liveSynced = await syncBankAccountLive(updated, orgId);
 
     res.json({ bankAccount: updated, tallyLiveSynced: liveSynced });
   } catch (error: any) {
@@ -1618,11 +1665,15 @@ router.put('/bank-accounts/:id', async (req: Request, res: Response) => {
 router.delete('/bank-accounts/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const orgId = await getOrgId(req);
     const existing = await db.bankAccount.findUnique({ where: { id: String(id) } });
-    if (existing) {
-      await deleteBankAccountLive(existing, orgId || existing.orgId);
+    if (!existing) {
+      return res.status(404).json({ error: 'Bank account not found' });
     }
+
+    const orgId = await requireFinanceStaff(req, res, existing.orgId);
+    if (!orgId) return;
+
+    await deleteBankAccountLive(existing, orgId);
     await db.bankAccount.update({
       where: { id: String(id) },
       data: { isActive: false },

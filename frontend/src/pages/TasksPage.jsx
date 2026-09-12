@@ -98,6 +98,10 @@ function KanbanColumn({ status, tasks, onOpen }) {
 
 export default function TasksPage() {
   const { currentOrg, user } = useAuth();
+  const userRole = (currentOrg?.role || user?.role || '').toUpperCase();
+  const isLearnerOrParent = ['STUDENT', 'PARENT', 'ALUMNI'].includes(userRole);
+  const canCreateTask = !isLearnerOrParent;
+
   const [searchParams, setSearchParams] = useSearchParams();
   const { taskId: routeTaskId } = useParams();
   const targetTaskId = routeTaskId || searchParams.get('taskId');
@@ -373,7 +377,11 @@ export default function TasksPage() {
               {members.map((m) => <SelectItem key={m.id} value={m.id}>{m.fullName}</SelectItem>)}
             </SelectContent>
           </Select>
-          <Button onClick={() => setOpenCreate(true)} data-testid="new-task-btn"><Plus className="h-4 w-4 mr-1" /> New task</Button>
+          {canCreateTask && (
+            <Button onClick={() => setOpenCreate(true)} data-testid="new-task-btn">
+              <Plus className="h-4 w-4 mr-1" /> New task
+            </Button>
+          )}
         </div>
       </div>
 
@@ -510,7 +518,7 @@ export default function TasksPage() {
 }
 
 function TaskDetail({ task, onClose, onSaved }) {
-  const { user } = useAuth();
+  const { user, currentOrg } = useAuth();
   const [detail, setDetail] = useState(null);
   const [comment, setComment] = useState('');
   const [status, setStatus] = useState('TODO');
@@ -613,7 +621,10 @@ function TaskDetail({ task, onClose, onSaved }) {
   const isLocked = isTaskCancelled || isTaskCompleted;
   const extensionRequests = isLocked ? [] : (detail?.assignees?.filter((a) => a.status === 'EXTENSION_REQUESTED') || []);
   const submittedAssignees = isLocked ? [] : (detail?.assignees?.filter((a) => a.status === 'SUBMITTED') || []);
-  const canManageExtension = detail?.createdById === user?.id || user?.role === 'OWNER' || user?.role === 'ADMIN';
+  const userRole = (currentOrg?.role || user?.role || '').toUpperCase();
+  const isFacultyOrAdmin = ['OWNER', 'ADMIN', 'DIRECTOR', 'PRINCIPAL', 'DEAN', 'HOD', 'TEACHER'].includes(userRole);
+  const isHomework = !!(detail?.metadata?.isHomework || task?.metadata?.isHomework);
+  const canManageExtension = (detail?.createdById === user?.id && !isHomework) || isFacultyOrAdmin;
 
   return (
     <>

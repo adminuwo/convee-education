@@ -76,6 +76,40 @@ router.get('/team/:teamId', async (req, res, next) => {
     const { teamId } = req.params;
     const { date } = req.query;
 
+    const team = await prisma.team.findUnique({
+      where: { id: teamId },
+      include: { department: true },
+    });
+    if (!team) return res.status(404).json({ error: 'Section not found' });
+
+    const m = await prisma.membership.findFirst({
+      where: { userId: req.user!.id, orgId: team.department.orgId, isActive: true },
+    });
+    if (!m && req.user!.systemRole !== 'SUPER_ADMIN') {
+      return res.status(403).json({ error: 'Not a member of this organization' });
+    }
+
+    const roleUpper = (m?.role || '').toUpperCase();
+    const isLeadershipOrFaculty =
+      ['OWNER', 'ADMIN', 'DIRECTOR', 'PRINCIPAL', 'DEAN', 'HOD', 'TEACHER'].includes(roleUpper) ||
+      req.user?.systemRole === 'SUPER_ADMIN';
+
+    let studentFilter: any = {};
+    if (!isLeadershipOrFaculty) {
+      if (roleUpper === 'STUDENT') {
+        studentFilter = { studentId: req.user!.id };
+      } else if (roleUpper === 'PARENT') {
+        const children = await prisma.parentStudentLink.findMany({
+          where: { parentUserId: req.user!.id },
+          select: { studentUserId: true },
+        });
+        const childIds = children.map((c) => c.studentUserId);
+        studentFilter = { studentId: { in: childIds } };
+      } else {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+    }
+
     const targetDate = date ? new Date(date as string) : new Date();
     targetDate.setHours(0, 0, 0, 0);
 
@@ -83,6 +117,7 @@ router.get('/team/:teamId', async (req, res, next) => {
       where: {
         teamId,
         date: targetDate,
+        ...studentFilter,
       },
     });
 
@@ -167,6 +202,32 @@ router.get('/stats', async (req, res, next) => {
     const totalRecords = attendanceRecords.length;
     const totalPresent = attendanceRecords.filter(r => r.status === 'PRESENT' || r.status === 'LATE').length;
     const overallCampusPercentage = totalRecords > 0 ? Math.round((totalPresent / totalRecords) * 100) : 95;
+
+    const callerRoleUpper = (membership.role || '').toUpperCase();
+    if (callerRoleUpper === 'STUDENT') {
+      const myStats = studentStats.filter((s) => s.studentId === req.user!.id);
+      return res.json({
+        overallCampusPercentage,
+        totalStudents: 1,
+        lowAttendanceCount: myStats.filter((s) => s.isLowAttendance).length,
+        lowAttendanceAlerts: myStats.filter((s) => s.isLowAttendance),
+        studentStats: myStats,
+      });
+    } else if (callerRoleUpper === 'PARENT') {
+      const children = await prisma.parentStudentLink.findMany({
+        where: { parentUserId: req.user!.id },
+        select: { studentUserId: true },
+      });
+      const childIds = new Set(children.map((c) => c.studentUserId));
+      const childStats = studentStats.filter((s) => childIds.has(s.studentId));
+      return res.json({
+        overallCampusPercentage,
+        totalStudents: childStats.length,
+        lowAttendanceCount: childStats.filter((s) => s.isLowAttendance).length,
+        lowAttendanceAlerts: childStats.filter((s) => s.isLowAttendance),
+        studentStats: childStats,
+      });
+    }
 
     res.json({
       overallCampusPercentage,
@@ -381,7 +442,7 @@ router.get('/team/:teamId/analytics', async (req, res, next) => {
     const isLeadership = ['ADMIN', 'DIRECTOR', 'PRINCIPAL', 'OWNER'].includes(roleUpper) || req.user?.systemRole === 'SUPER_ADMIN';
     const isHOD = (userMembership.departmentId === team.departmentId && ['HOD', 'DEAN'].includes(roleUpper)) || team.department?.headId === req.user!.id;
     const isClassTeacher = team.managerId === req.user!.id;
-    const isAssignedTeacher = userMembership.teamId === teamId;
+    const isAssignedTeacher = roleUpper === 'TEACHER' && userMembership.teamId === teamId;
 
     if (!isLeadership && !isHOD && !isClassTeacher && !isAssignedTeacher) {
       return res.status(403).json({ error: 'Access restricted to Class Teachers and Department Leadership' });
