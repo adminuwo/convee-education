@@ -110,8 +110,7 @@ export default function HomeScreen({ navigation }: any) {
           </TouchableOpacity>
         </View>
         <Text style={[styles.briefingContent, { color: colors.textSecondary }]}>
-          {briefing ||
-            `${currentOrg?.name || 'Academy'} operations running smoothly. Active assignments and real-time attendance tracking are in sync.`}
+          {briefing || (briefingLoading ? 'Generating AI daily briefing...' : 'No campus briefing generated yet today. Tap refresh to generate.')}
         </Text>
       </View>
 
@@ -126,7 +125,9 @@ export default function HomeScreen({ navigation }: any) {
             <CalendarCheck size={20} color={colors.emerald} />
           </View>
           <Text style={[styles.kpiValue, { color: colors.text }]}>
-            {attendanceStats?.overallCampusPercentage ?? 98}%
+            {attendanceStats?.overallCampusPercentage !== undefined
+              ? `${attendanceStats.overallCampusPercentage}%`
+              : '—'}
           </Text>
           <Text style={[styles.kpiLabel, { color: colors.textSecondary }]}>Attendance Rate</Text>
         </TouchableOpacity>
@@ -140,7 +141,7 @@ export default function HomeScreen({ navigation }: any) {
             <BookOpen size={20} color={colors.primary} />
           </View>
           <Text style={[styles.kpiValue, { color: colors.text }]}>
-            {dashboardData?.myTasks?.length ?? 4}
+            {dashboardData?.myTasks?.length ?? 0}
           </Text>
           <Text style={[styles.kpiLabel, { color: colors.textSecondary }]}>Active Tasks</Text>
         </TouchableOpacity>

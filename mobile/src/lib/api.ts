@@ -190,4 +190,12 @@ export const analyticsApi = {
   getManagerAnalytics: (orgId: string) => api.get('/dashboard/manager', { params: { orgId } }).then((r) => r.data),
 };
 
+// 10. Notifications API
+export const notifApi = {
+  list: (unreadOnly?: boolean) =>
+    api.get('/notifications', { params: unreadOnly ? { unread: 'true' } : {} }).then((r) => r.data),
+  markRead: (id: string) => api.post(`/notifications/${id}/read`).then((r) => r.data),
+  markAllRead: () => api.post('/notifications/read-all').then((r) => r.data),
+};
+
 export default api;

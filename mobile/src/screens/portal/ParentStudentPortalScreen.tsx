@@ -255,34 +255,36 @@ export default function ParentStudentPortalScreen({ navigation }: any) {
               <View style={styles.attIconRow}>
                 <CalendarCheck size={20} color={colors.emerald} />
                 <Text style={[styles.attScore, { color: colors.text }]}>
-                  {report.attendance?.percentage ?? 100}%
+                  {report.attendance?.percentage !== undefined ? `${report.attendance.percentage}%` : '—'}
                 </Text>
               </View>
-              <View
-                style={[
-                  styles.statusBadge,
-                  {
-                    backgroundColor:
-                      (report.attendance?.percentage ?? 100) >= 75
-                        ? colors.emeraldLight
-                        : 'rgba(239, 68, 68, 0.15)',
-                  },
-                ]}
-              >
-                <Text
+              {report.attendance?.percentage !== undefined ? (
+                <View
                   style={[
-                    styles.statusBadgeText,
+                    styles.statusBadge,
                     {
-                      color:
-                        (report.attendance?.percentage ?? 100) >= 75
-                          ? colors.emerald
-                          : colors.destructive,
+                      backgroundColor:
+                        report.attendance.percentage >= 75
+                          ? colors.emeraldLight
+                          : 'rgba(239, 68, 68, 0.15)',
                     },
                   ]}
                 >
-                  {(report.attendance?.percentage ?? 100) >= 75 ? 'REGULAR' : 'ATTENDANCE ALERT'}
-                </Text>
-              </View>
+                  <Text
+                    style={[
+                      styles.statusBadgeText,
+                      {
+                        color:
+                          report.attendance.percentage >= 75
+                            ? colors.emerald
+                            : colors.destructive,
+                      },
+                    ]}
+                  >
+                    {report.attendance.percentage >= 75 ? 'REGULAR' : 'ATTENDANCE ALERT'}
+                  </Text>
+                </View>
+              ) : null}
             </View>
 
             <Text style={[styles.attDetails, { color: colors.textSecondary }]}>

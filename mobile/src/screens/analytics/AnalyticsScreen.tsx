@@ -118,7 +118,9 @@ export default function AnalyticsScreen({ navigation }: any) {
                 <CalendarCheck size={18} color={colors.emerald} />
               </View>
               <Text style={[styles.kpiVal, { color: colors.text }]}>
-                {studentReport?.attendance?.percentage ?? 100}%
+                {studentReport?.attendance?.percentage !== undefined
+                  ? `${studentReport.attendance.percentage}%`
+                  : '—'}
               </Text>
               <Text style={[styles.kpiSub, { color: colors.textSecondary }]}>30-Day Attendance</Text>
               <Text style={[styles.kpiFoot, { color: colors.emerald }]}>
@@ -258,7 +260,9 @@ export default function AnalyticsScreen({ navigation }: any) {
             <View style={[styles.bannerStatsRow, { borderTopColor: colors.border }]}>
               <View style={styles.bannerStatItem}>
                 <Text style={[styles.statVal, { color: colors.emerald }]}>
-                  {attendanceStats?.overallCampusPercentage ?? 96}%
+                  {attendanceStats?.overallCampusPercentage !== undefined
+                    ? `${attendanceStats.overallCampusPercentage}%`
+                    : '—'}
                 </Text>
                 <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Campus Attendance</Text>
               </View>
@@ -284,19 +288,19 @@ export default function AnalyticsScreen({ navigation }: any) {
           <View style={styles.pipelineGrid}>
             <View style={[styles.pipelineCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <Text style={[styles.pipelineVal, { color: colors.primary }]}>
-                {orgAnalytics?.taskCompletion?.find((t: any) => t.status === 'TODO')?._count?._all ?? 12}
+                {orgAnalytics?.taskCompletion?.find((t: any) => t.status === 'TODO')?._count?._all ?? 0}
               </Text>
               <Text style={[styles.pipelineLabel, { color: colors.textSecondary }]}>To Do</Text>
             </View>
             <View style={[styles.pipelineCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <Text style={[styles.pipelineVal, { color: colors.amber }]}>
-                {orgAnalytics?.taskCompletion?.find((t: any) => t.status === 'REVIEW')?._count?._all ?? 8}
+                {orgAnalytics?.taskCompletion?.find((t: any) => t.status === 'REVIEW')?._count?._all ?? 0}
               </Text>
               <Text style={[styles.pipelineLabel, { color: colors.textSecondary }]}>In Review</Text>
             </View>
             <View style={[styles.pipelineCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <Text style={[styles.pipelineVal, { color: colors.emerald }]}>
-                {orgAnalytics?.taskCompletion?.find((t: any) => t.status === 'COMPLETED')?._count?._all ?? 45}
+                {orgAnalytics?.taskCompletion?.find((t: any) => t.status === 'COMPLETED')?._count?._all ?? 0}
               </Text>
               <Text style={[styles.pipelineLabel, { color: colors.textSecondary }]}>Graded & Done</Text>
             </View>

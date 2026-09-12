@@ -242,7 +242,9 @@ export default function AppDrawer() {
             <View style={styles.headerTopRow}>
               <View style={[styles.campusBadge, { backgroundColor: colors.primaryLight }]}>
                 <GraduationCap size={14} color={colors.primary} />
-                <Text style={[styles.campusText, { color: colors.primary }]}>CONVEE ACADEMY</Text>
+                <Text style={[styles.campusText, { color: colors.primary }]} numberOfLines={1}>
+                  {currentOrg?.name ? currentOrg.name.toUpperCase() : 'CONVEE EDUCATION'}
+                </Text>
               </View>
               <TouchableOpacity
                 onPress={() => handleClose()}
