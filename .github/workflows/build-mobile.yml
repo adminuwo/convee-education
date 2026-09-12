@@ -62,8 +62,7 @@ jobs:
         working-directory: mobile
         run: |
           npx expo prebuild --platform android --clean
-          # Configure 16 KB page size alignment for Android 15 / API 35+
-          echo "android.bundle.enableUncompressedNativeLibs=false" >> android/gradle.properties
+          # Configure build memory for 16 KB native compilation
           echo "org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m" >> android/gradle.properties
 
       - name: Compile Android Package (16 KB Page Aligned)
