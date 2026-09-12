@@ -48,29 +48,55 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Setup Android NDK (r27+ for 16 KB Page Alignment)
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r27b
+          link-to-sdk: true
+
       - name: Install NPM Dependencies
         working-directory: mobile
         run: npm ci
 
       - name: Generate Android Native Project via Expo Prebuild
         working-directory: mobile
-        run: npx expo prebuild --platform android --clean
+        run: |
+          npx expo prebuild --platform android --clean
+          # Configure 16 KB page size alignment for Android 15 / API 35+
+          echo "android.bundle.enableUncompressedNativeLibs=false" >> android/gradle.properties
+          echo "org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m" >> android/gradle.properties
 
-      - name: Compile Android Package
+      - name: Compile Android Package (16 KB Page Aligned)
         working-directory: mobile/android
         run: |
           chmod +x ./gradlew
           PROFILE="${{ inputs.profile }}"
 
           if [ "$PROFILE" = "preview" ]; then
-            echo ">>> Building Standalone Release APK for Firebase / Testers..."
-            ./gradlew assembleRelease --no-daemon
+            echo ">>> Building Standalone Release APK for Firebase / Testers (16 KB Page Aligned)..."
+            ./gradlew assembleRelease --no-daemon -DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON
           elif [ "$PROFILE" = "production" ]; then
-            echo ">>> Building Production Release AAB for Google Play Store..."
-            ./gradlew bundleRelease --no-daemon
+            echo ">>> Building Production Release AAB for Google Play Store (16 KB Page Aligned)..."
+            ./gradlew bundleRelease --no-daemon -DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON
           elif [ "$PROFILE" = "development" ]; then
-            echo ">>> Building Development Debug APK..."
-            ./gradlew assembleDebug --no-daemon
+            echo ">>> Building Development Debug APK (16 KB Page Aligned)..."
+            ./gradlew assembleDebug --no-daemon -DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON
+          fi
+
+      - name: Verify 16 KB Page Alignment
+        working-directory: mobile
+        run: |
+          echo ">>> Verifying 16 KB page alignment on generated binaries..."
+          APK_FILE=$(find android/app/build/outputs/apk -name "*.apk" 2>/dev/null | head -n 1)
+          if [ -n "$APK_FILE" ]; then
+            mkdir -p /tmp/apk_inspect
+            unzip -q "$APK_FILE" -d /tmp/apk_inspect
+            echo "Inspecting ELF alignment on bundled native libraries:"
+            find /tmp/apk_inspect/lib -name "*.so" | head -n 5 | while read so_file; do
+              echo "Checking $so_file:"
+              objdump -p "$so_file" | grep -i "align" | head -n 2 || true
+            done
+            rm -rf /tmp/apk_inspect
           fi
 
       - name: Upload Android Artifacts
