@@ -32,6 +32,18 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      - name: Free Runner Disk Space
+        run: |
+          echo "=== Disk space before cleanup ==="
+          df -h
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android/sdk/ndk/2* 2>/dev/null || true
+          sudo rm -rf /opt/ghc
+          sudo rm -rf "/usr/local/share/boost"
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+          echo "=== Disk space after cleanup ==="
+          df -h
+
       - name: Setup Node.js 20
         uses: actions/setup-node@v4
         with:
@@ -62,8 +74,9 @@ jobs:
         working-directory: mobile
         run: |
           npx expo prebuild --platform android --clean
-          # Configure build memory and New Architecture for 16 KB native compilation
+          # Configure build memory, target architectures, and New Architecture for 16 KB native compilation
           echo "newArchEnabled=true" >> android/gradle.properties
+          echo "reactNativeArchitectures=arm64-v8a,armeabi-v7a" >> android/gradle.properties
           echo "org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m" >> android/gradle.properties
 
       - name: Compile Android Package (16 KB Page Aligned)
@@ -74,13 +87,13 @@ jobs:
 
           if [ "$PROFILE" = "preview" ]; then
             echo ">>> Building Standalone Release APK for Firebase / Testers (16 KB Page Aligned)..."
-            ./gradlew assembleRelease --no-daemon -DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON
+            ./gradlew assembleRelease --no-daemon -DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON -PreactNativeArchitectures=arm64-v8a,armeabi-v7a
           elif [ "$PROFILE" = "production" ]; then
             echo ">>> Building Production Release AAB for Google Play Store (16 KB Page Aligned)..."
-            ./gradlew bundleRelease --no-daemon -DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON
+            ./gradlew bundleRelease --no-daemon -DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON -PreactNativeArchitectures=arm64-v8a,armeabi-v7a
           elif [ "$PROFILE" = "development" ]; then
             echo ">>> Building Development Debug APK (16 KB Page Aligned)..."
-            ./gradlew assembleDebug --no-daemon -DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON
+            ./gradlew assembleDebug --no-daemon -DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON -PreactNativeArchitectures=arm64-v8a,armeabi-v7a
           fi
 
       - name: Verify 16 KB Page Alignment
