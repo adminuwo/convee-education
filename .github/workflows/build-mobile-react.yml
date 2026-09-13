@@ -1,0 +1,97 @@
+name: Build Bare React Native 0.77 (16 KB Page Aligned)
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: 'Build Target'
+        required: true
+        default: 'apk'
+        type: choice
+        options:
+          - 'apk'
+          - 'bundle'
+
+jobs:
+  build:
+    name: Build React Native 0.77 (${{ inputs.profile }})
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Free Runner Disk Space
+        run: |
+          echo "=== Disk space before cleanup ==="
+          df -h
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android/sdk/ndk/2* 2>/dev/null || true
+          sudo rm -rf /opt/ghc
+          sudo rm -rf "/usr/local/share/boost"
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+          echo "=== Disk space after cleanup ==="
+          df -h
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Java JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: 17
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Setup Android NDK r27b (16 KB Page Support)
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r27b
+          link-to-sdk: true
+
+      - name: Install NPM Dependencies
+        working-directory: mobile-react
+        run: |
+          npm install --legacy-peer-deps
+
+      - name: Build Android Package
+        working-directory: mobile-react/android
+        run: |
+          chmod +x ./gradlew
+          TARGET="${{ inputs.profile }}"
+          if [ "$TARGET" = "bundle" ]; then
+            echo ">>> Building Production Release AAB (RN 0.77 - 16 KB Aligned)..."
+            ./gradlew bundleRelease --no-daemon -DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON -PreactNativeArchitectures=arm64-v8a,armeabi-v7a
+          else
+            echo ">>> Building Release APK (RN 0.77 - 16 KB Aligned)..."
+            ./gradlew assembleRelease --no-daemon -DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON -PreactNativeArchitectures=arm64-v8a,armeabi-v7a
+          fi
+
+      - name: Verify 16 KB Page Alignment
+        working-directory: mobile-react
+        run: |
+          echo ">>> Verifying 16 KB page alignment on generated APK..."
+          APK_FILE=$(find android/app/build/outputs/apk -name "*.apk" 2>/dev/null | head -n 1)
+          if [ -n "$APK_FILE" ]; then
+            mkdir -p /tmp/apk_inspect
+            unzip -q "$APK_FILE" -d /tmp/apk_inspect
+            echo "Inspecting ELF alignment on bundled native libraries:"
+            find /tmp/apk_inspect/lib -name "*.so" | head -n 10 | while read so_file; do
+              echo "Checking $so_file:"
+              objdump -p "$so_file" | grep -i "align" | head -n 2 || true
+            done
+            rm -rf /tmp/apk_inspect
+          fi
+
+      - name: Upload Android Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ConveeEducation-React077-${{ inputs.profile }}
+          path: |
+            mobile-react/android/app/build/outputs/apk/**/*.apk
+            mobile-react/android/app/build/outputs/bundle/**/*.aab
+          if-no-files-found: error

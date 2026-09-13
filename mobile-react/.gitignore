@@ -1,0 +1,21 @@
+# React Native
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Android
+android/.gradle
+android/app/build
+android/build
+*.iml
+.idea/
+
+# iOS
+ios/Pods
+ios/build
+*.xcworkspace
+*.xcuserdata
+
+# Temporary
+.DS_Store
+*.orig
