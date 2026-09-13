@@ -55,9 +55,11 @@ jobs:
           ndk-version: r27b
           link-to-sdk: true
 
-      - name: Install Flutter Dependencies
+      - name: Configure Flutter Native Platform (v2 Embedding)
         working-directory: mobile-flutter
-        run: flutter pub get
+        run: |
+          flutter create . --org com.convee.education --project-name convee_education --platforms android
+          flutter pub get
 
       - name: Build Android Package
         working-directory: mobile-flutter
