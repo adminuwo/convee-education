@@ -123,6 +123,8 @@ mock_students.csv
 !frontend/public/**
 !frontend/src/assets/**
 !mobile/assets/**
+!mobile-react/assets/**
+!mobile-flutter/assets/**
 
 # Scratch, Test & Seed Scripts
 backend/scripts/*.ts
